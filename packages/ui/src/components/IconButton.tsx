@@ -24,7 +24,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
     <button
       ref={ref}
       className={clsx(
-        'inline-flex h-6 w-6 items-center justify-center rounded-sm transition-colors',
+        'inline-flex h-6 w-6 items-center justify-center rounded-sm transition-colors max-md:h-11 max-md:w-11',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         variantClasses[variant],
         className,

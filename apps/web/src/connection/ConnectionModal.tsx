@@ -11,6 +11,7 @@ import {
   useUpdateConnection,
 } from '../api/connections';
 import { FormField } from '../components/FormField';
+import { useConfirm } from '../hooks/useConfirm';
 import { apiErrorMessage } from '../lib/apiClient';
 import { useConnectionStore } from '../stores/connectionStore';
 
@@ -60,6 +61,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
   const updateConnection = useUpdateConnection();
   const deleteConnection = useDeleteConnection();
   const testConnection = useTestConnection();
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<ConnectionFormState>(blankForm);
@@ -180,8 +182,15 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
     );
   }
 
-  function handleDelete(connection: ConnectionDto) {
-    if (!window.confirm(`Delete connection "${connection.name}"?`)) return;
+  async function handleDelete(connection: ConnectionDto) {
+    const confirmed = await confirm({
+      title: 'Delete connection',
+      description: `Delete connection "${connection.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!confirmed) return;
+
     deleteConnection.mutate(connection.id, {
       onSuccess: () => {
         if (activeConnectionId === connection.id) {
@@ -427,6 +436,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
           </Surface>
         </div>
       </Surface>
+      {confirmDialog}
     </div>
   );
 }

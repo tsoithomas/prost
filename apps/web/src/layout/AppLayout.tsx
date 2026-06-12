@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { usePreferences } from '../api/preferences';
 import { ConnectionModal } from '../connection/ConnectionModal';
 import { useIsMobile } from '../hooks/useMediaQuery';
 import { MobileShell } from '../mobile/MobileShell';
+import { useThemeStore } from '../stores/themeStore';
 import { TopBar } from './TopBar';
 import { Sidebar } from './Sidebar';
 import { StatusBar } from './StatusBar';
@@ -16,6 +18,18 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isMobile = useIsMobile();
   const openConnectionModal = () => setConnectionModalOpen(true);
   const connectionModal = <ConnectionModal open={connectionModalOpen} onClose={() => setConnectionModalOpen(false)} />;
+
+  // Server preferences win over localStorage once authenticated — reconciles the device
+  // with a saved choice exactly once per session, without clobbering later user edits.
+  const { data: preferences } = usePreferences();
+  const hydratedRef = useRef(false);
+  useEffect(() => {
+    if (!preferences || hydratedRef.current) return;
+    hydratedRef.current = true;
+    const { colorMode, accentColor, setColorMode, setAccentColor } = useThemeStore.getState();
+    if (preferences.colorMode !== colorMode) setColorMode(preferences.colorMode);
+    if (preferences.accentColor !== accentColor) setAccentColor(preferences.accentColor);
+  }, [preferences]);
 
   if (isMobile) {
     return (

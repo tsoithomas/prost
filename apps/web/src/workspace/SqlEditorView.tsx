@@ -25,6 +25,7 @@ import {
 import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
 import { useExecuteQuery } from '../api/query';
 import { buildColumnDefs } from '../grid/columnDefs';
+import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
 import { ApiError, apiErrorDetail, apiErrorMessage } from '../lib/apiClient';
 import { useConnectionStore } from '../stores/connectionStore';
@@ -58,6 +59,7 @@ export function SqlEditorView() {
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const executeQuery = useExecuteQuery(connectionId ?? '');
 
@@ -181,10 +183,16 @@ export function SqlEditorView() {
     );
   }
 
-  function handleDeleteSelected() {
+  async function handleDeleteSelected() {
     if (selectedRows.length === 0) return;
     const noun = selectedRows.length === 1 ? 'this row' : `these ${selectedRows.length} rows`;
-    if (!window.confirm(`Delete ${noun}? This cannot be undone.`)) return;
+    const confirmed = await confirm({
+      title: 'Delete rows',
+      description: `Delete ${noun}? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!confirmed) return;
 
     Promise.allSettled(
       selectedRows.map((row) => {
@@ -217,7 +225,7 @@ export function SqlEditorView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="h-1/2 min-h-0 border-b border-border">
+      <div className="h-1/2 min-h-0 border-b border-border max-md:h-2/5">
         <Editor
           height="100%"
           defaultLanguage="sql"
@@ -237,8 +245,8 @@ export function SqlEditorView() {
           }}
         />
       </div>
-      <div className="flex h-1/2 min-h-0 flex-col overflow-hidden">
-        <div className="flex h-8 shrink-0 items-center gap-sm overflow-x-auto border-b border-border bg-surface px-sm">
+      <div className="flex h-1/2 min-h-0 flex-col overflow-hidden max-md:h-3/5">
+        <div className="flex h-8 max-md:h-11 shrink-0 items-center gap-sm overflow-x-auto border-b border-border bg-surface px-sm">
           <Button
             variant="primary"
             size="sm"
@@ -334,6 +342,7 @@ export function SqlEditorView() {
           </div>
         ))}
       </div>
+      {confirmDialog}
     </div>
   );
 }

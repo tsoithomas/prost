@@ -10,6 +10,7 @@ import { ConnectionsModule } from './connections/connections.module';
 import { MetadataModule } from './metadata/metadata.module';
 import { GridModule } from './grid/grid.module';
 import { QueryModule } from './query/query.module';
+import { PreferenceModule } from './preference/preference.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { QueryModule } from './query/query.module';
     MetadataModule,
     GridModule,
     QueryModule,
+    PreferenceModule,
   ],
   controllers: [AppController],
 })

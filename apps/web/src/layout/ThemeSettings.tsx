@@ -1,12 +1,24 @@
 import clsx from 'clsx';
 import type { ColorMode } from '@prost/shared-types';
-import { accentPresets } from '@prost/ui';
+import { accentPresets, type AccentPreset } from '@prost/ui';
+import { useUpdatePreferences } from '../api/preferences';
 import { useThemeStore } from '../stores/themeStore';
 
 const colorModes: ColorMode[] = ['light', 'dark', 'system'];
 
 export function ThemeSettings() {
   const { colorMode, accentColor, setColorMode, setAccentColor } = useThemeStore();
+  const updatePreferences = useUpdatePreferences();
+
+  function handleColorMode(mode: ColorMode) {
+    setColorMode(mode);
+    updatePreferences.mutate({ colorMode: mode });
+  }
+
+  function handleAccentColor(preset: AccentPreset) {
+    setAccentColor(preset.value, preset.fg);
+    updatePreferences.mutate({ accentColor: preset.value });
+  }
 
   return (
     <div className="flex flex-col gap-md">
@@ -17,7 +29,7 @@ export function ThemeSettings() {
             <button
               key={mode}
               type="button"
-              onClick={() => setColorMode(mode)}
+              onClick={() => handleColorMode(mode)}
               className={clsx(
                 'flex-1 rounded-sm px-sm py-1 text-xs capitalize transition-colors',
                 colorMode === mode
@@ -39,7 +51,7 @@ export function ThemeSettings() {
               type="button"
               aria-label={preset.name}
               title={preset.name}
-              onClick={() => setAccentColor(preset.value, preset.fg)}
+              onClick={() => handleAccentColor(preset)}
               className={clsx(
                 'h-6 w-6 rounded-full border-2 transition-colors',
                 accentColor === preset.value ? 'border-accent' : 'border-transparent',

@@ -11,7 +11,7 @@ implementation plans + status live in [`docs/plans/`](docs/plans/README.md). Dur
 architectural rules (read before making non-trivial changes — a violation is a defect
 even if it works): [`docs/architecture-principles.md`](docs/architecture-principles.md).
 
-**Current status**: Phases 1-4 complete. Login (JWT via `/auth/login`, guarded `/app/*`
+**Current status**: Phases 1-5 complete. Login (JWT via `/auth/login`, guarded `/app/*`
 routes), connection CRUD + test (`/connections`), real schema tree
 (`/connections/:id/metadata`), paginated table rows via AG Grid's Infinite Row Model
 (`/connections/:id/tables/:schema/:table/rows`) with inline cell editing + row insert/delete,
@@ -19,7 +19,14 @@ and a Monaco SQL editor wired to real execution (`POST /connections/:id/query`) 
 server-side editability analyzer — results render in the same grid, editable only when the
 backend says so. Every successful query is recorded server-side via `HistoryModule`
 (`GET /connections/:id/history`), surfaced as a recent-queries panel in the Sidebar's History
-tab and mobile Settings — clicking an entry loads it back into Monaco.
+tab and mobile Settings — clicking an entry loads it back into Monaco. Per-user
+`colorMode`/`accentColor` preferences persist via `PreferenceModule`
+(`GET`/`PATCH /preferences`), hydrating `themeStore` once per session (server wins over
+`localStorage`) and writing through on every preset change. A shared `ConfirmDialog`/
+`useConfirm()` (centered on desktop, full-width bottom sheet on mobile) replaces all
+`window.confirm()` calls, and mobile touch targets (≥44px), safe-area-aware bottom nav, and
+a results-favoring SQL editor split (`max-md:h-2/5`/`h-3/5`) round out the responsiveness
+hardening pass.
 
 ## Commands
 

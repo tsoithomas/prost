@@ -1,4 +1,5 @@
 export * from './Button.js';
+export * from './ConfirmDialog.js';
 export * from './IconButton.js';
 export * from './Input.js';
 export * from './Checkbox.js';

@@ -15,6 +15,7 @@ import type { GridResponse } from '@prost/shared-types';
 import { IconButton, prostGridTheme, Toast } from '@prost/ui';
 import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
 import { buildColumnDefs } from '../grid/columnDefs';
+import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
 import { apiErrorDetail, apiFetch } from '../lib/apiClient';
 
@@ -35,6 +36,7 @@ export function TableView({ connectionId, schema, table }: TableViewProps) {
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
+  const { confirm, dialog: confirmDialog } = useConfirm();
 
   const columnsQuery = useQuery({
     queryKey: ['grid-columns', connectionId, schema, table],
@@ -143,10 +145,16 @@ export function TableView({ connectionId, schema, table }: TableViewProps) {
     );
   }
 
-  function handleDeleteSelected() {
+  async function handleDeleteSelected() {
     if (selectedRows.length === 0) return;
     const noun = selectedRows.length === 1 ? 'this row' : `these ${selectedRows.length} rows`;
-    if (!window.confirm(`Delete ${noun}? This cannot be undone.`)) return;
+    const confirmed = await confirm({
+      title: 'Delete rows',
+      description: `Delete ${noun}? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!confirmed) return;
 
     Promise.allSettled(
       selectedRows.map((row) => {
@@ -170,7 +178,7 @@ export function TableView({ connectionId, schema, table }: TableViewProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border bg-surface px-sm">
+      <div className="flex h-8 max-md:h-11 shrink-0 items-center gap-1 border-b border-border bg-surface px-sm">
         <IconButton aria-label="Filter rows">
           <Filter size={14} />
         </IconButton>
@@ -234,6 +242,7 @@ export function TableView({ connectionId, schema, table }: TableViewProps) {
           </div>
         ))}
       </div>
+      {confirmDialog}
     </div>
   );
 }

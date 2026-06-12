@@ -15,7 +15,7 @@ export interface MobileBottomNavProps {
 
 export function MobileBottomNav({ active, onChange }: MobileBottomNavProps) {
   return (
-    <nav className="flex h-14 shrink-0 items-center justify-around border-t border-border bg-surface-sunken px-sm">
+    <nav className="flex min-h-14 shrink-0 items-center justify-around border-t border-border bg-surface-sunken px-sm pb-[env(safe-area-inset-bottom)]">
       {tabs.map(({ key, label, icon: Icon }) => {
         const isActive = key === active;
         return (
@@ -27,7 +27,7 @@ export function MobileBottomNav({ active, onChange }: MobileBottomNavProps) {
           >
             <span
               className={clsx(
-                'flex h-7 w-12 items-center justify-center rounded-full transition-colors',
+                'flex h-11 w-12 items-center justify-center rounded-full transition-colors',
                 isActive ? 'bg-accent-muted text-accent' : 'text-text-muted',
               )}
             >
