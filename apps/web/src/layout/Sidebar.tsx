@@ -2,8 +2,11 @@ import { useState } from 'react';
 import { Code, Database, History, Network, Plus } from 'lucide-react';
 import clsx from 'clsx';
 import { Button } from '@prost/ui';
+import { useActiveConnection } from '../api/connections';
+import { useMetadata } from '../api/metadata';
 import { SchemaTree } from '../explorer/SchemaTree';
-import { mockSchemas } from '../mocks/schema';
+import { useConnectionStore } from '../stores/connectionStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
 type SidebarTab = 'connections' | 'explorer' | 'history' | 'snippets';
 
@@ -26,7 +29,18 @@ export interface SidebarProps {
 
 export function Sidebar({ onNewConnection }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('explorer');
-  const [selectedTable, setSelectedTable] = useState('users');
+  const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
+  const activeConnection = useActiveConnection();
+  const { data: schemas, isLoading, isError } = useMetadata(activeConnectionId);
+  const workspaceTabs = useWorkspaceStore((state) => state.tabs);
+  const activeWorkspaceTabId = useWorkspaceStore((state) => state.activeTabId);
+  const openTable = useWorkspaceStore((state) => state.openTable);
+
+  const activeWorkspaceTab = workspaceTabs.find((tab) => tab.id === activeWorkspaceTabId);
+  const selectedTable =
+    activeWorkspaceTab?.kind === 'table' && activeWorkspaceTab.schema
+      ? `${activeWorkspaceTab.schema}.${activeWorkspaceTab.table}`
+      : null;
 
   return (
     <aside className="hidden w-sidebar shrink-0 flex-col border-r border-border bg-surface-sunken md:flex">
@@ -35,8 +49,12 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
           <Database size={14} />
         </div>
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold leading-tight text-text">PostgreSQL</h2>
-          <p className="truncate text-xs leading-tight text-text-muted">localhost:5432</p>
+          <h2 className="truncate text-sm font-semibold leading-tight text-text">
+            {activeConnection?.name ?? 'No connection'}
+          </h2>
+          <p className="truncate text-xs leading-tight text-text-muted">
+            {activeConnection ? `${activeConnection.host}:${activeConnection.port}` : 'Select a connection'}
+          </p>
         </div>
       </div>
 
@@ -61,7 +79,21 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
 
       <div className="flex-1 overflow-y-auto px-sm py-1">
         {activeTab === 'explorer' ? (
-          <SchemaTree schemas={mockSchemas} selectedTable={selectedTable} onSelectTable={setSelectedTable} />
+          activeConnectionId === null ? (
+            <p className="px-sm py-2 text-xs italic text-text-faint">
+              No active connection. Use "New Connection" to get started.
+            </p>
+          ) : isLoading ? (
+            <p className="px-sm py-2 text-xs italic text-text-faint">Loading schemas…</p>
+          ) : isError ? (
+            <p className="px-sm py-2 text-xs text-danger">Failed to load schemas.</p>
+          ) : (
+            <SchemaTree
+              schemas={schemas ?? []}
+              selectedTable={selectedTable}
+              onSelectTable={(table) => openTable(table.schema, table.name)}
+            />
+          )
         ) : (
           <p className="px-sm py-2 text-xs italic text-text-faint">{placeholderText[activeTab]}</p>
         )}

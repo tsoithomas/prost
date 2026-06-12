@@ -5,6 +5,8 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // .env files live at the monorepo root alongside apps/api's envFilePath.
+  envDir: fileURLToPath(new URL('../..', import.meta.url)),
   resolve: {
     alias: {
       '@prost/shared-types': fileURLToPath(new URL('../../packages/shared-types/src', import.meta.url)),

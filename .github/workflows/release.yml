@@ -1,0 +1,53 @@
+name: Release
+
+# Conventional-commit driven versioning (see .releaserc.json):
+#   feat:     -> minor (0.x.0)
+#   fix/perf: -> patch (0.x.y)
+#   BREAKING CHANGE: -> major
+#
+# semantic-release bumps package.json's version, updates CHANGELOG.md, tags the
+# commit, and creates a GitHub Release - all on pushes to main.
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # semantic-release: push version bump + tags, create Releases
+      issues: write # semantic-release github plugin comments
+      pull-requests: write # semantic-release github plugin comments
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history + tags for semantic-release
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -w build
+
+      - name: Lint and test
+        run: |
+          pnpm -w lint
+          pnpm -w test
+
+      - name: Semantic release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec semantic-release

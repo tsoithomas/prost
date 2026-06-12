@@ -6,14 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Prost is a web-based PostgreSQL client (TablePlus-style) for internal developer use:
 connection management, schema browsing, table viewing/editing, and a SQL editor with
-query results. Full spec: [`docs/plan/prost-mvp.md`](docs/plan/prost-mvp.md). Durable
+query results. Full spec: [`docs/plans/prost-mvp.md`](docs/plans/prost-mvp.md). Durable
 architectural rules (read before making non-trivial changes — a violation is a defect
 even if it works): [`docs/architecture-principles.md`](docs/architecture-principles.md).
 
-**Current status**: Phase 0 only — pnpm/Turborepo scaffold plus a static design-system
-app shell (desktop + mobile) wired with mock data (`apps/web/src/mocks/`). There is no
-real auth, connection, metadata, or grid backend yet (Phase 1+). Don't assume routes,
-guards, or API calls exist beyond the NestJS `/health` endpoint and the `CryptoService`.
+**Current status**: Phase 1 complete — the vertical slice works end-to-end: login (JWT via
+`/auth/login`, guarded `/app/*` routes), connection CRUD + test (`/connections`), real schema
+tree (`/connections/:id/metadata`), and paginated table rows via AG Grid's Infinite Row Model
+(`/connections/:id/tables/:schema/:table/rows`). Inline cell editing, the Monaco SQL editor
+execution path, and query history are still Phase 2+ — their UI affordances are present but
+inert (`apps/web/src/mocks/orderResults.ts` still backs the SQL Editor tab's mock results).
 
 ## Commands
 
@@ -52,6 +54,20 @@ pnpm --filter @prost/api prisma:seed      # create admin user from ADMIN_EMAIL/A
 `demo-target-postgres` (port 5434) is seeded from `docker/demo-target-init.sql` with
 `users`/`orders`/`products` — useful as a real target DB for Phase 1+ work, and its
 shape matches the mock data already in `apps/web/src/mocks/`.
+
+## Commit messages
+
+Conventional Commits, `type(scope): subject` — enforced by `.releaserc.json` /
+`.github/workflows/release.yml` (semantic-release), which bumps `package.json`'s version
+on every push to `main`:
+
+- `feat: ...` → minor bump (`0.x.0`)
+- `fix: ...` / `perf: ...` → patch bump (`0.x.y`)
+- `BREAKING CHANGE:` footer (or `type!:`) → major bump
+- `chore:`, `docs:`, `refactor:`, `test:`, `style:`, `ci:`, `build:` → no release
+
+Scope = the area touched, e.g. `api`, `web`, `ui`, `shared-types`, `utils`, `phase1`,
+`scaffold`. Subject in imperative mood, no trailing period.
 
 ## Monorepo layout & path aliases
 

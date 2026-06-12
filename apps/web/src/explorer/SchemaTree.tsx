@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Box, ChevronDown, ChevronRight, Table2 } from 'lucide-react';
 import clsx from 'clsx';
-import type { SchemaMetadata } from '@prost/shared-types';
+import type { SchemaMetadata, TableSummary } from '@prost/shared-types';
 
 export interface SchemaTreeProps {
   schemas: SchemaMetadata[];
-  selectedTable: string;
-  onSelectTable: (table: string) => void;
+  /** Composite `schema.table` key of the selected table, or `null` if none is selected. */
+  selectedTable: string | null;
+  onSelectTable: (table: TableSummary) => void;
 }
 
 export function SchemaTree({ schemas, selectedTable, onSelectTable }: SchemaTreeProps) {
@@ -46,10 +47,10 @@ export function SchemaTree({ schemas, selectedTable, onSelectTable }: SchemaTree
                   <button
                     key={table.name}
                     type="button"
-                    onClick={() => onSelectTable(table.name)}
+                    onClick={() => onSelectTable(table)}
                     className={clsx(
                       'flex items-center gap-1 rounded-sm px-1 py-1 text-left text-xs transition-colors',
-                      selectedTable === table.name
+                      selectedTable === `${table.schema}.${table.name}`
                         ? 'bg-accent-muted text-accent'
                         : 'text-text-muted hover:bg-surface-hover hover:text-text',
                     )}

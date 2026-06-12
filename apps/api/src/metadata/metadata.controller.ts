@@ -1,0 +1,22 @@
+import { Controller, Get, Param } from '@nestjs/common';
+import type { SchemaMetadata } from '@prost/shared-types';
+import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
+import { ConnectionsService } from '../connections/connections.service';
+import { MetadataService } from './metadata.service';
+
+@Controller('connections')
+export class MetadataController {
+  constructor(
+    private readonly connectionsService: ConnectionsService,
+    private readonly metadataService: MetadataService,
+  ) {}
+
+  @Get(':id/metadata')
+  async getMetadata(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ): Promise<SchemaMetadata[]> {
+    await this.connectionsService.assertOwnership(user.userId, id);
+    return this.metadataService.getSchemas(id);
+  }
+}

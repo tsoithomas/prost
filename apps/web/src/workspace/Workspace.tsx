@@ -1,39 +1,34 @@
-import { useState } from 'react';
 import { Breadcrumbs } from './Breadcrumbs';
 import { WorkspaceTabBar } from './WorkspaceTabBar';
-import type { WorkspaceTab } from './WorkspaceTabBar';
 import { TableView } from './TableView';
 import { SqlEditorView } from './SqlEditorView';
-
-const initialTabs: WorkspaceTab[] = [
-  { id: 'users', label: 'users', kind: 'table' },
-  { id: 'query-1', label: 'Query 1', kind: 'query' },
-];
+import { useActiveConnection } from '../api/connections';
+import { useConnectionStore } from '../stores/connectionStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
 export function Workspace() {
-  const [tabs, setTabs] = useState<WorkspaceTab[]>(initialTabs);
-  const [activeTabId, setActiveTabId] = useState(initialTabs[0]!.id);
+  const tabs = useWorkspaceStore((state) => state.tabs);
+  const activeTabId = useWorkspaceStore((state) => state.activeTabId);
+  const selectTab = useWorkspaceStore((state) => state.selectTab);
+  const closeTab = useWorkspaceStore((state) => state.closeTab);
+  const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
+  const activeConnection = useActiveConnection();
+
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
-  function closeTab(id: string) {
-    setTabs((prev) => {
-      const next = prev.filter((tab) => tab.id !== id);
-      if (id === activeTabId && next.length > 0) {
-        setActiveTabId(next[next.length - 1]!.id);
-      }
-      return next;
-    });
-  }
-
-  const breadcrumbSegments = activeTab
-    ? ['PostgreSQL', 'Localhost', 'public', activeTab.label]
-    : ['PostgreSQL', 'Localhost', 'public'];
+  const connectionLabel = activeConnection?.name ?? 'No connection';
+  const breadcrumbSegments =
+    activeTab?.kind === 'table' && activeTab.schema
+      ? [connectionLabel, activeTab.schema, activeTab.label]
+      : [connectionLabel];
 
   return (
     <>
       <Breadcrumbs segments={breadcrumbSegments} />
-      <WorkspaceTabBar tabs={tabs} activeTabId={activeTabId} onSelect={setActiveTabId} onClose={closeTab} />
-      {activeTab?.kind === 'table' ? <TableView /> : null}
+      <WorkspaceTabBar tabs={tabs} activeTabId={activeTabId} onSelect={selectTab} onClose={closeTab} />
+      {activeTab?.kind === 'table' && activeTab.schema && activeTab.table && activeConnectionId ? (
+        <TableView connectionId={activeConnectionId} schema={activeTab.schema} table={activeTab.table} />
+      ) : null}
       {activeTab?.kind === 'query' ? <SqlEditorView /> : null}
       {!activeTab ? (
         <div className="flex flex-1 items-center justify-center text-sm text-text-faint">No tabs open</div>

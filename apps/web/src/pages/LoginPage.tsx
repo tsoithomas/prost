@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Database } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Button, Input, Surface } from '@prost/ui';
+import { useLogin } from '../api/auth';
 import { FormField } from '../components/FormField';
+import { ApiError } from '../lib/apiClient';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -10,6 +13,8 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const login = useLogin();
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -22,6 +27,15 @@ export function LoginPage() {
       return;
     }
     setError(null);
+    login.mutate(
+      { email, password },
+      {
+        onSuccess: () => navigate('/app', { replace: true }),
+        onError: (err) => {
+          setError(err instanceof ApiError ? err.message : 'Unable to sign in. Please try again.');
+        },
+      },
+    );
   }
 
   return (
@@ -68,8 +82,8 @@ export function LoginPage() {
               {error}
             </p>
           ) : null}
-          <Button type="submit" variant="primary" size="md" className="mt-xs justify-center">
-            Sign In
+          <Button type="submit" variant="primary" size="md" className="mt-xs justify-center" disabled={login.isPending}>
+            {login.isPending ? 'Signing in…' : 'Sign In'}
           </Button>
         </form>
       </Surface>

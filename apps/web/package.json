@@ -13,6 +13,7 @@
     "@monaco-editor/react": "^4",
     "@prost/shared-types": "workspace:*",
     "@prost/ui": "workspace:*",
+    "@tanstack/react-query": "^5",
     "ag-grid-community": "^33",
     "ag-grid-react": "^33",
     "clsx": "^2",

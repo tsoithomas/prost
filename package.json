@@ -1,7 +1,7 @@
 {
   "name": "prost",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=20"
@@ -11,14 +11,23 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "release": "semantic-release"
   },
   "devDependencies": {
     "@eslint/js": "^9",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/git": "^10.0.1",
+    "@semantic-release/github": "^12.0.8",
+    "@semantic-release/npm": "^13.1.5",
+    "@semantic-release/release-notes-generator": "^14.1.1",
+    "conventional-changelog-conventionalcommits": "^9.3.1",
     "eslint": "^9",
     "eslint-config-prettier": "^9",
     "globals": "^15",
     "prettier": "^3",
+    "semantic-release": "^25.0.5",
     "turbo": "^2",
     "typescript": "^5",
     "typescript-eslint": "^8"

@@ -1,10 +1,18 @@
 import { useEffect, useState } from 'react';
-import { ArrowRight, Cable, Database, Eye, EyeOff, Plus, X, Zap } from 'lucide-react';
+import { ArrowRight, Cable, Database, Eye, EyeOff, Plus, Save, Trash2, X, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import type { ConnectionDto } from '@prost/shared-types';
 import { Badge, Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
+import {
+  useConnections,
+  useCreateConnection,
+  useDeleteConnection,
+  useTestConnection,
+  useUpdateConnection,
+} from '../api/connections';
 import { FormField } from '../components/FormField';
-import { mockConnections } from '../mocks/connections';
+import { ApiError } from '../lib/apiClient';
+import { useConnectionStore } from '../stores/connectionStore';
 
 export interface ConnectionModalProps {
   open: boolean;
@@ -43,14 +51,48 @@ function toFormState(connection: ConnectionDto): ConnectionFormState {
   };
 }
 
-const firstConnection = mockConnections[0];
+function apiErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback;
+}
 
 export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
-  const [selectedId, setSelectedId] = useState<string | null>(firstConnection?.id ?? null);
-  const [form, setForm] = useState<ConnectionFormState>(() =>
-    firstConnection ? toFormState(firstConnection) : blankForm,
-  );
+  const { data: connections = [], isLoading: connectionsLoading } = useConnections();
+  const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
+  const setActive = useConnectionStore((state) => state.setActive);
+
+  const createConnection = useCreateConnection();
+  const updateConnection = useUpdateConnection();
+  const deleteConnection = useDeleteConnection();
+  const testConnection = useTestConnection();
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [form, setForm] = useState<ConnectionFormState>(blankForm);
   const [showPassword, setShowPassword] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [initialized, setInitialized] = useState(false);
+
+  // Default the selection to the active connection (or the first saved one) once the
+  // connection list has loaded; falls back to the "New Connection" form if there are none.
+  useEffect(() => {
+    if (!open || initialized || connectionsLoading) return;
+    const initial = connections.find((c) => c.id === activeConnectionId) ?? connections[0] ?? null;
+    if (initial) {
+      setSelectedId(initial.id);
+      setForm(toFormState(initial));
+    } else {
+      setSelectedId(null);
+      setForm(blankForm);
+    }
+    setInitialized(true);
+  }, [open, initialized, connectionsLoading, connections, activeConnectionId]);
+
+  useEffect(() => {
+    if (open) return;
+    setInitialized(false);
+    setShowPassword(false);
+    setFormError(null);
+    testConnection.reset();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -67,16 +109,128 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
     setSelectedId(connection.id);
     setForm(toFormState(connection));
     setShowPassword(false);
+    setFormError(null);
+    testConnection.reset();
   }
 
   function startNewConnection() {
     setSelectedId(null);
     setForm(blankForm);
     setShowPassword(false);
+    setFormError(null);
+    testConnection.reset();
   }
 
   function updateField<K extends keyof ConnectionFormState>(key: K, value: ConnectionFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+    testConnection.reset();
+  }
+
+  function validate(requirePassword: boolean): string | null {
+    if (!form.name.trim()) return 'Connection name is required.';
+    if (!form.host.trim()) return 'Host is required.';
+    const port = Number(form.port);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return 'Port must be between 1 and 65535.';
+    if (!form.database.trim()) return 'Database is required.';
+    if (!form.username.trim()) return 'Username is required.';
+    if (requirePassword && !form.password) return 'Password is required.';
+    return null;
+  }
+
+  function handleTest() {
+    const error = validate(!selectedId);
+    if (error) {
+      setFormError(error);
+      return;
+    }
+    setFormError(null);
+    const port = Number(form.port);
+    testConnection.mutate({
+      id: selectedId ?? undefined,
+      host: form.host,
+      port,
+      database: form.database,
+      username: form.username,
+      password: form.password || undefined,
+      sslEnabled: form.sslEnabled,
+    });
+  }
+
+  function handleSave() {
+    if (!selectedId) return;
+    const error = validate(false);
+    if (error) {
+      setFormError(error);
+      return;
+    }
+    setFormError(null);
+    updateConnection.mutate(
+      {
+        id: selectedId,
+        dto: {
+          name: form.name,
+          host: form.host,
+          port: Number(form.port),
+          database: form.database,
+          username: form.username,
+          password: form.password || undefined,
+          sslEnabled: form.sslEnabled,
+        },
+      },
+      {
+        onSuccess: () => setForm((prev) => ({ ...prev, password: '' })),
+        onError: (err) => setFormError(apiErrorMessage(err, 'Failed to save connection.')),
+      },
+    );
+  }
+
+  function handleDelete(connection: ConnectionDto) {
+    if (!window.confirm(`Delete connection "${connection.name}"?`)) return;
+    deleteConnection.mutate(connection.id, {
+      onSuccess: () => {
+        if (activeConnectionId === connection.id) {
+          setActive(null);
+        }
+        if (selectedId === connection.id) {
+          startNewConnection();
+        }
+      },
+      onError: (err) => setFormError(apiErrorMessage(err, 'Failed to delete connection.')),
+    });
+  }
+
+  function handleConnect() {
+    if (selectedId) {
+      setActive(selectedId);
+      onClose();
+      return;
+    }
+
+    const error = validate(true);
+    if (error) {
+      setFormError(error);
+      return;
+    }
+    setFormError(null);
+
+    createConnection.mutate(
+      {
+        name: form.name,
+        host: form.host,
+        port: Number(form.port),
+        database: form.database,
+        username: form.username,
+        password: form.password,
+        sslEnabled: form.sslEnabled,
+      },
+      {
+        onSuccess: (created) => {
+          setActive(created.id);
+          onClose();
+        },
+        onError: (err) => setFormError(apiErrorMessage(err, 'Failed to create connection.')),
+      },
+    );
   }
 
   return (
@@ -99,28 +253,51 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
             </IconButton>
           </div>
           <div className="flex-1 space-y-1 overflow-y-auto px-xs py-xs">
-            {mockConnections.map((connection) => {
-              const isActive = connection.id === selectedId;
-              return (
-                <button
-                  key={connection.id}
-                  type="button"
-                  onClick={() => selectConnection(connection)}
-                  className={clsx(
-                    'flex w-full items-center gap-sm rounded-sm border border-transparent p-sm text-left transition-colors',
-                    isActive ? 'bg-accent-muted text-accent' : 'text-text hover:bg-surface-hover',
-                  )}
-                >
-                  <Cable size={16} className={isActive ? 'text-accent' : 'text-text-faint'} />
-                  <div className="flex min-w-0 flex-col">
-                    <span className="truncate text-sm">{connection.name}</span>
-                    <span className="truncate font-mono text-xs text-text-faint">
-                      {connection.host}:{connection.port}
-                    </span>
+            {connectionsLoading ? (
+              <p className="px-sm py-2 text-xs italic text-text-faint">Loading connections…</p>
+            ) : connections.length === 0 ? (
+              <p className="px-sm py-2 text-xs italic text-text-faint">No saved connections yet.</p>
+            ) : (
+              connections.map((connection) => {
+                const isSelected = connection.id === selectedId;
+                const isActiveConnection = connection.id === activeConnectionId;
+                return (
+                  <div key={connection.id} className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => selectConnection(connection)}
+                      className={clsx(
+                        'flex w-full items-center gap-sm rounded-sm border border-transparent p-sm pr-8 text-left transition-colors',
+                        isSelected ? 'bg-accent-muted text-accent' : 'text-text hover:bg-surface-hover',
+                      )}
+                    >
+                      <Cable size={16} className={isSelected ? 'text-accent' : 'text-text-faint'} />
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate text-sm">{connection.name}</span>
+                        <span className="truncate font-mono text-xs text-text-faint">
+                          {connection.host}:{connection.port}
+                        </span>
+                      </div>
+                      {isActiveConnection ? (
+                        <Badge variant="success" className="ml-auto shrink-0">
+                          Active
+                        </Badge>
+                      ) : null}
+                    </button>
+                    <IconButton
+                      aria-label={`Delete ${connection.name}`}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDelete(connection);
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </IconButton>
                   </div>
-                </button>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -211,20 +388,43 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                 />
                 Require SSL
               </label>
+
+              {testConnection.data ? (
+                <Badge variant={testConnection.data.ok ? 'success' : 'danger'} className="w-max">
+                  {testConnection.data.message}
+                  {testConnection.data.serverVersion ? ` · PostgreSQL ${testConnection.data.serverVersion}` : ''}
+                </Badge>
+              ) : null}
+              {testConnection.isError ? (
+                <Badge variant="danger" className="w-max">
+                  {apiErrorMessage(testConnection.error, 'Connection test failed.')}
+                </Badge>
+              ) : null}
+              {formError ? (
+                <p className="text-xs text-danger" role="alert">
+                  {formError}
+                </p>
+              ) : null}
             </form>
           </div>
 
           <Surface level="raised" className="flex h-16 shrink-0 items-center justify-between border-t border-border px-lg">
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" onClick={handleTest} disabled={testConnection.isPending}>
               <Zap size={14} />
-              Test Connection
+              {testConnection.isPending ? 'Testing…' : 'Test Connection'}
             </Button>
             <div className="flex items-center gap-md">
+              {selectedId ? (
+                <Button variant="secondary" size="sm" onClick={handleSave} disabled={updateConnection.isPending}>
+                  <Save size={14} />
+                  {updateConnection.isPending ? 'Saving…' : 'Save'}
+                </Button>
+              ) : null}
               <Button variant="ghost" size="sm" onClick={onClose}>
                 Cancel
               </Button>
-              <Button variant="primary" size="sm">
-                Connect
+              <Button variant="primary" size="sm" onClick={handleConnect} disabled={createConnection.isPending}>
+                {createConnection.isPending ? 'Connecting…' : 'Connect'}
                 <ArrowRight size={14} />
               </Button>
             </div>
