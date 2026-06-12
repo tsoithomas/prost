@@ -42,7 +42,7 @@ function ColumnHeader({ displayName, dataType, isPrimaryKey }: CustomHeaderProps
   );
 }
 
-export function buildColumnDefs(columns: ColumnMetadata[]): ColDef[] {
+export function buildColumnDefs(columns: ColumnMetadata[], editable = false): ColDef[] {
   return columns.map((column) => ({
     field: column.name,
     headerComponent: ColumnHeader,
@@ -58,5 +58,6 @@ export function buildColumnDefs(columns: ColumnMetadata[]): ColDef[] {
       params.value === null || params.value === undefined ? 'null' : String(params.value),
     resizable: true,
     sortable: true,
+    editable,
   }));
 }

@@ -4,3 +4,4 @@ export * from './Input.js';
 export * from './Checkbox.js';
 export * from './Surface.js';
 export * from './Badge.js';
+export * from './Toast.js';

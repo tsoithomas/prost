@@ -11,7 +11,7 @@ import {
   useUpdateConnection,
 } from '../api/connections';
 import { FormField } from '../components/FormField';
-import { ApiError } from '../lib/apiClient';
+import { apiErrorMessage } from '../lib/apiClient';
 import { useConnectionStore } from '../stores/connectionStore';
 
 export interface ConnectionModalProps {
@@ -49,10 +49,6 @@ function toFormState(connection: ConnectionDto): ConnectionFormState {
     password: '',
     sslEnabled: connection.sslEnabled,
   };
-}
-
-function apiErrorMessage(error: unknown, fallback: string): string {
-  return error instanceof ApiError ? error.message : fallback;
 }
 
 export function ConnectionModal({ open, onClose }: ConnectionModalProps) {

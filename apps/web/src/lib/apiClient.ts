@@ -15,6 +15,17 @@ export class ApiError extends Error {
   }
 }
 
+/** Extracts a user-facing message from a caught error, falling back for non-`ApiError`s. */
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback;
+}
+
+/** Like `apiErrorMessage`, but appends the correlation id so a failed write can be traced in server logs. */
+export function apiErrorDetail(error: unknown, fallback: string): string {
+  const message = apiErrorMessage(error, fallback);
+  return error instanceof ApiError && error.correlationId ? `${message} (ref: ${error.correlationId})` : message;
+}
+
 interface ApiFetchOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   body?: unknown;
