@@ -6,7 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Prost is a web-based PostgreSQL client (TablePlus-style) for internal developer use:
 connection management, schema browsing, table viewing/editing, and a SQL editor with
-query results. Full spec: [`docs/plans/prost-mvp.md`](docs/plans/prost-mvp.md). Durable
+query results. Full spec: [`docs/plans/prost-mvp.md`](docs/plans/prost-mvp.md). Per-phase
+implementation plans + status live in [`docs/plans/`](docs/plans/README.md). Durable
 architectural rules (read before making non-trivial changes — a violation is a defect
 even if it works): [`docs/architecture-principles.md`](docs/architecture-principles.md).
 
