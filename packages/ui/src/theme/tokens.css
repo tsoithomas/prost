@@ -1,0 +1,107 @@
+@import 'tailwindcss';
+
+/*
+ * The package is consumed via a pnpm workspace symlink (apps/web/node_modules/@prost/ui),
+ * so Tailwind's content scanner treats it as `node_modules` and skips it by default.
+ * This re-includes it so utility classes used only inside @prost/ui components
+ * (e.g. Surface's `level="overlay"`) are generated.
+ */
+@source '../**/*.{ts,tsx}';
+
+/*
+ * Semantic design tokens. Light values are the defaults (registered with Tailwind's
+ * `@theme` so utilities like `bg-surface`, `text-muted`, `border-default` exist); the
+ * `.dark` block below overrides the same custom properties for dark mode. Both blocks
+ * share identical keys so every component built from these tokens works in both modes.
+ */
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-sidebar: 260px;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+
+  /* Surfaces */
+  --color-bg: #ffffff;
+  --color-surface: #f6f8fa;
+  --color-surface-sunken: #eaeef2;
+  --color-surface-raised: #ffffff;
+  --color-surface-overlay: #ffffff;
+  --color-surface-hover: #eaeef2;
+
+  /* Borders */
+  --color-border: #d0d7de;
+  --color-border-strong: #8c959f;
+
+  /* Text */
+  --color-text: #1f2328;
+  --color-text-muted: #59636e;
+  --color-text-faint: #8c959f;
+
+  /* Accent (user-selectable; derived shades follow whatever is set here) */
+  --color-accent: #498fff;
+  --color-accent-hover: color-mix(in srgb, var(--color-accent) 85%, var(--color-text));
+  --color-accent-muted: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface));
+  --color-accent-fg: #00285b;
+
+  /* Status */
+  --color-success: #1a7f37;
+  --color-success-fg: #ffffff;
+  --color-warning: #9a6700;
+  --color-warning-fg: #ffffff;
+  --color-danger: #cf222e;
+  --color-danger-fg: #ffffff;
+
+  /* Grid data-type tints (cosmetic only, scoped to the data grid) */
+  --color-data-number: #0969da;
+  --color-data-string: #1a7f37;
+  --color-data-decimal: #bc4c00;
+  --color-data-temporal: #59636e;
+  --color-data-null: #59636e;
+}
+
+.dark {
+  --color-bg: #10131a;
+  --color-surface: #1d2027;
+  --color-surface-sunken: #0b0e15;
+  --color-surface-raised: #272a31;
+  --color-surface-overlay: #32353c;
+  --color-surface-hover: #32353c;
+
+  --color-border: #414754;
+  --color-border-strong: #8b909f;
+
+  --color-text: #e0e2ec;
+  --color-text-muted: #c1c6d6;
+  --color-text-faint: #8b909f;
+
+  --color-accent: #498fff;
+  --color-accent-hover: color-mix(in srgb, var(--color-accent) 85%, var(--color-text));
+  --color-accent-muted: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface));
+  --color-accent-fg: #00285b;
+
+  --color-success: #74dd7e;
+  --color-success-fg: #003910;
+  --color-warning: #ffb68b;
+  --color-warning-fg: #522300;
+  --color-danger: #ffb4ab;
+  --color-danger-fg: #690005;
+
+  --color-data-number: #acc7ff;
+  --color-data-string: #74dd7e;
+  --color-data-decimal: #ffb68b;
+  --color-data-temporal: #8b909f;
+  --color-data-null: #8b909f;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}

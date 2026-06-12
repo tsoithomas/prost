@@ -1,0 +1,31 @@
+services:
+  prost-postgres:
+    image: postgres:16-alpine
+    container_name: prost-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: prost
+      POSTGRES_PASSWORD: prost
+      POSTGRES_DB: prost
+    ports:
+      - "5433:5432"
+    volumes:
+      - prost-postgres-data:/var/lib/postgresql/data
+
+  demo-target-postgres:
+    image: postgres:16-alpine
+    container_name: demo-target-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: demo
+    ports:
+      - "5434:5432"
+    volumes:
+      - demo-target-postgres-data:/var/lib/postgresql/data
+      - ./docker/demo-target-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+
+volumes:
+  prost-postgres-data:
+  demo-target-postgres-data:

@@ -1,0 +1,26 @@
+.idea/
+
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+.turbo/
+
+# Env
+.env
+.env.local
+
+# Logs
+*.log
+pnpm-debug.log*
+
+# Editor / OS
+.DS_Store
+
+# Prisma
+apps/api/prisma/dev.db
+
+# Test coverage
+coverage/

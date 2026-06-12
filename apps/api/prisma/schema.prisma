@@ -1,0 +1,66 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  connections  Connection[]
+  queryHistory QueryHistory[]
+  preference   UserPreference?
+
+  @@map("users")
+}
+
+model Connection {
+  id                   String   @id @default(uuid())
+  userId               String
+  name                 String
+  host                 String
+  port                 Int
+  database             String
+  username             String
+  encryptedCredentials Json
+  sslEnabled           Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  queryHistory QueryHistory[]
+
+  @@map("connections")
+}
+
+model QueryHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  connectionId String
+  sql          String
+  executedAt   DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@map("query_history")
+}
+
+model UserPreference {
+  userId String @id
+
+  // Mirrors ColorMode ('light' | 'dark' | 'system') from @prost/shared-types.
+  colorMode   String @default("system")
+  accentColor String @default("#498fff")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_preferences")
+}

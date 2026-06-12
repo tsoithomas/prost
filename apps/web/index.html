@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Prost</title>
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('prost-theme');
+          var state = stored ? JSON.parse(stored).state : null;
+          var colorMode = (state && state.colorMode) || 'system';
+          var accentColor = (state && state.accentColor) || '#498fff';
+          var accentFg = (state && state.accentFg) || '#00285b';
+
+          var isDark =
+            colorMode === 'dark' ||
+            (colorMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
+          if (isDark) document.documentElement.classList.add('dark');
+          document.documentElement.style.setProperty('--color-accent', accentColor);
+          document.documentElement.style.setProperty('--color-accent-fg', accentFg);
+        } catch (e) {
+          /* ignore - falls back to default light theme */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
