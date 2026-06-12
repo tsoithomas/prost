@@ -3,7 +3,9 @@ import { Code, Database, History, Network, Plus } from 'lucide-react';
 import clsx from 'clsx';
 import { Button } from '@prost/ui';
 import { useActiveConnection } from '../api/connections';
+import { useQueryHistory } from '../api/history';
 import { useMetadata } from '../api/metadata';
+import { QueryHistoryList } from '../explorer/QueryHistoryList';
 import { SchemaTree } from '../explorer/SchemaTree';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -17,9 +19,8 @@ const sidebarTabs: { key: SidebarTab; label: string; icon: typeof Database }[] =
   { key: 'snippets', label: 'Snippets', icon: Code },
 ];
 
-const placeholderText: Record<Exclude<SidebarTab, 'explorer'>, string> = {
+const placeholderText: Record<Exclude<SidebarTab, 'explorer' | 'history'>, string> = {
   connections: 'No saved connections yet.',
-  history: 'Query history will appear here.',
   snippets: 'Saved snippets will appear here.',
 };
 
@@ -32,9 +33,11 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
   const activeConnection = useActiveConnection();
   const { data: schemas, isLoading, isError } = useMetadata(activeConnectionId);
+  const { data: history, isLoading: isHistoryLoading, isError: isHistoryError } = useQueryHistory(activeConnectionId);
   const workspaceTabs = useWorkspaceStore((state) => state.tabs);
   const activeWorkspaceTabId = useWorkspaceStore((state) => state.activeTabId);
   const openTable = useWorkspaceStore((state) => state.openTable);
+  const loadQuery = useWorkspaceStore((state) => state.loadQuery);
 
   const activeWorkspaceTab = workspaceTabs.find((tab) => tab.id === activeWorkspaceTabId);
   const selectedTable =
@@ -92,6 +95,19 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
               schemas={schemas ?? []}
               selectedTable={selectedTable}
               onSelectTable={(table) => openTable(table.schema, table.name)}
+            />
+          )
+        ) : activeTab === 'history' ? (
+          activeConnectionId === null ? (
+            <p className="px-sm py-2 text-xs italic text-text-faint">
+              No active connection. Use "New Connection" to get started.
+            </p>
+          ) : (
+            <QueryHistoryList
+              items={history}
+              isLoading={isHistoryLoading}
+              isError={isHistoryError}
+              onSelect={loadQuery}
             />
           )
         ) : (

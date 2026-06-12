@@ -1,16 +1,29 @@
 import { LogOut, Plug } from 'lucide-react';
 import { Button, Surface } from '@prost/ui';
 import { useConnections } from '../api/connections';
+import { useQueryHistory } from '../api/history';
+import { QueryHistoryList } from '../explorer/QueryHistoryList';
 import { ThemeSettings } from '../layout/ThemeSettings';
 import { useAuthStore } from '../stores/authStore';
+import { useConnectionStore } from '../stores/connectionStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
 export interface MobileSettingsViewProps {
   onManageConnections: () => void;
+  onSelectHistoryQuery: () => void;
 }
 
-export function MobileSettingsView({ onManageConnections }: MobileSettingsViewProps) {
+export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery }: MobileSettingsViewProps) {
   const { data: connections = [] } = useConnections();
+  const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
+  const { data: history, isLoading: isHistoryLoading, isError: isHistoryError } = useQueryHistory(activeConnectionId);
+  const loadQuery = useWorkspaceStore((state) => state.loadQuery);
   const clearAuth = useAuthStore((state) => state.clear);
+
+  function handleSelectHistory(sql: string) {
+    loadQuery(sql);
+    onSelectHistoryQuery();
+  }
 
   return (
     <div className="flex-1 overflow-y-auto p-md">
@@ -48,6 +61,18 @@ export function MobileSettingsView({ onManageConnections }: MobileSettingsViewPr
             Manage Connections
           </Button>
         </section>
+
+        {activeConnectionId !== null ? (
+          <section>
+            <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">Recent Queries</h2>
+            <QueryHistoryList
+              items={history}
+              isLoading={isHistoryLoading}
+              isError={isHistoryError}
+              onSelect={handleSelectHistory}
+            />
+          </section>
+        ) : null}
 
         <section>
           <Button variant="ghost" size="sm" className="w-full justify-center !text-danger" onClick={clearAuth}>

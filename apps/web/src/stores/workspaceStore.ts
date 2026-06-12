@@ -11,9 +11,12 @@ export interface WorkspaceTab {
 interface WorkspaceState {
   tabs: WorkspaceTab[];
   activeTabId: string;
+  pendingQuerySql: string | null;
   openTable: (schema: string, table: string) => void;
   selectTab: (id: string) => void;
   closeTab: (id: string) => void;
+  loadQuery: (sql: string) => void;
+  clearPendingQuerySql: () => void;
 }
 
 const initialTabs: WorkspaceTab[] = [{ id: 'query-1', label: 'Query 1', kind: 'query' }];
@@ -21,6 +24,7 @@ const initialTabs: WorkspaceTab[] = [{ id: 'query-1', label: 'Query 1', kind: 'q
 export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   tabs: initialTabs,
   activeTabId: initialTabs[0]!.id,
+  pendingQuerySql: null,
 
   openTable: (schema, table) => {
     const id = `table:${schema}.${table}`;
@@ -44,4 +48,12 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
         id === state.activeTabId ? tabs[tabs.length - 1]?.id ?? tabs[0]?.id ?? id : state.activeTabId;
       return { tabs, activeTabId };
     }),
+
+  loadQuery: (sql) =>
+    set((state) => {
+      const queryTab = state.tabs.find((tab) => tab.kind === 'query');
+      return { pendingQuerySql: sql, activeTabId: queryTab?.id ?? state.activeTabId };
+    }),
+
+  clearPendingQuerySql: () => set({ pendingQuerySql: null }),
 }));

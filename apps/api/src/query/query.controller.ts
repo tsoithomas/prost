@@ -19,6 +19,6 @@ export class QueryController {
     @Body() dto: ExecuteQueryDto,
   ): Promise<QueryResult> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.queryService.execute(id, dto.sql);
+    return this.queryService.execute(id, dto.sql, user.userId);
   }
 }

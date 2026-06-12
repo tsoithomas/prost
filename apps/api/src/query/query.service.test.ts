@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ColumnMetadata } from '@prost/shared-types';
+import type { HistoryService } from '../history/history.service';
 import type { MetadataService } from '../metadata/metadata.service';
 import type { ParameterizedResult, PgConnectionService } from '../target-db/pg-connection.service';
 import { QUERY_PAGE_SIZE } from './paging';
@@ -27,8 +28,15 @@ function pgTypeResult(types: Record<number, string>): ParameterizedResult<{ oid:
 function createService(runParameterized = vi.fn(), tableColumns: ColumnMetadata[] = USERS_COLUMNS) {
   const metadataService = { getTableColumns: vi.fn().mockResolvedValue(tableColumns) } as unknown as MetadataService;
   const pgConnectionService = { runParameterized } as unknown as PgConnectionService;
+  const record = vi.fn().mockResolvedValue(undefined);
+  const historyService = { record } as unknown as HistoryService;
 
-  return { service: new QueryService(pgConnectionService, metadataService), runParameterized, metadataService };
+  return {
+    service: new QueryService(pgConnectionService, metadataService, historyService),
+    runParameterized,
+    metadataService,
+    record,
+  };
 }
 
 describe('QueryService.execute — SELECT', () => {
@@ -44,9 +52,9 @@ describe('QueryService.execute — SELECT', () => {
         }),
       )
       .mockResolvedValueOnce(pgTypeResult({ 23: 'int4', 1043: 'varchar' }));
-    const { service, metadataService } = createService(runParameterized);
+    const { service, metadataService, record } = createService(runParameterized);
 
-    const response = await service.execute('conn-1', 'SELECT * FROM users');
+    const response = await service.execute('conn-1', 'SELECT * FROM users', 'user-1');
 
     const [connectionId, sql, params] = runParameterized.mock.calls[0]!;
     expect(connectionId).toBe('conn-1');
@@ -67,6 +75,8 @@ describe('QueryService.execute — SELECT', () => {
       primaryKey: ['id'],
     });
     expect(response.executionTimeMs).toBeGreaterThanOrEqual(0);
+
+    expect(record).toHaveBeenCalledWith({ userId: 'user-1', connectionId: 'conn-1', sql: 'SELECT * FROM users' });
   });
 
   it('marks SELECT COUNT(*) as read-only even though it targets one table', async () => {
@@ -76,7 +86,7 @@ describe('QueryService.execute — SELECT', () => {
       .mockResolvedValueOnce(pgTypeResult({ 20: 'int8' }));
     const { service, metadataService } = createService(runParameterized);
 
-    const response = await service.execute('conn-1', 'SELECT COUNT(*) FROM users');
+    const response = await service.execute('conn-1', 'SELECT COUNT(*) FROM users', 'user-1');
 
     expect(metadataService.getTableColumns).toHaveBeenCalledWith('conn-1', 'public', 'users');
     expect(response.editable).toBe(false);
@@ -91,7 +101,11 @@ describe('QueryService.execute — SELECT', () => {
       .mockResolvedValueOnce(pgTypeResult({ 23: 'int4' }));
     const { service, metadataService } = createService(runParameterized);
 
-    const response = await service.execute('conn-1', 'SELECT * FROM users JOIN orders ON orders.user_id = users.id');
+    const response = await service.execute(
+      'conn-1',
+      'SELECT * FROM users JOIN orders ON orders.user_id = users.id',
+      'user-1',
+    );
 
     expect(metadataService.getTableColumns).not.toHaveBeenCalled();
     expect(response.editable).toBe(false);
@@ -105,7 +119,7 @@ describe('QueryService.execute — SELECT', () => {
       .mockResolvedValueOnce(pgTypeResult({ 23: 'int4' }));
     const { service } = createService(runParameterized, NO_PK_COLUMNS);
 
-    const response = await service.execute('conn-1', 'SELECT * FROM big_table');
+    const response = await service.execute('conn-1', 'SELECT * FROM big_table', 'user-1');
 
     expect(response.rows).toHaveLength(QUERY_PAGE_SIZE);
     expect(response.totalRows).toBe(QUERY_PAGE_SIZE);
@@ -117,9 +131,9 @@ describe('QueryService.execute — SELECT', () => {
 describe('QueryService.execute — non-SELECT', () => {
   it('returns an affected-row count instead of a grid for UPDATE', async () => {
     const runParameterized = vi.fn().mockResolvedValueOnce(result([], { rowCount: 1, command: 'UPDATE' }));
-    const { service, metadataService } = createService(runParameterized);
+    const { service, metadataService, record } = createService(runParameterized);
 
-    const response = await service.execute('conn-1', "UPDATE users SET email = 'x' WHERE id = 1");
+    const response = await service.execute('conn-1', "UPDATE users SET email = 'x' WHERE id = 1", 'user-1');
 
     const [connectionId, sql] = runParameterized.mock.calls[0]!;
     expect(connectionId).toBe('conn-1');
@@ -135,15 +149,22 @@ describe('QueryService.execute — non-SELECT', () => {
       command: 'UPDATE',
       rowCount: 1,
     });
+
+    expect(record).toHaveBeenCalledWith({
+      userId: 'user-1',
+      connectionId: 'conn-1',
+      sql: "UPDATE users SET email = 'x' WHERE id = 1",
+    });
   });
 
   it('falls back to executing unparseable SQL as-is and surfaces the driver error', async () => {
     const runParameterized = vi.fn().mockRejectedValueOnce(new Error('syntax error'));
-    const { service } = createService(runParameterized);
+    const { service, record } = createService(runParameterized);
 
-    await expect(service.execute('conn-1', 'SELEKT * FROM users')).rejects.toThrow('syntax error');
+    await expect(service.execute('conn-1', 'SELEKT * FROM users', 'user-1')).rejects.toThrow('syntax error');
 
     const [, sql] = runParameterized.mock.calls[0]!;
     expect(sql).toBe('SELEKT * FROM users');
+    expect(record).not.toHaveBeenCalled();
   });
 });

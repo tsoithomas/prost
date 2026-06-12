@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import Editor, { type Monaco } from '@monaco-editor/react';
 import { AgGridReact } from 'ag-grid-react';
 import type {
@@ -28,6 +29,7 @@ import { useToasts } from '../hooks/useToasts';
 import { ApiError, apiErrorDetail, apiErrorMessage } from '../lib/apiClient';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useThemeStore } from '../stores/themeStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
 const DEFAULT_QUERY = '-- Press Cmd/Ctrl+Enter to run\nSELECT * FROM users;';
 
@@ -43,6 +45,9 @@ export function SqlEditorView() {
   const connectionId = useConnectionStore((state) => state.activeConnectionId);
   const colorMode = useThemeStore((state) => state.colorMode);
   const accentColor = useThemeStore((state) => state.accentColor);
+  const pendingQuerySql = useWorkspaceStore((state) => state.pendingQuerySql);
+  const clearPendingQuerySql = useWorkspaceStore((state) => state.clearPendingQuerySql);
+  const queryClient = useQueryClient();
   const monacoTheme = resolveColorMode(colorMode) === 'dark' ? PROST_DARK_THEME : PROST_LIGHT_THEME;
   const monacoRef = useRef<Monaco | null>(null);
   const gridApiRef = useRef<GridApi | null>(null);
@@ -82,6 +87,14 @@ export function SqlEditorView() {
     monacoRef.current.editor.setTheme(monacoTheme);
   }, [colorMode, accentColor, monacoTheme]);
 
+  // Loading a query from history sets `pendingQuerySql` (see `workspaceStore.loadQuery`);
+  // consume it into the editor buffer and clear it so it doesn't reapply on remount.
+  useEffect(() => {
+    if (pendingQuerySql === null) return;
+    setSql(pendingQuerySql);
+    clearPendingQuerySql();
+  }, [pendingQuerySql, clearPendingQuerySql]);
+
   const runQuery = useCallback(() => {
     const trimmed = sql.trim();
     if (!connectionId || !trimmed || executeQuery.isPending) return;
@@ -96,10 +109,11 @@ export function SqlEditorView() {
         onSuccess: (response) => {
           setResult(response);
           setRowData(response.rows);
+          queryClient.invalidateQueries({ queryKey: ['history', connectionId] });
         },
       },
     );
-  }, [connectionId, executeQuery, sql]);
+  }, [connectionId, executeQuery, sql, queryClient]);
 
   // Monaco's Cmd/Ctrl+Enter command is registered once in `onMount`, so route it through a
   // ref to always call the latest `runQuery` (current `sql`/`connectionId`).

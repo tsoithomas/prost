@@ -11,13 +11,15 @@ implementation plans + status live in [`docs/plans/`](docs/plans/README.md). Dur
 architectural rules (read before making non-trivial changes — a violation is a defect
 even if it works): [`docs/architecture-principles.md`](docs/architecture-principles.md).
 
-**Current status**: Phases 1-3 complete. Login (JWT via `/auth/login`, guarded `/app/*`
+**Current status**: Phases 1-4 complete. Login (JWT via `/auth/login`, guarded `/app/*`
 routes), connection CRUD + test (`/connections`), real schema tree
 (`/connections/:id/metadata`), paginated table rows via AG Grid's Infinite Row Model
 (`/connections/:id/tables/:schema/:table/rows`) with inline cell editing + row insert/delete,
 and a Monaco SQL editor wired to real execution (`POST /connections/:id/query`) with a
 server-side editability analyzer — results render in the same grid, editable only when the
-backend says so. Query history persistence is still Phase 4.
+backend says so. Every successful query is recorded server-side via `HistoryModule`
+(`GET /connections/:id/history`), surfaced as a recent-queries panel in the Sidebar's History
+tab and mobile Settings — clicking an entry loads it back into Monaco.
 
 ## Commands
 

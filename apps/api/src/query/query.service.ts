@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Parser } from 'node-sql-parser';
 import type { ColumnMetadata, QueryResult } from '@prost/shared-types';
+import { HistoryService } from '../history/history.service';
 import { MetadataService } from '../metadata/metadata.service';
 import { PgConnectionService } from '../target-db/pg-connection.service';
 import { analyzeEditability, extractSingleTable, type EditabilityResult, type ParsedStatement } from './editability';
@@ -25,13 +26,20 @@ export class QueryService {
   constructor(
     private readonly pgConnectionService: PgConnectionService,
     private readonly metadataService: MetadataService,
+    private readonly historyService: HistoryService,
   ) {}
 
-  async execute(connectionId: string, sql: string): Promise<QueryResult> {
+  async execute(connectionId: string, sql: string, userId: string): Promise<QueryResult> {
     const statements = this.parseStatements(sql);
     const isSingleSelect = statements.length === 1 && statements[0]?.type === 'select';
 
-    return isSingleSelect ? this.executeSelect(connectionId, sql, statements) : this.executeOther(connectionId, sql);
+    const result = isSingleSelect
+      ? await this.executeSelect(connectionId, sql, statements)
+      : await this.executeOther(connectionId, sql);
+
+    await this.historyService.record({ userId, connectionId, sql });
+
+    return result;
   }
 
   /** `node-sql-parser` throws on input it can't parse — fall back to executing it as-is and let Postgres report the error. */
