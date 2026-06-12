@@ -6,7 +6,8 @@ name: Release
 #   BREAKING CHANGE: -> major
 #
 # semantic-release bumps package.json's version, updates CHANGELOG.md, tags the
-# commit, and creates a GitHub Release - all on pushes to main.
+# commit, and creates a GitHub Release - all on pushes to main. Code quality is
+# gated separately by ci.yml.
 
 on:
   push:
@@ -38,14 +39,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Build
-        run: pnpm -w build
-
-      - name: Lint and test
-        run: |
-          pnpm -w lint
-          pnpm -w test
 
       - name: Semantic release
         env:
