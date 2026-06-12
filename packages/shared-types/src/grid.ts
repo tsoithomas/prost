@@ -11,6 +11,19 @@ export interface GridResponse {
 
 export interface QueryResult extends GridResponse {
   executionTimeMs: number;
+  /** `true` when more rows exist beyond the returned page (architecture principle §7). */
+  truncated?: boolean;
+  /**
+   * For non-`SELECT` statements (`UPDATE`/`INSERT`/`DELETE`/DDL): the executed command (e.g.
+   * `'UPDATE'`) and rows affected. `rows`/`columns` are empty and `editable` is `false`.
+   */
+  command?: string;
+  rowCount?: number;
+}
+
+/** Body for `POST /connections/:id/query`. */
+export interface ExecuteQueryBody {
+  sql: string;
 }
 
 export interface RowUpdateRequest {

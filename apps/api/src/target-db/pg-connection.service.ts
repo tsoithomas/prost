@@ -18,6 +18,7 @@ export interface ParameterizedResult<T extends QueryResultRow = QueryResultRow> 
   rows: T[];
   fields: { name: string; dataTypeID: number }[];
   rowCount: number | null;
+  command: string;
 }
 
 const CONNECT_TIMEOUT_MS = 5000;
@@ -74,7 +75,7 @@ export class PgConnectionService {
       this.logger.log(
         `target query ok connectionId=${connectionId} durationMs=${Date.now() - start}`,
       );
-      return { rows: result.rows, fields: result.fields, rowCount: result.rowCount };
+      return { rows: result.rows, fields: result.fields, rowCount: result.rowCount, command: result.command };
     } catch (error) {
       this.logger.warn(
         `target query failed connectionId=${connectionId} durationMs=${Date.now() - start} error=${

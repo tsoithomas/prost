@@ -9,6 +9,7 @@ import { TargetDbModule } from './target-db/target-db.module';
 import { ConnectionsModule } from './connections/connections.module';
 import { MetadataModule } from './metadata/metadata.module';
 import { GridModule } from './grid/grid.module';
+import { QueryModule } from './query/query.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { GridModule } from './grid/grid.module';
     ConnectionsModule,
     MetadataModule,
     GridModule,
+    QueryModule,
   ],
   controllers: [AppController],
 })

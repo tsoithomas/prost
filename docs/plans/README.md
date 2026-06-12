@@ -15,8 +15,8 @@ passes **and** it violates none of the architecture principles.
 | --- | --- | --- |
 | [0](./phase-0-scaffold.md) | Scaffold & infra (pnpm/Turborepo, Docker, design-system shell) | ✅ Complete |
 | [1](./phase-1-vertical-slice.md) | Vertical slice: login → connection → schema tree → table rows | ✅ Complete |
-| [2](./phase-2-editing.md) | Inline editing: cell update, insert row, delete row | 📋 Planned |
-| [3](./phase-3-sql-editor.md) | SQL editor + editability analyzer | 📋 Planned |
+| [2](./phase-2-editing.md) | Inline editing: cell update, insert row, delete row | ✅ Complete |
+| [3](./phase-3-sql-editor.md) | SQL editor + editability analyzer | ✅ Complete |
 | [4](./phase-4-query-history.md) | Query history | 📋 Planned |
 | [5](./phase-5-theming-responsiveness.md) | Theming & responsiveness hardening | 📋 Planned |
 

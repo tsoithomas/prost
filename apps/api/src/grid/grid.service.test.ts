@@ -16,7 +16,7 @@ const NO_PK_COLUMNS: ColumnMetadata[] = [
 ];
 
 function result<T>(rows: T[]): ParameterizedResult<T extends Record<string, unknown> ? T : never> {
-  return { rows: rows as never, fields: [], rowCount: rows.length };
+  return { rows: rows as never, fields: [], rowCount: rows.length, command: 'SELECT' };
 }
 
 function createService(runParameterized = vi.fn(), columns: ColumnMetadata[] = COLUMNS) {
