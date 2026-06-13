@@ -151,7 +151,13 @@ add-on.
 
 - Out of scope until explicitly revisited: non-Postgres engines, SSH tunneling, ER diagrams,
   team/multi-tenant features, stored-procedure/trigger editors, advanced RBAC, query plans,
-  background jobs, scheduling, AI features.
+  background jobs, scheduling.
+- **AI features are no longer blanket out-of-scope** — they're tracked for upcoming
+  development in [`docs/future-features.md`](./future-features.md) (e.g. a schema-aware
+  chat/RAG assistant). They remain subject to every other principle: no path to a target DB
+  outside `PgConnectionService` (§1), no credentials/row data/bound values sent to an
+  external model (§3), and any model-facing context is built from the same server-validated
+  metadata the rest of the app uses (§4).
 - Build the smallest thing that satisfies the principle. Add abstraction when a second real
   caller appears, not in anticipation.
 - **Scope-freeze guards product surface, not internal health.** Cross-cutting refactors that
