@@ -182,35 +182,35 @@ grounded via retrieval over schema metadata (and possibly query history).
 A rough sequencing for the four features added above (connection string import, schema/index
 viewing & editing, create table, AI chat with RAG), based on effort and dependency — not a
 commitment. Numbering continues from `docs/plans/`'s completed phases (0-5), so the next
-phase picked up from this backlog is **Stage 6**. When picked up, turn the relevant stage into
-a real `docs/plans/phase-N-*.md` (context, decisions, verification, out-of-scope) with the
-matching number.
+phase picked up from this backlog is **Stage 6**. Each stage now has a full plan under
+[`docs/plans/`](./plans/) (linked below); see [`docs/plans/README.md`](./plans/README.md)'s
+status table.
 
-**Stage 6 — Connection string import** *(small, independent)*
+**Stage 6 — Connection string import** *(small, independent)* — [plan](./plans/phase-6-connection-string-import.md)
 Parse a `postgres://user:pass@host:port/db?sslmode=...` string in `ConnectionModal` into the
 existing host/port/database/user/password/SSL fields. Pure frontend (a small parser, likely
 in `packages/utils`), no backend or schema changes. Can land any time, independent of
 everything else here.
 
-**Stage 7 — View schema & indexes** *(medium, read-only)*
+**Stage 7 — View schema & indexes** *(medium, read-only)* — [plan](./plans/phase-7-schema-index-viewing.md)
 Extend the Metadata module/endpoint to include index definitions per table
 (`pg_indexes`/`pg_index`), and extend `SchemaTree` / add a table-detail panel to show them.
 Purely additive read queries through the existing `PgConnectionService` — no DDL execution
 yet.
 
-**Stage 8 — Create table** *(medium-large, foundational)*
+**Stage 8 — Create table** *(medium-large, foundational)* — [plan](./plans/phase-8-create-table.md)
 The first DDL-*writing* feature: a form (table name, columns with type/nullable/default,
 primary key) that generates a `CREATE TABLE` statement, previews it, and executes it through
 `PgConnectionService` with identifiers validated via `quoteIdent` and types drawn from a
 server-side allow-list. Establishes the **generate → preview → confirm → execute** DDL
 pattern that Stage 9 reuses.
 
-**Stage 9 — Edit schema & indexes** *(medium-large, depends on Stage 8)*
+**Stage 9 — Edit schema & indexes** *(medium-large, depends on Stage 8)* — [plan](./plans/phase-9-edit-schema-indexes.md)
 Alter column type/nullable/default, add/drop indexes, using the same
 preview/confirm/execute pattern as Stage 8 (`ALTER TABLE` / `CREATE INDEX` / `DROP INDEX`).
 Builds on Stage 7 (you need to see an index to drop it) and Stage 8's DDL pattern.
 
-**Stage 10 — AI chat interface with RAG** *(largest, most novel)*
+**Stage 10 — AI chat interface with RAG** *(largest, most novel)* — [plan](./plans/phase-10-ai-chat-rag.md)
 Needs new infrastructure (LLM provider integration, retrieval over schema metadata and
 possibly history) and its own design pass per the updated §13 — explicit decisions on what
 context is sent to the model, logged separately from this backlog entry. Benefits from
