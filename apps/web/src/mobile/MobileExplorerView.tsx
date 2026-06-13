@@ -49,7 +49,11 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
             schemas={schemas ?? []}
             selectedTable={selectedTable}
             onSelectTable={(table) => {
-              openTable(table.schema, table.name);
+              openTable(table.schema, table.name, 'rows');
+              onSelectTable?.();
+            }}
+            onOpenStructure={(table) => {
+              openTable(table.schema, table.name, 'structure');
               onSelectTable?.();
             }}
           />

@@ -145,7 +145,8 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
             <SchemaTree
               schemas={schemas ?? []}
               selectedTable={selectedTable}
-              onSelectTable={(table) => openTable(table.schema, table.name)}
+              onSelectTable={(table) => openTable(table.schema, table.name, 'rows')}
+              onOpenStructure={(table) => openTable(table.schema, table.name, 'structure')}
             />
           )
         ) : activeTab === 'history' ? (

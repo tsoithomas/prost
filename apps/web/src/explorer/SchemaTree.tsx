@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Box, ChevronDown, ChevronRight, Table2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Box, ChevronDown, ChevronRight, Rows3, StretchHorizontal, Table2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { SchemaMetadata, TableSummary } from '@prost/shared-types';
 
@@ -8,10 +8,29 @@ export interface SchemaTreeProps {
   /** Composite `schema.table` key of the selected table, or `null` if none is selected. */
   selectedTable: string | null;
   onSelectTable: (table: TableSummary) => void;
+  onOpenStructure: (table: TableSummary) => void;
 }
 
-export function SchemaTree({ schemas, selectedTable, onSelectTable }: SchemaTreeProps) {
+interface ContextMenuState {
+  x: number;
+  y: number;
+  table: TableSummary;
+}
+
+export function SchemaTree({ schemas, selectedTable, onSelectTable, onOpenStructure }: SchemaTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    document.addEventListener('click', close);
+    document.addEventListener('contextmenu', close);
+    return () => {
+      document.removeEventListener('click', close);
+      document.removeEventListener('contextmenu', close);
+    };
+  }, [contextMenu]);
 
   function toggleSchema(name: string) {
     setCollapsed((prev) => {
@@ -48,6 +67,11 @@ export function SchemaTree({ schemas, selectedTable, onSelectTable }: SchemaTree
                     key={table.name}
                     type="button"
                     onClick={() => onSelectTable(table)}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setContextMenu({ x: e.clientX, y: e.clientY, table });
+                    }}
                     className={clsx(
                       'flex items-center gap-1 rounded-sm px-1 py-1 text-left text-xs transition-colors',
                       selectedTable === `${table.schema}.${table.name}`
@@ -64,6 +88,37 @@ export function SchemaTree({ schemas, selectedTable, onSelectTable }: SchemaTree
           </div>
         );
       })}
+
+      {contextMenu ? (
+        <div
+          className="fixed z-50 min-w-[160px] overflow-hidden rounded-md border border-border bg-surface py-1 shadow-lg"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text hover:bg-surface-hover"
+            onClick={() => {
+              onSelectTable(contextMenu.table);
+              setContextMenu(null);
+            }}
+          >
+            <Rows3 size={13} />
+            Browse rows
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text hover:bg-surface-hover"
+            onClick={() => {
+              onOpenStructure(contextMenu.table);
+              setContextMenu(null);
+            }}
+          >
+            <StretchHorizontal size={13} />
+            View structure
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

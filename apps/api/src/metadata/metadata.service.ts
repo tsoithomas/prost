@@ -95,7 +95,7 @@ export class MetadataService {
            WHERE  a.attrelid = t.oid
              AND  a.attnum   = ANY(ix.indkey)
            ORDER BY array_position(ix.indkey::int[], a.attnum)
-         ) AS columns
+         )::text[] AS columns
        FROM   pg_index     ix
        JOIN   pg_class     t  ON t.oid  = ix.indrelid
        JOIN   pg_class     i  ON i.oid  = ix.indexrelid

@@ -6,6 +6,7 @@ export interface WorkspaceTab {
   kind: 'table' | 'query';
   schema?: string;
   table?: string;
+  viewMode?: 'rows' | 'structure';
 }
 
 export interface CursorPosition {
@@ -18,7 +19,8 @@ interface WorkspaceState {
   activeTabId: string;
   pendingQuerySql: string | null;
   cursorPosition: CursorPosition | null;
-  openTable: (schema: string, table: string) => void;
+  openTable: (schema: string, table: string, viewMode?: 'rows' | 'structure') => void;
+  setTabViewMode: (id: string, viewMode: 'rows' | 'structure') => void;
   selectTab: (id: string) => void;
   closeTab: (id: string) => void;
   loadQuery: (sql: string) => void;
@@ -34,18 +36,26 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   pendingQuerySql: null,
   cursorPosition: null,
 
-  openTable: (schema, table) => {
+  openTable: (schema, table, viewMode = 'rows') => {
     const id = `table:${schema}.${table}`;
     set((state) => {
       if (state.tabs.some((tab) => tab.id === id)) {
-        return { activeTabId: id };
+        return {
+          activeTabId: id,
+          tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode } : tab)),
+        };
       }
       return {
-        tabs: [...state.tabs, { id, label: table, kind: 'table', schema, table }],
+        tabs: [...state.tabs, { id, label: table, kind: 'table', schema, table, viewMode }],
         activeTabId: id,
       };
     });
   },
+
+  setTabViewMode: (id, viewMode) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode } : tab)),
+    })),
 
   selectTab: (id) => set({ activeTabId: id }),
 

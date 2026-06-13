@@ -11,6 +11,7 @@ export function Workspace() {
   const activeTabId = useWorkspaceStore((state) => state.activeTabId);
   const selectTab = useWorkspaceStore((state) => state.selectTab);
   const closeTab = useWorkspaceStore((state) => state.closeTab);
+  const setTabViewMode = useWorkspaceStore((state) => state.setTabViewMode);
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
   const activeConnection = useActiveConnection();
 
@@ -27,7 +28,13 @@ export function Workspace() {
       <Breadcrumbs segments={breadcrumbSegments} />
       <WorkspaceTabBar tabs={tabs} activeTabId={activeTabId} onSelect={selectTab} onClose={closeTab} />
       {activeTab?.kind === 'table' && activeTab.schema && activeTab.table && activeConnectionId ? (
-        <TableView connectionId={activeConnectionId} schema={activeTab.schema} table={activeTab.table} />
+        <TableView
+          connectionId={activeConnectionId}
+          schema={activeTab.schema}
+          table={activeTab.table}
+          viewMode={activeTab.viewMode ?? 'rows'}
+          onViewModeChange={(vm) => setTabViewMode(activeTab.id, vm)}
+        />
       ) : null}
       {activeTab?.kind === 'query' ? <SqlEditorView /> : null}
       {!activeTab ? (

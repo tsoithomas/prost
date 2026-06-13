@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AgGridReact } from 'ag-grid-react';
 import type {
@@ -24,6 +24,8 @@ export interface TableViewProps {
   connectionId: string;
   schema: string;
   table: string;
+  viewMode: 'rows' | 'structure';
+  onViewModeChange: (mode: 'rows' | 'structure') => void;
 }
 
 const PAGE_SIZE = 100;
@@ -32,17 +34,12 @@ function rowsUrl(connectionId: string, schema: string, table: string, search: UR
   return `/connections/${connectionId}/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/rows?${search}`;
 }
 
-export function TableView({ connectionId, schema, table }: TableViewProps) {
+export function TableView({ connectionId, schema, table, viewMode, onViewModeChange }: TableViewProps) {
   const gridApiRef = useRef<GridApi | null>(null);
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
-  const [viewMode, setViewMode] = useState<'rows' | 'structure'>('rows');
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const { confirm, dialog: confirmDialog } = useConfirm();
-
-  useEffect(() => {
-    setViewMode('rows');
-  }, [schema, table]);
 
   const columnsQuery = useQuery({
     queryKey: ['grid-columns', connectionId, schema, table],
@@ -224,7 +221,7 @@ export function TableView({ connectionId, schema, table }: TableViewProps) {
               type="button"
               variant={viewMode === 'rows' ? 'secondary' : 'ghost'}
               size="sm"
-              onClick={() => setViewMode('rows')}
+              onClick={() => onViewModeChange('rows')}
               className="rounded-none border-0"
             >
               Rows
@@ -234,7 +231,7 @@ export function TableView({ connectionId, schema, table }: TableViewProps) {
               type="button"
               variant={viewMode === 'structure' ? 'secondary' : 'ghost'}
               size="sm"
-              onClick={() => setViewMode('structure')}
+              onClick={() => onViewModeChange('structure')}
               className="rounded-none border-0"
             >
               Structure
