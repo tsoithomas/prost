@@ -39,7 +39,7 @@ describe('GridService.getRows', () => {
 
     await service.getRows('conn-1', 'public', 'users', { limit: 50, offset: 10 });
 
-    const [connectionId, sql, params] = runParameterized.mock.calls[0];
+    const [connectionId, sql, params] = runParameterized.mock.calls[0]!;
     expect(connectionId).toBe('conn-1');
     expect(sql).toBe('SELECT * FROM "public"."users" ORDER BY "id" ASC LIMIT $1 OFFSET $2');
     expect(params).toEqual([50, 10]);
@@ -54,7 +54,7 @@ describe('GridService.getRows', () => {
 
     await service.getRows('conn-1', 'public', 'users', { sortBy: 'email', sortDir: 'desc' });
 
-    const [, sql] = runParameterized.mock.calls[0];
+    const [, sql] = runParameterized.mock.calls[0]!;
     expect(sql).toBe('SELECT * FROM "public"."users" ORDER BY "email" DESC LIMIT $1 OFFSET $2');
   });
 
@@ -67,7 +67,7 @@ describe('GridService.getRows', () => {
 
     await service.getRows('conn-1', 'public', 'users', { sortBy: 'email; DROP TABLE users' });
 
-    const [, sql] = runParameterized.mock.calls[0];
+    const [, sql] = runParameterized.mock.calls[0]!;
     expect(sql).toBe('SELECT * FROM "public"."users" ORDER BY "id" ASC LIMIT $1 OFFSET $2');
     expect(sql).not.toContain('DROP TABLE');
   });
@@ -81,7 +81,7 @@ describe('GridService.getRows', () => {
 
     const response = await service.getRows('conn-1', 'public', 'users', {});
 
-    const [, sql, params] = runParameterized.mock.calls[1];
+    const [, sql, params] = runParameterized.mock.calls[1]!;
     expect(sql).toContain('pg_class');
     expect(sql).toContain('to_regclass');
     expect(params).toEqual(['public', 'users']);
@@ -120,7 +120,7 @@ describe('GridService.updateCell', () => {
       value: 'new@x.com',
     });
 
-    const [connectionId, sql, params] = runParameterized.mock.calls[0];
+    const [connectionId, sql, params] = runParameterized.mock.calls[0]!;
     expect(connectionId).toBe('conn-1');
     expect(sql).toBe('UPDATE "public"."users" SET "email" = $1 WHERE "id" = $2 RETURNING *');
     expect(params).toEqual(['new@x.com', 1]);
@@ -168,7 +168,7 @@ describe('GridService.insertRow', () => {
 
     const row = await service.insertRow('conn-1', 'public', 'users', { values: { email: 'new@x.com' } });
 
-    const [, sql, params] = runParameterized.mock.calls[0];
+    const [, sql, params] = runParameterized.mock.calls[0]!;
     expect(sql).toBe('INSERT INTO "public"."users" ("email") VALUES ($1) RETURNING *');
     expect(params).toEqual(['new@x.com']);
     expect(row).toEqual({ id: 2, email: 'new@x.com' });
@@ -180,7 +180,7 @@ describe('GridService.insertRow', () => {
 
     await service.insertRow('conn-1', 'public', 'users', { values: { email: 'new@x.com', evil: 'DROP TABLE' } });
 
-    const [, sql, params] = runParameterized.mock.calls[0];
+    const [, sql, params] = runParameterized.mock.calls[0]!;
     expect(sql).toBe('INSERT INTO "public"."users" ("email") VALUES ($1) RETURNING *');
     expect(params).toEqual(['new@x.com']);
   });
@@ -191,7 +191,7 @@ describe('GridService.insertRow', () => {
 
     await service.insertRow('conn-1', 'public', 'users', { values: {} });
 
-    const [, sql, params] = runParameterized.mock.calls[0];
+    const [, sql, params] = runParameterized.mock.calls[0]!;
     expect(sql).toBe('INSERT INTO "public"."users" DEFAULT VALUES RETURNING *');
     expect(params).toEqual([]);
   });
@@ -212,7 +212,7 @@ describe('GridService.deleteRow', () => {
 
     await service.deleteRow('conn-1', 'public', 'users', { primaryKey: { id: 1 } });
 
-    const [connectionId, sql, params] = runParameterized.mock.calls[0];
+    const [connectionId, sql, params] = runParameterized.mock.calls[0]!;
     expect(connectionId).toBe('conn-1');
     expect(sql).toBe('DELETE FROM "public"."users" WHERE "id" = $1');
     expect(params).toEqual([1]);

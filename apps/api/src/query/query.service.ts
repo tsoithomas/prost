@@ -5,7 +5,7 @@ import { HistoryService } from '../history/history.service';
 import { MetadataService } from '../metadata/metadata.service';
 import { PgConnectionService } from '../target-db/pg-connection.service';
 import { analyzeEditability, extractSingleTable, type EditabilityResult, type ParsedStatement } from './editability';
-import { buildPagedQuery, QUERY_PAGE_SIZE } from './paging';
+import { buildPagedQuery, looksLikeSingleSelect, QUERY_PAGE_SIZE } from './paging';
 
 interface FieldInfo {
   name: string;
@@ -32,10 +32,13 @@ export class QueryService {
   async execute(connectionId: string, sql: string, userId: string): Promise<QueryResult> {
     const statements = this.parseStatements(sql);
     const isSingleSelect = statements.length === 1 && statements[0]?.type === 'select';
+    const isUnparsedSelect = statements.length === 0 && looksLikeSingleSelect(sql);
 
     const result = isSingleSelect
       ? await this.executeSelect(connectionId, sql, statements)
-      : await this.executeOther(connectionId, sql);
+      : isUnparsedSelect
+        ? await this.executeUnparsedSelect(connectionId, sql)
+        : await this.executeOther(connectionId, sql);
 
     await this.historyService.record({ userId, connectionId, sql });
 
@@ -72,6 +75,39 @@ export class QueryService {
       truncated,
       executionTimeMs,
       ...editability,
+    };
+  }
+
+  /**
+   * `node-sql-parser` couldn't classify this statement, but it lexically looks like a single
+   * `SELECT` (e.g. a CTE or Postgres-only syntax the parser doesn't support). Page it like a
+   * real SELECT (principle §7); if the `buildPagedQuery` wrapper itself fails to parse on the
+   * server, fall back to `executeOther` so Postgres reports the original error unbounded.
+   */
+  private async executeUnparsedSelect(connectionId: string, sql: string): Promise<QueryResult> {
+    const { sql: pagedSql, params } = buildPagedQuery(sql);
+
+    const start = Date.now();
+    let rows: Record<string, unknown>[];
+    let fields: FieldInfo[];
+    try {
+      ({ rows, fields } = await this.pgConnectionService.runParameterized(connectionId, pagedSql, params));
+    } catch {
+      return this.executeOther(connectionId, sql);
+    }
+    const executionTimeMs = Date.now() - start;
+
+    const truncated = rows.length > QUERY_PAGE_SIZE;
+    const pageRows = truncated ? rows.slice(0, QUERY_PAGE_SIZE) : rows;
+    const columns = await this.mapColumns(connectionId, fields);
+
+    return {
+      rows: pageRows,
+      columns,
+      totalRows: pageRows.length,
+      truncated,
+      editable: false,
+      executionTimeMs,
     };
   }
 

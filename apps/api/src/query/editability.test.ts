@@ -6,7 +6,7 @@ const parser = new Parser();
 
 function parse(sql: string): ParsedStatement[] {
   const ast = parser.astify(sql, { database: 'postgresql' });
-  return (Array.isArray(ast) ? ast : [ast]) as ParsedStatement[];
+  return (Array.isArray(ast) ? ast : [ast]) as unknown as ParsedStatement[];
 }
 
 const USERS_PK = ['id'];

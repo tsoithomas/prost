@@ -13,6 +13,7 @@ function buildConnection(overrides: Partial<Connection> = {}): Connection {
     username: 'demo',
     encryptedCredentials: { iv: 'iv', tag: 'tag', data: 'data' },
     sslEnabled: false,
+    sslRejectUnauthorized: true,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     ...overrides,
@@ -31,13 +32,14 @@ describe('toConnectionDto', () => {
       database: 'demo',
       username: 'demo',
       sslEnabled: false,
+      sslRejectUnauthorized: true,
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
     });
   });
 
   it('never includes the password or encrypted credentials', () => {
-    const dto = toConnectionDto(buildConnection()) as Record<string, unknown>;
+    const dto = toConnectionDto(buildConnection()) as unknown as Record<string, unknown>;
 
     expect(dto).not.toHaveProperty('password');
     expect(dto).not.toHaveProperty('encryptedCredentials');

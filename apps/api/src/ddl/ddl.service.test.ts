@@ -211,3 +211,43 @@ describe('DdlService.createTable — validation', () => {
     ).rejects.toBeInstanceOf(ConflictException);
   });
 });
+
+describe('DdlService.createTable — type/default normalization', () => {
+  it('rejects a type with an embedded statement terminator, before reaching the database', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.createTable('conn-1', {
+        schema: 'public',
+        table: 't',
+        columns: [{ name: 'col', type: 'integer); DROP TABLE users; --', nullable: true, isPrimaryKey: false }],
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('rejects a length parameter on a type that does not support one (e.g. integer(10))', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.createTable('conn-1', {
+        schema: 'public',
+        table: 't',
+        columns: [{ name: 'col', type: 'integer(10)', nullable: true, isPrimaryKey: false }],
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('normalizes type casing/whitespace and default casing into canonical SQL', async () => {
+    const { service } = createService();
+    const result = await service.createTable('conn-1', {
+      schema: 'public',
+      table: 't',
+      columns: [
+        { name: 'col', type: '  VARCHAR( 255 ) ', nullable: true, isPrimaryKey: false },
+        { name: 'ts', type: 'TimestampTz', nullable: false, isPrimaryKey: false, default: '  NOW()  ' },
+      ],
+    });
+    expect(result.sql).toContain('"col" varchar(255)');
+    expect(result.sql).toContain('"ts" timestamptz NOT NULL DEFAULT now()');
+  });
+});

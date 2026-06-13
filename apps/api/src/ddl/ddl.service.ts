@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { quoteIdent } from '@prost/utils';
-import type { CreateTableRequest, CreateTableResult } from '@prost/shared-types';
+import type { CreateTableRequest, CreateTableResult, NewColumn } from '@prost/shared-types';
 import { PgConnectionService } from '../target-db/pg-connection.service';
 
 const ALLOWED_TYPES = new Set([
@@ -10,6 +10,13 @@ const ALLOWED_TYPES = new Set([
   'date', 'time', 'timestamp', 'timestamptz',
   'uuid', 'json', 'jsonb', 'bytea',
 ]);
+
+// Only these accept a (n) or (n,m) length/precision modifier in Postgres.
+const PARAMETERIZED_TYPES = new Set(['varchar', 'char', 'numeric']);
+
+// Anchored to the full (normalized) string so stray characters can't slip through
+// alongside an otherwise-valid type name.
+const TYPE_PATTERN = /^([a-z]+(?: [a-z]+)*)(\(\s*\d+\s*(?:,\s*\d+\s*)?\))?$/;
 
 const SAFE_DEFAULT_PATTERN = /^(\d+|true|false|null|now\(\)|current_timestamp|gen_random_uuid\(\))$/i;
 
@@ -28,12 +35,19 @@ export class DdlService {
       throw new UnprocessableEntityException(`Duplicate column name: "${duplicates[0]}"`);
     }
 
-    for (const col of req.columns) {
-      this.validateType(col.type);
-      this.validateDefault(col.default);
-    }
+    const columns: NewColumn[] = req.columns.map((col) => {
+      const type = this.validateType(col.type);
+      const canonicalDefault = this.validateDefault(col.default);
+      return {
+        name: col.name,
+        type,
+        nullable: col.nullable,
+        isPrimaryKey: col.isPrimaryKey,
+        ...(canonicalDefault !== null ? { default: canonicalDefault } : {}),
+      };
+    });
 
-    const sql = this.buildSql(req);
+    const sql = this.buildSql({ schema: req.schema, table: req.table, columns });
 
     try {
       await this.pgConnectionService.runParameterized(connectionId, sql, []);
@@ -48,22 +62,34 @@ export class DdlService {
     return { schema: req.schema, table: req.table, sql };
   }
 
-  private validateType(type: string): void {
-    const base = type.replace(/\(\s*\d+\s*(,\s*\d+\s*)?\)$/, '').trim().toLowerCase();
-    if (!ALLOWED_TYPES.has(base)) {
+  /** Returns the canonical (lowercased, whitespace-normalized) type that `buildSql` will emit verbatim. */
+  private validateType(type: string): string {
+    const normalized = type.trim().toLowerCase().replace(/\s+/g, ' ');
+    const match = TYPE_PATTERN.exec(normalized);
+    const base = match?.[1];
+    const params = match?.[2];
+    if (!base || !ALLOWED_TYPES.has(base)) {
       throw new UnprocessableEntityException(
         `Unsupported column type "${type}". Allowed types: ${[...ALLOWED_TYPES].join(', ')}`,
       );
     }
+    if (params && !PARAMETERIZED_TYPES.has(base)) {
+      throw new UnprocessableEntityException(`Type "${base}" does not accept a length/precision parameter`);
+    }
+    return `${base}${params ? params.replace(/\s+/g, '') : ''}`;
   }
 
-  private validateDefault(value: string | undefined): void {
-    if (value === undefined || value === '') return;
-    if (!SAFE_DEFAULT_PATTERN.test(value.trim())) {
+  /** Returns the canonical (trimmed, lowercased) default that `buildSql` will emit verbatim, or `null` if none. */
+  private validateDefault(value: string | undefined): string | null {
+    if (value === undefined) return null;
+    const trimmed = value.trim();
+    if (trimmed === '') return null;
+    if (!SAFE_DEFAULT_PATTERN.test(trimmed)) {
       throw new UnprocessableEntityException(
         `Unsupported default value "${value}". Allowed: now(), current_timestamp, gen_random_uuid(), true, false, null, or a non-negative integer`,
       );
     }
+    return trimmed.toLowerCase();
   }
 
   buildSql(req: CreateTableRequest): string {

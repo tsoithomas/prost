@@ -32,7 +32,7 @@ describe('toQueryHistoryDto', () => {
   });
 
   it('never includes the userId', () => {
-    const dto = toQueryHistoryDto(buildEntry()) as Record<string, unknown>;
+    const dto = toQueryHistoryDto(buildEntry()) as unknown as Record<string, unknown>;
 
     expect(dto).not.toHaveProperty('userId');
   });

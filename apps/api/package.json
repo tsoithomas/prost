@@ -8,6 +8,7 @@
     "start": "node dist/main.js",
     "lint": "eslint .",
     "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "dotenv -e ../../.env -- prisma migrate dev",
     "prisma:seed": "dotenv -e ../../.env -- tsx prisma/seed.ts"

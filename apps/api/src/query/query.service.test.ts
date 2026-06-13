@@ -128,6 +128,49 @@ describe('QueryService.execute — SELECT', () => {
   });
 });
 
+describe('QueryService.execute — unparsed SELECT', () => {
+  const UNPARSEABLE_SELECT = 'SELECT * FROM big_table FOR UPDATE SKIP LOCKED';
+
+  it('pages a SELECT that node-sql-parser cannot classify instead of loading it unbounded', async () => {
+    const runParameterized = vi
+      .fn()
+      .mockResolvedValueOnce(result([{ id: 1 }], { fields: [{ name: 'id', dataTypeID: 23 }] }))
+      .mockResolvedValueOnce(pgTypeResult({ 23: 'int4' }));
+    const { service, metadataService, record } = createService(runParameterized);
+
+    const response = await service.execute('conn-1', UNPARSEABLE_SELECT, 'user-1');
+
+    const [connectionId, sql, params] = runParameterized.mock.calls[0]!;
+    expect(connectionId).toBe('conn-1');
+    expect(sql).toBe(`SELECT * FROM (${UNPARSEABLE_SELECT}) AS __prost_query LIMIT $1 OFFSET $2`);
+    expect(params).toEqual([QUERY_PAGE_SIZE + 1, 0]);
+    expect(metadataService.getTableColumns).not.toHaveBeenCalled();
+
+    expect(response).toMatchObject({
+      rows: [{ id: 1 }],
+      totalRows: 1,
+      truncated: false,
+      editable: false,
+    });
+    expect(record).toHaveBeenCalledWith({ userId: 'user-1', connectionId: 'conn-1', sql: UNPARSEABLE_SELECT });
+  });
+
+  it('falls back to an unbounded execution if the paged wrapper itself fails', async () => {
+    const runParameterized = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('syntax error in wrapper'))
+      .mockResolvedValueOnce(result([{ id: 1 }], { rowCount: 1, command: 'SELECT' }));
+    const { service } = createService(runParameterized);
+
+    const response = await service.execute('conn-1', UNPARSEABLE_SELECT, 'user-1');
+
+    expect(runParameterized).toHaveBeenCalledTimes(2);
+    const [, fallbackSql] = runParameterized.mock.calls[1]!;
+    expect(fallbackSql).toBe(UNPARSEABLE_SELECT);
+    expect(response).toMatchObject({ editable: false, command: 'SELECT', rowCount: 1 });
+  });
+});
+
 describe('QueryService.execute — non-SELECT', () => {
   it('returns an affected-row count instead of a grid for UPDATE', async () => {
     const runParameterized = vi.fn().mockResolvedValueOnce(result([], { rowCount: 1, command: 'UPDATE' }));

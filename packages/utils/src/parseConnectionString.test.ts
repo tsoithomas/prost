@@ -13,6 +13,7 @@ describe('parseConnectionString', () => {
         username: 'user',
         password: 'pass',
         sslEnabled: true,
+        sslRejectUnauthorized: false,
       },
     });
   });
@@ -28,6 +29,7 @@ describe('parseConnectionString', () => {
         username: 'admin',
         password: '',
         sslEnabled: true,
+        sslRejectUnauthorized: false,
       },
     });
   });
@@ -62,6 +64,23 @@ describe('parseConnectionString', () => {
     const result = parseConnectionString('postgres://user:pass@host:5432/db');
     expect(result.ok).toBe(true);
     expect(result.ok && result.value.sslEnabled).toBe(true);
+  });
+
+  it.each([
+    ['verify-ca', true],
+    ['verify-full', true],
+    ['require', false],
+    ['prefer', false],
+  ])('maps sslmode=%s to sslRejectUnauthorized=%s', (sslmode, expected) => {
+    const result = parseConnectionString(`postgres://user:pass@host:5432/db?sslmode=${sslmode}`);
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.sslRejectUnauthorized).toBe(expected);
+  });
+
+  it('defaults sslRejectUnauthorized to false when sslmode is absent', () => {
+    const result = parseConnectionString('postgres://user:pass@host:5432/db');
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.sslRejectUnauthorized).toBe(false);
   });
 
   it('treats postgresql:// the same as postgres://', () => {

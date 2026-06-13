@@ -36,4 +36,8 @@ export class UpdateConnectionDto implements UpdateConnectionDtoShape {
   @IsOptional()
   @IsBoolean()
   sslEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  sslRejectUnauthorized?: boolean;
 }

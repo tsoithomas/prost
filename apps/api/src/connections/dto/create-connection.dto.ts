@@ -28,4 +28,7 @@ export class CreateConnectionDto implements CreateConnectionDtoShape {
 
   @IsBoolean()
   sslEnabled!: boolean;
+
+  @IsBoolean()
+  sslRejectUnauthorized!: boolean;
 }

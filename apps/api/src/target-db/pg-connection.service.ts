@@ -12,6 +12,8 @@ export interface ConnectionParams {
   username: string;
   password: string;
   sslEnabled: boolean;
+  /** Only meaningful when `sslEnabled` is true. `false` allows self-signed/unverifiable certs. */
+  sslRejectUnauthorized: boolean;
 }
 
 export interface ParameterizedResult<T extends QueryResultRow = QueryResultRow> {
@@ -52,7 +54,7 @@ function describeConnectionError(error: unknown): string {
 @Injectable()
 export class PgConnectionService {
   private readonly logger = new Logger(PgConnectionService.name);
-  private readonly pools = new Map<string, Pool>();
+  private readonly pools = new Map<string, Promise<Pool>>();
   private readonly statementTimeoutMs: number;
 
   constructor(
@@ -94,7 +96,7 @@ export class PgConnectionService {
       database: params.database,
       user: params.username,
       password: params.password,
-      ssl: params.sslEnabled ? { rejectUnauthorized: false } : undefined,
+      ssl: params.sslEnabled ? { rejectUnauthorized: params.sslRejectUnauthorized } : undefined,
       connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
       statement_timeout: this.statementTimeoutMs,
     });
@@ -119,20 +121,29 @@ export class PgConnectionService {
 
   /** Evicts and closes the cached pool for a connection (e.g. on delete/credential change). */
   async evictPool(connectionId: string): Promise<void> {
-    const pool = this.pools.get(connectionId);
-    if (!pool) {
+    const cached = this.pools.get(connectionId);
+    if (!cached) {
       return;
     }
     this.pools.delete(connectionId);
-    await pool.end().catch(() => undefined);
+    await cached.then((pool) => pool.end()).catch(() => undefined);
   }
 
-  private async getPool(connectionId: string): Promise<Pool> {
+  private getPool(connectionId: string): Promise<Pool> {
     const cached = this.pools.get(connectionId);
     if (cached) {
       return cached;
     }
 
+    const created = this.createPool(connectionId);
+    this.pools.set(connectionId, created);
+    created.catch(() => {
+      this.pools.delete(connectionId);
+    });
+    return created;
+  }
+
+  private async createPool(connectionId: string): Promise<Pool> {
     const connection = await this.prisma.connection.findUniqueOrThrow({
       where: { id: connectionId },
     });
@@ -144,7 +155,7 @@ export class PgConnectionService {
       database: connection.database,
       user: connection.username,
       password,
-      ssl: connection.sslEnabled ? { rejectUnauthorized: false } : undefined,
+      ssl: connection.sslEnabled ? { rejectUnauthorized: connection.sslRejectUnauthorized } : undefined,
       connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
       statement_timeout: this.statementTimeoutMs,
       max: MAX_POOL_SIZE,
@@ -154,7 +165,6 @@ export class PgConnectionService {
       this.logger.error(`target pool error connectionId=${connectionId} message=${error.message}`);
     });
 
-    this.pools.set(connectionId, pool);
     return pool;
   }
 }

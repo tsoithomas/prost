@@ -18,3 +18,18 @@ export function buildPagedQuery(sql: string, limit = QUERY_PAGE_SIZE, offset = 0
     params: [limit + 1, offset],
   };
 }
+
+const SELECT_PREFIX = /^\s*select\b/i;
+
+/**
+ * Heuristic used when `node-sql-parser` fails to classify the statement (e.g. Postgres-only
+ * syntax it doesn't support). A single statement that lexically starts with `SELECT` is
+ * worth attempting to page via `buildPagedQuery` before falling back to an unbounded
+ * execution (principle §7) — anything containing a `;` other than a single trailing one
+ * isn't a single statement, so it's left to the unbounded fallback.
+ */
+export function looksLikeSingleSelect(sql: string): boolean {
+  if (!SELECT_PREFIX.test(sql)) return false;
+  const withoutTrailingSemicolon = sql.trim().replace(/;\s*$/, '');
+  return !withoutTrailingSemicolon.includes(';');
+}

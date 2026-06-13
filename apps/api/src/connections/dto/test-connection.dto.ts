@@ -38,4 +38,8 @@ export class TestConnectionDto implements TestConnectionDtoShape {
   @IsOptional()
   @IsBoolean()
   sslEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  sslRejectUnauthorized?: boolean;
 }

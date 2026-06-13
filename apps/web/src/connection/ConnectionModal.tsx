@@ -29,6 +29,7 @@ interface ConnectionFormState {
   username: string;
   password: string;
   sslEnabled: boolean;
+  sslRejectUnauthorized: boolean;
 }
 
 const blankForm: ConnectionFormState = {
@@ -39,6 +40,7 @@ const blankForm: ConnectionFormState = {
   username: '',
   password: '',
   sslEnabled: true,
+  sslRejectUnauthorized: true,
 };
 
 function toFormState(connection: ConnectionDto): ConnectionFormState {
@@ -50,6 +52,7 @@ function toFormState(connection: ConnectionDto): ConnectionFormState {
     username: connection.username,
     password: '',
     sslEnabled: connection.sslEnabled,
+    sslRejectUnauthorized: connection.sslRejectUnauthorized,
   };
 }
 
@@ -135,7 +138,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
       setFormError(result.error);
       return;
     }
-    const { host, port, database, username, password, sslEnabled } = result.value;
+    const { host, port, database, username, password, sslEnabled, sslRejectUnauthorized } = result.value;
     setForm((prev) => ({
       ...prev,
       name: prev.name.trim() ? prev.name : database || prev.name,
@@ -145,6 +148,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
       username,
       password,
       sslEnabled,
+      sslRejectUnauthorized,
     }));
     setFormError(null);
     setImportValue('');
@@ -179,6 +183,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
       username: form.username,
       password: form.password || undefined,
       sslEnabled: form.sslEnabled,
+      sslRejectUnauthorized: form.sslRejectUnauthorized,
     });
   }
 
@@ -201,6 +206,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
           username: form.username,
           password: form.password || undefined,
           sslEnabled: form.sslEnabled,
+          sslRejectUnauthorized: form.sslRejectUnauthorized,
         },
       },
       {
@@ -255,6 +261,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
         username: form.username,
         password: form.password,
         sslEnabled: form.sslEnabled,
+        sslRejectUnauthorized: form.sslRejectUnauthorized,
       },
       {
         onSuccess: (created) => {
@@ -437,13 +444,24 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                 </FormField>
               </div>
 
-              <label className="flex w-max items-center gap-sm text-sm text-text">
-                <Checkbox
-                  checked={form.sslEnabled}
-                  onChange={(event) => updateField('sslEnabled', event.target.checked)}
-                />
-                Require SSL
-              </label>
+              <div className="flex flex-col gap-sm">
+                <label className="flex w-max items-center gap-sm text-sm text-text">
+                  <Checkbox
+                    checked={form.sslEnabled}
+                    onChange={(event) => updateField('sslEnabled', event.target.checked)}
+                  />
+                  Require SSL
+                </label>
+                {form.sslEnabled ? (
+                  <label className="flex w-max items-center gap-sm pl-lg text-sm text-text">
+                    <Checkbox
+                      checked={form.sslRejectUnauthorized}
+                      onChange={(event) => updateField('sslRejectUnauthorized', event.target.checked)}
+                    />
+                    Verify server certificate
+                  </label>
+                ) : null}
+              </div>
 
               {testConnection.data ? (
                 <Badge variant={testConnection.data.ok ? 'success' : 'danger'} className="w-max">

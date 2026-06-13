@@ -6,6 +6,8 @@ export interface ConnectionDto {
   database: string;
   username: string;
   sslEnabled: boolean;
+  /** Only meaningful when `sslEnabled` is true. Defaults to `true` (verify the server certificate). */
+  sslRejectUnauthorized: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -18,6 +20,7 @@ export interface CreateConnectionDto {
   username: string;
   password: string;
   sslEnabled: boolean;
+  sslRejectUnauthorized: boolean;
 }
 
 /** All fields optional; an empty/omitted `password` means "keep the stored credential". */
@@ -29,6 +32,7 @@ export interface UpdateConnectionDto {
   username?: string;
   password?: string;
   sslEnabled?: boolean;
+  sslRejectUnauthorized?: boolean;
 }
 
 /**
@@ -43,6 +47,7 @@ export interface TestConnectionDto {
   username?: string;
   password?: string;
   sslEnabled?: boolean;
+  sslRejectUnauthorized?: boolean;
 }
 
 export interface TestConnectionResult {

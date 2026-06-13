@@ -5,6 +5,7 @@ export interface ParsedConnectionString {
   username: string;
   password: string;
   sslEnabled: boolean;
+  sslRejectUnauthorized: boolean;
 }
 
 export type ParseConnectionStringResult =
@@ -14,6 +15,10 @@ export type ParseConnectionStringResult =
 // `require`/`verify-ca`/`verify-full`/`prefer`, an unrecognized value, and a missing
 // `sslmode` all map to `true` — only an explicit disable/allow turns SSL off.
 const SSL_DISABLED_MODES = new Set(['disable', 'allow']);
+
+// Only `verify-ca`/`verify-full` ask libpq to validate the server certificate; `require`,
+// `prefer`, and a missing `sslmode` encrypt without verifying.
+const SSL_VERIFIED_MODES = new Set(['verify-ca', 'verify-full']);
 
 /**
  * Parses a `postgres://`/`postgresql://` connection URI into the fields used by
@@ -43,6 +48,7 @@ export function parseConnectionString(input: string): ParseConnectionStringResul
 
   const sslmode = url.searchParams.get('sslmode');
   const sslEnabled = !SSL_DISABLED_MODES.has(sslmode ?? '');
+  const sslRejectUnauthorized = SSL_VERIFIED_MODES.has(sslmode ?? '');
 
   return {
     ok: true,
@@ -53,6 +59,7 @@ export function parseConnectionString(input: string): ParseConnectionStringResul
       username: decodeURIComponent(url.username),
       password: decodeURIComponent(url.password),
       sslEnabled,
+      sslRejectUnauthorized,
     },
   };
 }

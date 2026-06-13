@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPagedQuery, QUERY_PAGE_SIZE } from './paging';
+import { buildPagedQuery, looksLikeSingleSelect, QUERY_PAGE_SIZE } from './paging';
 
 describe('buildPagedQuery', () => {
   it('wraps the statement in a subquery with limit/offset bound as $n params', () => {
@@ -32,5 +32,31 @@ describe('buildPagedQuery', () => {
 
     expect(sql).not.toContain('12345');
     expect(sql).not.toContain('6789');
+  });
+});
+
+describe('looksLikeSingleSelect', () => {
+  it('accepts a plain SELECT', () => {
+    expect(looksLikeSingleSelect('SELECT * FROM users')).toBe(true);
+  });
+
+  it('accepts a SELECT with leading whitespace and mixed case', () => {
+    expect(looksLikeSingleSelect('  Select * from users')).toBe(true);
+  });
+
+  it('accepts a SELECT with a single trailing semicolon', () => {
+    expect(looksLikeSingleSelect('SELECT * FROM users;')).toBe(true);
+  });
+
+  it('rejects a non-SELECT statement', () => {
+    expect(looksLikeSingleSelect('UPDATE users SET email = $1')).toBe(false);
+  });
+
+  it('rejects a SELECT followed by another statement', () => {
+    expect(looksLikeSingleSelect('SELECT * FROM users; DROP TABLE users;')).toBe(false);
+  });
+
+  it('rejects a misspelled keyword', () => {
+    expect(looksLikeSingleSelect('SELEKT * FROM users')).toBe(false);
   });
 });

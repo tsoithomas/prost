@@ -34,6 +34,7 @@ export class ConnectionsService {
         database: dto.database,
         username: dto.username,
         sslEnabled: dto.sslEnabled,
+        sslRejectUnauthorized: dto.sslRejectUnauthorized,
         encryptedCredentials: this.crypto.encrypt(dto.password) as unknown as Prisma.InputJsonValue,
       },
     });
@@ -50,6 +51,7 @@ export class ConnectionsService {
       database: dto.database,
       username: dto.username,
       sslEnabled: dto.sslEnabled,
+      sslRejectUnauthorized: dto.sslRejectUnauthorized,
     };
     if (dto.password) {
       data.encryptedCredentials = this.crypto.encrypt(dto.password) as unknown as Prisma.InputJsonValue;
@@ -77,6 +79,7 @@ export class ConnectionsService {
         username: dto.username ?? existing.username,
         password: dto.password || storedPassword,
         sslEnabled: dto.sslEnabled ?? existing.sslEnabled,
+        sslRejectUnauthorized: dto.sslRejectUnauthorized ?? existing.sslRejectUnauthorized,
       });
     }
 
@@ -94,6 +97,7 @@ export class ConnectionsService {
       username: dto.username,
       password: dto.password,
       sslEnabled: dto.sslEnabled ?? false,
+      sslRejectUnauthorized: dto.sslRejectUnauthorized ?? true,
     });
   }
 
@@ -120,6 +124,7 @@ export function toConnectionDto(connection: Connection): ConnectionDto {
     database: connection.database,
     username: connection.username,
     sslEnabled: connection.sslEnabled,
+    sslRejectUnauthorized: connection.sslRejectUnauthorized,
     createdAt: connection.createdAt.toISOString(),
     updatedAt: connection.updatedAt.toISOString(),
   };
