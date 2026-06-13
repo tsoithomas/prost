@@ -10,7 +10,7 @@ import type {
   IGetRowsParams,
   SelectionChangedEvent,
 } from 'ag-grid-community';
-import { ArrowUpDown, Filter, Plus, Save, Trash2, X } from 'lucide-react';
+import { Filter, Plus, Save, Trash2, X } from 'lucide-react';
 import type { GridResponse } from '@prost/shared-types';
 import { IconButton, prostGridTheme, Toast } from '@prost/ui';
 import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
@@ -179,11 +179,8 @@ export function TableView({ connectionId, schema, table }: TableViewProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex h-8 max-md:h-11 shrink-0 items-center gap-1 border-b border-border bg-surface px-sm">
-        <IconButton aria-label="Filter rows">
+        <IconButton aria-label="Filter rows" disabled title="Filtering — coming soon">
           <Filter size={14} />
-        </IconButton>
-        <IconButton aria-label="Sort rows">
-          <ArrowUpDown size={14} />
         </IconButton>
         <div className="mx-1 h-4 w-px bg-border" />
         <IconButton aria-label="Add row" onClick={handleAddRow} disabled={!editable || pendingInsert !== null}>

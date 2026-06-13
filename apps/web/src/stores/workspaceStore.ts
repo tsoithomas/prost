@@ -8,15 +8,22 @@ export interface WorkspaceTab {
   table?: string;
 }
 
+export interface CursorPosition {
+  line: number;
+  column: number;
+}
+
 interface WorkspaceState {
   tabs: WorkspaceTab[];
   activeTabId: string;
   pendingQuerySql: string | null;
+  cursorPosition: CursorPosition | null;
   openTable: (schema: string, table: string) => void;
   selectTab: (id: string) => void;
   closeTab: (id: string) => void;
   loadQuery: (sql: string) => void;
   clearPendingQuerySql: () => void;
+  setCursorPosition: (position: CursorPosition) => void;
 }
 
 const initialTabs: WorkspaceTab[] = [{ id: 'query-1', label: 'Query 1', kind: 'query' }];
@@ -25,6 +32,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   tabs: initialTabs,
   activeTabId: initialTabs[0]!.id,
   pendingQuerySql: null,
+  cursorPosition: null,
 
   openTable: (schema, table) => {
     const id = `table:${schema}.${table}`;
@@ -56,4 +64,6 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
     }),
 
   clearPendingQuerySql: () => set({ pendingQuerySql: null }),
+
+  setCursorPosition: (position) => set({ cursorPosition: position }),
 }));

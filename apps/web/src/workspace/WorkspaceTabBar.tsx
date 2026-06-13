@@ -15,11 +15,14 @@ export interface WorkspaceTabBarProps {
 }
 
 export function WorkspaceTabBar({ tabs, activeTabId, onSelect, onClose }: WorkspaceTabBarProps) {
+  const queryTabCount = tabs.filter((tab) => tab.kind === 'query').length;
+
   return (
     <div className="flex h-8 shrink-0 items-end gap-1 border-b border-border bg-surface-sunken px-sm pt-1">
       {tabs.map((tab) => {
         const isActive = tab.id === activeTabId;
         const Icon = tab.kind === 'table' ? Table2 : Code;
+        const canClose = tab.kind !== 'query' || queryTabCount > 1;
         return (
           <div
             key={tab.id}
@@ -34,14 +37,16 @@ export function WorkspaceTabBar({ tabs, activeTabId, onSelect, onClose }: Worksp
               <Icon size={14} />
               {tab.label}
             </button>
-            <button
-              type="button"
-              aria-label={`Close ${tab.label}`}
-              onClick={() => onClose(tab.id)}
-              className="text-text-faint transition-colors hover:text-text"
-            >
-              <X size={12} />
-            </button>
+            {canClose ? (
+              <button
+                type="button"
+                aria-label={`Close ${tab.label}`}
+                onClick={() => onClose(tab.id)}
+                className="text-text-faint transition-colors hover:text-text"
+              >
+                <X size={12} />
+              </button>
+            ) : null}
           </div>
         );
       })}

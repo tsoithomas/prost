@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { Code, Database, History, Network, Plus } from 'lucide-react';
+import { Code, Database, History, Network, PanelLeftClose, PanelLeftOpen, Plug, Plus, Trash2 } from 'lucide-react';
 import clsx from 'clsx';
-import { Button } from '@prost/ui';
-import { useActiveConnection } from '../api/connections';
+import type { ConnectionDto } from '@prost/shared-types';
+import { Badge, Button, IconButton } from '@prost/ui';
+import { useActiveConnection, useConnections, useDeleteConnection } from '../api/connections';
 import { useQueryHistory } from '../api/history';
 import { useMetadata } from '../api/metadata';
 import { QueryHistoryList } from '../explorer/QueryHistoryList';
 import { SchemaTree } from '../explorer/SchemaTree';
+import { useConfirm } from '../hooks/useConfirm';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 
@@ -19,19 +21,19 @@ const sidebarTabs: { key: SidebarTab; label: string; icon: typeof Database }[] =
   { key: 'snippets', label: 'Snippets', icon: Code },
 ];
 
-const placeholderText: Record<Exclude<SidebarTab, 'explorer' | 'history'>, string> = {
-  connections: 'No saved connections yet.',
-  snippets: 'Saved snippets will appear here.',
-};
-
 export interface SidebarProps {
   onNewConnection: () => void;
 }
 
 export function Sidebar({ onNewConnection }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('explorer');
+  const [collapsed, setCollapsed] = useState(false);
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
+  const setActive = useConnectionStore((state) => state.setActive);
   const activeConnection = useActiveConnection();
+  const { data: connections = [] } = useConnections();
+  const deleteConnection = useDeleteConnection();
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const { data: schemas, isLoading, isError } = useMetadata(activeConnectionId);
   const { data: history, isLoading: isHistoryLoading, isError: isHistoryError } = useQueryHistory(activeConnectionId);
   const workspaceTabs = useWorkspaceStore((state) => state.tabs);
@@ -45,43 +47,92 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
       ? `${activeWorkspaceTab.schema}.${activeWorkspaceTab.table}`
       : null;
 
+  async function handleDeleteConnection(connection: ConnectionDto) {
+    const confirmed = await confirm({
+      title: 'Delete connection',
+      description: `Delete connection "${connection.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!confirmed) return;
+
+    deleteConnection.mutate(connection.id, {
+      onSuccess: () => {
+        if (activeConnectionId === connection.id) setActive(null);
+      },
+    });
+  }
+
   return (
-    <aside className="hidden w-sidebar shrink-0 flex-col border-r border-border bg-surface-sunken md:flex">
-      <div className="flex items-center gap-sm border-b border-border p-sm">
-        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-surface-hover text-accent">
-          <Database size={14} />
-        </div>
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold leading-tight text-text">
-            {activeConnection?.name ?? 'No connection'}
-          </h2>
-          <p className="truncate text-xs leading-tight text-text-muted">
-            {activeConnection ? `${activeConnection.host}:${activeConnection.port}` : 'Select a connection'}
-          </p>
-        </div>
+    <aside
+      className={clsx(
+        'hidden shrink-0 flex-col border-r border-border bg-surface-sunken transition-[width] duration-150 md:flex',
+        collapsed ? 'w-12' : 'w-sidebar',
+      )}
+    >
+      <div className={clsx('flex items-center gap-sm border-b border-border p-sm', collapsed && 'justify-center')}>
+        {collapsed ? (
+          <IconButton aria-label="Expand sidebar" title="Expand sidebar" onClick={() => setCollapsed(false)}>
+            <PanelLeftOpen size={16} />
+          </IconButton>
+        ) : (
+          <>
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm bg-surface-hover text-accent">
+              <Database size={14} />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="truncate text-sm font-semibold leading-tight text-text">
+                {activeConnection?.name ?? 'No connection'}
+              </h2>
+              <p className="truncate text-xs leading-tight text-text-muted">
+                {activeConnection ? `${activeConnection.host}:${activeConnection.port}` : 'Select a connection'}
+              </p>
+            </div>
+            <IconButton aria-label="Collapse sidebar" title="Collapse sidebar" onClick={() => setCollapsed(true)}>
+              <PanelLeftClose size={16} />
+            </IconButton>
+          </>
+        )}
       </div>
 
-      <div className="flex flex-col gap-1 p-sm">
-        {sidebarTabs.map(({ key, label, icon: Icon }) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setActiveTab(key)}
-            className={clsx(
-              'flex items-center gap-sm rounded-sm px-sm py-1.5 text-xs transition-colors',
-              activeTab === key
-                ? 'bg-accent-muted text-accent'
-                : 'text-text-muted hover:bg-surface-hover hover:text-text',
-            )}
-          >
-            <Icon size={16} />
-            {label}
-          </button>
-        ))}
+      <div className={clsx('flex flex-col gap-1 p-sm', collapsed && 'items-center')}>
+        {sidebarTabs.map(({ key, label, icon: Icon }) => {
+          const disabled = key === 'snippets';
+          return (
+            <button
+              key={key}
+              type="button"
+              title={label}
+              aria-label={label}
+              onClick={() => {
+                setActiveTab(key);
+                if (collapsed) setCollapsed(false);
+              }}
+              disabled={disabled}
+              className={clsx(
+                'flex items-center gap-sm rounded-sm text-xs transition-colors',
+                collapsed ? 'h-8 w-8 justify-center' : 'px-sm py-1.5',
+                disabled
+                  ? 'cursor-not-allowed text-text-faint opacity-50'
+                  : activeTab === key
+                    ? 'bg-accent-muted text-accent'
+                    : 'text-text-muted hover:bg-surface-hover hover:text-text',
+              )}
+            >
+              <Icon size={16} />
+              {!collapsed ? label : null}
+              {!collapsed && disabled ? (
+                <Badge variant="neutral" className="ml-auto">
+                  Soon
+                </Badge>
+              ) : null}
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex-1 overflow-y-auto px-sm py-1">
-        {activeTab === 'explorer' ? (
+        {collapsed ? null : activeTab === 'explorer' ? (
           activeConnectionId === null ? (
             <p className="px-sm py-2 text-xs italic text-text-faint">
               No active connection. Use "New Connection" to get started.
@@ -110,17 +161,69 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
               onSelect={loadQuery}
             />
           )
+        ) : activeTab === 'connections' ? (
+          connections.length === 0 ? (
+            <p className="px-sm py-2 text-xs italic text-text-faint">No saved connections yet.</p>
+          ) : (
+            <div className="space-y-1">
+              {connections.map((connection) => {
+                const isActive = connection.id === activeConnectionId;
+                return (
+                  <div key={connection.id} className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => setActive(connection.id)}
+                      className={clsx(
+                        'flex w-full items-center gap-sm rounded-sm border border-transparent p-sm pr-8 text-left transition-colors',
+                        isActive ? 'bg-accent-muted text-accent' : 'text-text hover:bg-surface-hover',
+                      )}
+                    >
+                      <Plug size={16} className={isActive ? 'text-accent' : 'text-text-faint'} />
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate text-sm">{connection.name}</span>
+                        <span className="truncate font-mono text-xs text-text-faint">
+                          {connection.host}:{connection.port}
+                        </span>
+                      </div>
+                      {isActive ? (
+                        <Badge variant="success" className="ml-auto shrink-0">
+                          Active
+                        </Badge>
+                      ) : null}
+                    </button>
+                    <IconButton
+                      aria-label={`Delete ${connection.name}`}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDeleteConnection(connection);
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </IconButton>
+                  </div>
+                );
+              })}
+            </div>
+          )
         ) : (
-          <p className="px-sm py-2 text-xs italic text-text-faint">{placeholderText[activeTab]}</p>
+          <p className="px-sm py-2 text-xs italic text-text-faint">Saved snippets — coming soon.</p>
         )}
       </div>
 
-      <div className="border-t border-border p-sm">
-        <Button variant="secondary" size="sm" className="w-full justify-center" onClick={onNewConnection}>
-          <Plus size={14} />
-          New Connection
-        </Button>
+      <div className={clsx('border-t border-border p-sm', collapsed && 'flex justify-center')}>
+        {collapsed ? (
+          <IconButton aria-label="New Connection" title="New Connection" onClick={onNewConnection}>
+            <Plus size={14} />
+          </IconButton>
+        ) : (
+          <Button variant="secondary" size="sm" className="w-full justify-center" onClick={onNewConnection}>
+            <Plus size={14} />
+            New Connection
+          </Button>
+        )}
       </div>
+      {confirmDialog}
     </aside>
   );
 }

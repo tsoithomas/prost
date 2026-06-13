@@ -48,6 +48,7 @@ export function SqlEditorView() {
   const accentColor = useThemeStore((state) => state.accentColor);
   const pendingQuerySql = useWorkspaceStore((state) => state.pendingQuerySql);
   const clearPendingQuerySql = useWorkspaceStore((state) => state.clearPendingQuerySql);
+  const setCursorPosition = useWorkspaceStore((state) => state.setCursorPosition);
   const queryClient = useQueryClient();
   const monacoTheme = resolveColorMode(colorMode) === 'dark' ? PROST_DARK_THEME : PROST_LIGHT_THEME;
   const monacoRef = useRef<Monaco | null>(null);
@@ -236,6 +237,11 @@ export function SqlEditorView() {
           onMount={(editor, monaco) => {
             monacoRef.current = monaco;
             editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runQueryRef.current());
+            const position = editor.getPosition();
+            if (position) setCursorPosition({ line: position.lineNumber, column: position.column });
+            editor.onDidChangeCursorPosition((event) => {
+              setCursorPosition({ line: event.position.lineNumber, column: event.position.column });
+            });
           }}
           options={{
             fontSize: 13,
