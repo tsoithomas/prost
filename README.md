@@ -3,16 +3,19 @@
 A web-based PostgreSQL client (TablePlus-style) for internal developer use: connection
 management, schema browsing, table viewing/editing, and a SQL editor with query results.
 
-> **Status:** Phase 1 complete — the vertical slice works end-to-end (login → create/test a
-> connection → browse the real schema tree → view a table's first 100 rows, paginated).
-> Inline editing, the SQL editor execution path, and query history are planned (Phase 2+).
-> See [`docs/plans/`](docs/plans/README.md) for per-phase plans and status.
+> **Status:** MVP (Phases 1–5) complete — login, connection management, real schema browsing,
+> a paginated/editable table grid, a SQL editor with query history, and theming/responsiveness
+> hardening all work end-to-end. Phase 6 (paste a `postgres://` connection string into
+> "New Connection") is also complete; Phases 7–10 (schema/index viewing & editing, create
+> table, AI chat) are planned. See [`docs/plans/`](docs/plans/README.md) for per-phase plans
+> and status.
 
 ## Highlights
 
 - 🔐 **JWT auth** with a seeded admin (no public sign-up); every data route is guarded.
-- 🗄️ **Connection management** — create/test/edit/delete; target-DB credentials encrypted at
-  rest (AES-256-GCM), never returned to the client.
+- 🗄️ **Connection management** — create/test/edit/delete, or paste a `postgres://` connection
+  string to fill in the form; target-DB credentials encrypted at rest (AES-256-GCM), never
+  returned to the client.
 - 🌳 **Schema explorer** — real schemas/tables/columns/primary keys from system catalogs.
 - 📊 **Data grid** — AG Grid with server-side pagination (Infinite Row Model); built to stay
   responsive on tables of 100,000+ rows.

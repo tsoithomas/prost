@@ -19,16 +19,16 @@ passes **and** it violates none of the architecture principles.
 | [3](./phase-3-sql-editor.md) | SQL editor + editability analyzer | ✅ Complete |
 | [4](./phase-4-query-history.md) | Query history | ✅ Complete |
 | [5](./phase-5-theming-responsiveness.md) | Theming & responsiveness hardening | ✅ Complete |
-| [6](./phase-6-connection-string-import.md) | Connection string import (paste a Postgres URI) | 📋 Planned |
+| [6](./phase-6-connection-string-import.md) | Connection string import (paste a Postgres URI) | ✅ Complete |
 | [7](./phase-7-schema-index-viewing.md) | View schema & indexes (table structure panel) | 📋 Planned |
 | [8](./phase-8-create-table.md) | Create table (first DDL write; preview→confirm→execute) | 📋 Planned |
 | [9](./phase-9-edit-schema-indexes.md) | Edit schema & indexes (alter columns, add/drop indexes) | 📋 Planned |
 | [10](./phase-10-ai-chat-rag.md) | AI chat assistant with metadata-grounded RAG | 📋 Planned |
 
 Phases 0–5 are the **MVP** (complete). Phases 6–10 are the **post-MVP backlog** drawn from
-[`../future-features.md`](../future-features.md) — planned but not yet built; pick them up in
-roughly the order shown (6 is independent; 7→8→9 form the schema-management track; 10 is an
-independent AI track that benefits from 7).
+[`../future-features.md`](../future-features.md). Phase 6 is complete; 7–10 are planned but not
+yet built — pick them up in roughly the order shown (7→8→9 form the schema-management track; 10
+is an independent AI track that benefits from 7).
 
 ## Sequencing notes
 

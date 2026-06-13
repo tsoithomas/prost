@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowRight, Cable, Database, Eye, EyeOff, Plus, Save, Trash2, X, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import type { ConnectionDto } from '@prost/shared-types';
+import { parseConnectionString } from '@prost/utils';
 import { Badge, Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
 import {
   useConnections,
@@ -68,6 +69,8 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importValue, setImportValue] = useState('');
 
   // Default the selection to the active connection (or the first saved one) once the
   // connection list has loaded; falls back to the "New Connection" form if there are none.
@@ -89,6 +92,8 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
     setInitialized(false);
     setShowPassword(false);
     setFormError(null);
+    setImportOpen(false);
+    setImportValue('');
     testConnection.reset();
   }, [open]);
 
@@ -121,6 +126,29 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
 
   function updateField<K extends keyof ConnectionFormState>(key: K, value: ConnectionFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+    testConnection.reset();
+  }
+
+  function handleImport() {
+    const result = parseConnectionString(importValue);
+    if (!result.ok) {
+      setFormError(result.error);
+      return;
+    }
+    const { host, port, database, username, password, sslEnabled } = result.value;
+    setForm((prev) => ({
+      ...prev,
+      name: prev.name.trim() ? prev.name : database || prev.name,
+      host,
+      port: String(port),
+      database,
+      username,
+      password,
+      sslEnabled,
+    }));
+    setFormError(null);
+    setImportValue('');
+    setImportOpen(false);
     testConnection.reset();
   }
 
@@ -319,6 +347,29 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
 
           <div className="flex-1 overflow-y-auto p-lg">
             <form className="flex flex-col gap-lg" onSubmit={(event) => event.preventDefault()}>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setImportOpen((prev) => !prev)}
+                  className="text-xs text-accent hover:underline"
+                >
+                  {importOpen ? 'Hide' : 'Paste a connection string'}
+                </button>
+                {importOpen ? (
+                  <div className="mt-sm flex gap-sm">
+                    <Input
+                      className="font-mono"
+                      value={importValue}
+                      onChange={(event) => setImportValue(event.target.value)}
+                      placeholder="postgres://user:password@host:5432/database"
+                    />
+                    <Button type="button" variant="secondary" size="sm" onClick={handleImport}>
+                      Parse
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+
               <FormField label="Connection Name">
                 <Input value={form.name} onChange={(event) => updateField('name', event.target.value)} placeholder="My Database" />
               </FormField>

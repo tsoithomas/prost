@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Database } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Input, Surface } from '@prost/ui';
 import { useLogin } from '../api/auth';
+import logo from '../assets/logo.svg';
 import { FormField } from '../components/FormField';
 import { ApiError } from '../lib/apiClient';
 
@@ -49,9 +49,7 @@ export function LoginPage() {
       />
       <Surface level="raised" bordered className="relative z-10 flex w-full max-w-96 flex-col gap-lg rounded-lg p-lg shadow-2xl">
         <div className="flex items-center gap-sm">
-          <div className="flex h-8 w-8 items-center justify-center rounded-sm bg-accent-muted text-accent">
-            <Database size={18} />
-          </div>
+          <img src={logo} alt="" className="h-8 w-8" />
           <span className="text-lg font-bold text-accent">Prost</span>
         </div>
         <div>
