@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AgGridReact } from 'ag-grid-react';
 import type {
@@ -12,7 +12,8 @@ import type {
 } from 'ag-grid-community';
 import { Filter, Plus, Save, Trash2, X } from 'lucide-react';
 import type { GridResponse } from '@prost/shared-types';
-import { IconButton, prostGridTheme, Toast } from '@prost/ui';
+import { Button, IconButton, prostGridTheme, Toast } from '@prost/ui';
+import { TableStructurePanel } from './TableStructurePanel';
 import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
 import { buildColumnDefs } from '../grid/columnDefs';
 import { useConfirm } from '../hooks/useConfirm';
@@ -35,8 +36,13 @@ export function TableView({ connectionId, schema, table }: TableViewProps) {
   const gridApiRef = useRef<GridApi | null>(null);
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
+  const [viewMode, setViewMode] = useState<'rows' | 'structure'>('rows');
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const { confirm, dialog: confirmDialog } = useConfirm();
+
+  useEffect(() => {
+    setViewMode('rows');
+  }, [schema, table]);
 
   const columnsQuery = useQuery({
     queryKey: ['grid-columns', connectionId, schema, table],
@@ -179,38 +185,67 @@ export function TableView({ connectionId, schema, table }: TableViewProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex h-8 max-md:h-11 shrink-0 items-center gap-1 border-b border-border bg-surface px-sm">
-        <IconButton aria-label="Filter rows" disabled title="Filtering — coming soon">
-          <Filter size={14} />
-        </IconButton>
-        <div className="mx-1 h-4 w-px bg-border" />
-        <IconButton aria-label="Add row" onClick={handleAddRow} disabled={!editable || pendingInsert !== null}>
-          <Plus size={14} />
-        </IconButton>
-        <IconButton
-          aria-label="Delete selected rows"
-          onClick={handleDeleteSelected}
-          disabled={!editable || selectedRows.length === 0}
-        >
-          <Trash2 size={14} />
-        </IconButton>
-        <IconButton
-          aria-label="Save new row"
-          onClick={handleSaveInsert}
-          disabled={pendingInsert === null || insertRow.isPending}
-        >
-          <Save size={14} />
-        </IconButton>
-        {pendingInsert !== null ? (
-          <IconButton aria-label="Cancel new row" onClick={handleCancelInsert}>
-            <X size={14} />
-          </IconButton>
+        {viewMode === 'rows' ? (
+          <>
+            <IconButton aria-label="Filter rows" disabled title="Filtering — coming soon">
+              <Filter size={14} />
+            </IconButton>
+            <div className="mx-1 h-4 w-px bg-border" />
+            <IconButton aria-label="Add row" onClick={handleAddRow} disabled={!editable || pendingInsert !== null}>
+              <Plus size={14} />
+            </IconButton>
+            <IconButton
+              aria-label="Delete selected rows"
+              onClick={handleDeleteSelected}
+              disabled={!editable || selectedRows.length === 0}
+            >
+              <Trash2 size={14} />
+            </IconButton>
+            <IconButton
+              aria-label="Save new row"
+              onClick={handleSaveInsert}
+              disabled={pendingInsert === null || insertRow.isPending}
+            >
+              <Save size={14} />
+            </IconButton>
+            {pendingInsert !== null ? (
+              <IconButton aria-label="Cancel new row" onClick={handleCancelInsert}>
+                <X size={14} />
+              </IconButton>
+            ) : null}
+          </>
         ) : null}
-        {columnsQuery.data ? (
-          <span className="ml-auto text-xs text-text-faint">~{columnsQuery.data.totalRows.toLocaleString()} rows</span>
-        ) : null}
+        <div className="ml-auto flex items-center gap-sm">
+          {viewMode === 'rows' && columnsQuery.data ? (
+            <span className="text-xs text-text-faint">~{columnsQuery.data.totalRows.toLocaleString()} rows</span>
+          ) : null}
+          <div className="flex overflow-hidden rounded-sm border border-border">
+            <Button
+              type="button"
+              variant={viewMode === 'rows' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('rows')}
+              className="rounded-none border-0"
+            >
+              Rows
+            </Button>
+            <div className="w-px bg-border" />
+            <Button
+              type="button"
+              variant={viewMode === 'structure' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setViewMode('structure')}
+              className="rounded-none border-0"
+            >
+              Structure
+            </Button>
+          </div>
+        </div>
       </div>
       <div className="min-h-0 flex-1">
-        {columnsQuery.isLoading ? (
+        {viewMode === 'structure' ? (
+          <TableStructurePanel connectionId={connectionId} schema={schema} table={table} />
+        ) : columnsQuery.isLoading ? (
           <div className="flex h-full items-center justify-center text-sm text-text-faint">Loading table…</div>
         ) : columnsQuery.isError ? (
           <div className="flex h-full items-center justify-center text-sm text-danger">Failed to load table.</div>

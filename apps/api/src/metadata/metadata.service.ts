@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { ColumnMetadata, SchemaMetadata, TableSummary } from '@prost/shared-types';
+import type { ColumnMetadata, IndexMetadata, SchemaMetadata, TableStructure, TableSummary } from '@prost/shared-types';
 import { PgConnectionService } from '../target-db/pg-connection.service';
 
 interface TableRow {
@@ -12,6 +12,15 @@ interface ColumnRow {
   data_type: string;
   is_nullable: 'YES' | 'NO';
   is_primary_key: boolean;
+}
+
+interface IndexRow {
+  name: string;
+  is_unique: boolean;
+  is_primary: boolean;
+  method: string;
+  definition: string;
+  columns: string[];
 }
 
 @Injectable()
@@ -69,5 +78,50 @@ export class MetadataService {
       nullable: row.is_nullable === 'YES',
       isPrimaryKey: row.is_primary_key,
     }));
+  }
+
+  async getTableIndexes(connectionId: string, schema: string, table: string): Promise<IndexMetadata[]> {
+    const { rows } = await this.pgConnectionService.runParameterized<IndexRow>(
+      connectionId,
+      `SELECT
+         i.relname                       AS name,
+         ix.indisunique                  AS is_unique,
+         ix.indisprimary                 AS is_primary,
+         am.amname                       AS method,
+         pg_get_indexdef(ix.indexrelid)  AS definition,
+         ARRAY(
+           SELECT a.attname
+           FROM   pg_attribute a
+           WHERE  a.attrelid = t.oid
+             AND  a.attnum   = ANY(ix.indkey)
+           ORDER BY array_position(ix.indkey::int[], a.attnum)
+         ) AS columns
+       FROM   pg_index     ix
+       JOIN   pg_class     t  ON t.oid  = ix.indrelid
+       JOIN   pg_class     i  ON i.oid  = ix.indexrelid
+       JOIN   pg_namespace n  ON n.oid  = t.relnamespace
+       JOIN   pg_am        am ON am.oid = i.relam
+       WHERE  n.nspname = $1
+         AND  t.relname = $2
+       ORDER BY ix.indisprimary DESC, i.relname`,
+      [schema, table],
+    );
+
+    return rows.map((row) => ({
+      name: row.name,
+      columns: row.columns,
+      isUnique: row.is_unique,
+      isPrimary: row.is_primary,
+      method: row.method,
+      definition: row.definition,
+    }));
+  }
+
+  async getTableStructure(connectionId: string, schema: string, table: string): Promise<TableStructure> {
+    const [columns, indexes] = await Promise.all([
+      this.getTableColumns(connectionId, schema, table),
+      this.getTableIndexes(connectionId, schema, table),
+    ]);
+    return { columns, indexes };
   }
 }

@@ -20,3 +20,17 @@ export interface SchemaMetadata {
   name: string;
   tables: TableSummary[];
 }
+
+export interface IndexMetadata {
+  name: string;
+  columns: string[];
+  isUnique: boolean;
+  isPrimary: boolean;
+  method: string;
+  definition: string;
+}
+
+export interface TableStructure {
+  columns: ColumnMetadata[];
+  indexes: IndexMetadata[];
+}
