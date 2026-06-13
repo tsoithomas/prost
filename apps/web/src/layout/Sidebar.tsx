@@ -6,6 +6,7 @@ import { Badge, Button, IconButton } from '@prost/ui';
 import { useActiveConnection, useConnections, useDeleteConnection } from '../api/connections';
 import { useQueryHistory } from '../api/history';
 import { useMetadata } from '../api/metadata';
+import { CreateTableModal } from '../ddl/CreateTableModal';
 import { QueryHistoryList } from '../explorer/QueryHistoryList';
 import { SchemaTree } from '../explorer/SchemaTree';
 import { useConfirm } from '../hooks/useConfirm';
@@ -40,6 +41,11 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
   const activeWorkspaceTabId = useWorkspaceStore((state) => state.activeTabId);
   const openTable = useWorkspaceStore((state) => state.openTable);
   const loadQuery = useWorkspaceStore((state) => state.loadQuery);
+
+  const [createTableState, setCreateTableState] = useState<{ open: boolean; schema: string }>({
+    open: false,
+    schema: '',
+  });
 
   const activeWorkspaceTab = workspaceTabs.find((tab) => tab.id === activeWorkspaceTabId);
   const selectedTable =
@@ -147,6 +153,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
               selectedTable={selectedTable}
               onSelectTable={(table) => openTable(table.schema, table.name, 'rows')}
               onOpenStructure={(table) => openTable(table.schema, table.name, 'structure')}
+              onNewTable={(schema) => setCreateTableState({ open: true, schema })}
             />
           )
         ) : activeTab === 'history' ? (
@@ -225,6 +232,16 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
         )}
       </div>
       {confirmDialog}
+      {activeConnectionId ? (
+        <CreateTableModal
+          open={createTableState.open}
+          onClose={() => setCreateTableState((s) => ({ ...s, open: false }))}
+          onSuccess={(schema, table) => openTable(schema, table, 'rows')}
+          connectionId={activeConnectionId}
+          initialSchema={createTableState.schema}
+          schemas={(schemas ?? []).map((s) => s.name)}
+        />
+      ) : null}
     </aside>
   );
 }

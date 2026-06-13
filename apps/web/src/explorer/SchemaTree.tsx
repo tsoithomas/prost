@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Box, ChevronDown, ChevronRight, Rows3, StretchHorizontal, Table2 } from 'lucide-react';
+import { Box, ChevronDown, ChevronRight, Plus, Rows3, StretchHorizontal, Table2 } from 'lucide-react';
 import clsx from 'clsx';
 import type { SchemaMetadata, TableSummary } from '@prost/shared-types';
 
@@ -9,6 +9,7 @@ export interface SchemaTreeProps {
   selectedTable: string | null;
   onSelectTable: (table: TableSummary) => void;
   onOpenStructure: (table: TableSummary) => void;
+  onNewTable: (schema: string) => void;
 }
 
 interface ContextMenuState {
@@ -17,7 +18,7 @@ interface ContextMenuState {
   table: TableSummary;
 }
 
-export function SchemaTree({ schemas, selectedTable, onSelectTable, onOpenStructure }: SchemaTreeProps) {
+export function SchemaTree({ schemas, selectedTable, onSelectTable, onOpenStructure, onNewTable }: SchemaTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
@@ -50,16 +51,27 @@ export function SchemaTree({ schemas, selectedTable, onSelectTable, onOpenStruct
       {schemas.map((schema) => {
         const isCollapsed = collapsed.has(schema.name);
         return (
-          <div key={schema.name}>
-            <button
-              type="button"
-              onClick={() => toggleSchema(schema.name)}
-              className="flex w-full items-center gap-1 rounded-sm px-1 py-1 text-xs text-text transition-colors hover:bg-surface-hover"
-            >
-              {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-              <Box size={14} className="text-accent" />
-              <span>{schema.name}</span>
-            </button>
+          <div key={schema.name} className="group/schema">
+            <div className="flex items-center">
+              <button
+                type="button"
+                onClick={() => toggleSchema(schema.name)}
+                className="flex min-w-0 flex-1 items-center gap-1 rounded-sm px-1 py-1 text-xs text-text transition-colors hover:bg-surface-hover"
+              >
+                {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                <Box size={14} className="shrink-0 text-accent" />
+                <span className="truncate">{schema.name}</span>
+              </button>
+              <button
+                type="button"
+                aria-label={`New table in ${schema.name}`}
+                title={`New table in ${schema.name}`}
+                onClick={(e) => { e.stopPropagation(); onNewTable(schema.name); }}
+                className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:bg-surface-hover hover:text-text group-hover/schema:opacity-100"
+              >
+                <Plus size={12} />
+              </button>
+            </div>
             {isCollapsed ? null : (
               <div className="ml-2 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-3">
                 {schema.tables.map((table) => (

@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Box } from 'lucide-react';
 import { StatusDot } from '@prost/ui';
 import { useActiveConnection } from '../api/connections';
 import { useMetadata } from '../api/metadata';
+import { CreateTableModal } from '../ddl/CreateTableModal';
 import { SchemaTree } from '../explorer/SchemaTree';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -18,6 +20,11 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
   const workspaceTabs = useWorkspaceStore((state) => state.tabs);
   const activeWorkspaceTabId = useWorkspaceStore((state) => state.activeTabId);
   const openTable = useWorkspaceStore((state) => state.openTable);
+
+  const [createTableState, setCreateTableState] = useState<{ open: boolean; schema: string }>({
+    open: false,
+    schema: '',
+  });
 
   const activeWorkspaceTab = workspaceTabs.find((tab) => tab.id === activeWorkspaceTabId);
   const selectedTable =
@@ -56,9 +63,23 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
               openTable(table.schema, table.name, 'structure');
               onSelectTable?.();
             }}
+            onNewTable={(schema) => setCreateTableState({ open: true, schema })}
           />
         )}
       </div>
+      {activeConnectionId ? (
+        <CreateTableModal
+          open={createTableState.open}
+          onClose={() => setCreateTableState((s) => ({ ...s, open: false }))}
+          onSuccess={(schema, table) => {
+            openTable(schema, table, 'rows');
+            onSelectTable?.();
+          }}
+          connectionId={activeConnectionId}
+          initialSchema={createTableState.schema}
+          schemas={(schemas ?? []).map((s) => s.name)}
+        />
+      ) : null}
     </div>
   );
 }
