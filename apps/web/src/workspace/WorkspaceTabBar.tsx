@@ -1,4 +1,4 @@
-import { Code, Table2, X } from 'lucide-react';
+import { Code, Plus, Table2, X } from 'lucide-react';
 import clsx from 'clsx';
 
 export interface WorkspaceTab {
@@ -12,9 +12,10 @@ export interface WorkspaceTabBarProps {
   activeTabId: string;
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
+  onNewTab: () => void;
 }
 
-export function WorkspaceTabBar({ tabs, activeTabId, onSelect, onClose }: WorkspaceTabBarProps) {
+export function WorkspaceTabBar({ tabs, activeTabId, onSelect, onClose, onNewTab }: WorkspaceTabBarProps) {
   const queryTabCount = tabs.filter((tab) => tab.kind === 'query').length;
 
   return (
@@ -50,6 +51,14 @@ export function WorkspaceTabBar({ tabs, activeTabId, onSelect, onClose }: Worksp
           </div>
         );
       })}
+      <button
+        type="button"
+        aria-label="New query tab"
+        onClick={onNewTab}
+        className="flex h-7 items-center rounded-t-sm px-sm text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+      >
+        <Plus size={14} />
+      </button>
     </div>
   );
 }

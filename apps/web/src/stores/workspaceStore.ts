@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { QueryResult } from '@prost/shared-types';
 
 export interface WorkspaceTab {
   id: string;
@@ -7,6 +8,8 @@ export interface WorkspaceTab {
   schema?: string;
   table?: string;
   viewMode?: 'rows' | 'structure';
+  sql?: string;
+  result?: QueryResult | null;
 }
 
 export interface CursorPosition {
@@ -23,12 +26,19 @@ interface WorkspaceState {
   setTabViewMode: (id: string, viewMode: 'rows' | 'structure') => void;
   selectTab: (id: string) => void;
   closeTab: (id: string) => void;
+  newQueryTab: () => void;
+  setTabSql: (id: string, sql: string) => void;
+  setTabResult: (id: string, result: QueryResult | null) => void;
   loadQuery: (sql: string) => void;
   clearPendingQuerySql: () => void;
   setCursorPosition: (position: CursorPosition) => void;
 }
 
-const initialTabs: WorkspaceTab[] = [{ id: 'query-1', label: 'Query 1', kind: 'query' }];
+export const INITIAL_SQL = '-- Press Cmd/Ctrl+Enter to run\nSELECT * FROM users;';
+
+const initialTabs: WorkspaceTab[] = [
+  { id: 'query-1', label: 'Query 1', kind: 'query', sql: INITIAL_SQL, result: null },
+];
 
 export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   tabs: initialTabs,
@@ -67,10 +77,35 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
       return { tabs, activeTabId };
     }),
 
+  newQueryTab: () =>
+    set((state) => {
+      const queryTabCount = state.tabs.filter((tab) => tab.kind === 'query').length;
+      const id = `query-${crypto.randomUUID()}`;
+      const tab: WorkspaceTab = {
+        id,
+        label: `Query ${queryTabCount + 1}`,
+        kind: 'query',
+        sql: INITIAL_SQL,
+        result: null,
+      };
+      return { tabs: [...state.tabs, tab], activeTabId: id };
+    }),
+
+  setTabSql: (id, sql) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, sql } : tab)),
+    })),
+
+  setTabResult: (id, result) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, result } : tab)),
+    })),
+
   loadQuery: (sql) =>
     set((state) => {
-      const queryTab = state.tabs.find((tab) => tab.kind === 'query');
-      return { pendingQuerySql: sql, activeTabId: queryTab?.id ?? state.activeTabId };
+      const active = state.tabs.find((tab) => tab.id === state.activeTabId);
+      const target = active?.kind === 'query' ? active : state.tabs.find((tab) => tab.kind === 'query');
+      return { pendingQuerySql: sql, activeTabId: target?.id ?? state.activeTabId };
     }),
 
   clearPendingQuerySql: () => set({ pendingQuerySql: null }),

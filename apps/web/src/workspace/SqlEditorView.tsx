@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import Editor, { type Monaco } from '@monaco-editor/react';
+import Editor, { type Monaco, type OnMount } from '@monaco-editor/react';
 import { AgGridReact } from 'ag-grid-react';
 import type {
   CellValueChangedEvent,
@@ -32,9 +32,7 @@ import { useToasts } from '../hooks/useToasts';
 import { ApiError, apiErrorDetail, apiErrorMessage } from '../lib/apiClient';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useThemeStore } from '../stores/themeStore';
-import { useWorkspaceStore } from '../stores/workspaceStore';
-
-const DEFAULT_QUERY = '-- Press Cmd/Ctrl+Enter to run\nSELECT * FROM users;';
+import { INITIAL_SQL, useWorkspaceStore } from '../stores/workspaceStore';
 
 /** `sourceTable` is `schema.table` (see `editability.ts`) — split it back for the Phase 2 mutation hooks. */
 function splitSourceTable(sourceTable: string | undefined): { schema: string; table: string } | null {
@@ -51,15 +49,20 @@ export function SqlEditorView() {
   const pendingQuerySql = useWorkspaceStore((state) => state.pendingQuerySql);
   const clearPendingQuerySql = useWorkspaceStore((state) => state.clearPendingQuerySql);
   const setCursorPosition = useWorkspaceStore((state) => state.setCursorPosition);
+  const activeTabId = useWorkspaceStore((state) => state.activeTabId);
+  const activeTab = useWorkspaceStore((state) => state.tabs.find((tab) => tab.id === state.activeTabId));
+  const setTabSql = useWorkspaceStore((state) => state.setTabSql);
+  const setTabResult = useWorkspaceStore((state) => state.setTabResult);
   const queryClient = useQueryClient();
   const monacoTheme = resolveColorMode(colorMode) === 'dark' ? PROST_DARK_THEME : PROST_LIGHT_THEME;
   const monacoRef = useRef<Monaco | null>(null);
+  const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const gridApiRef = useRef<GridApi | null>(null);
 
-  const [sql, setSql] = useState(DEFAULT_QUERY);
+  const sql = activeTab?.sql ?? INITIAL_SQL;
   const [saveSnippetName, setSaveSnippetName] = useState<string | null>(null);
-  const [result, setResult] = useState<QueryResult | null>(null);
-  const [rowData, setRowData] = useState<Record<string, unknown>[]>([]);
+  const [result, setResult] = useState<QueryResult | null>(activeTab?.result ?? null);
+  const [rowData, setRowData] = useState<Record<string, unknown>[]>(activeTab?.result?.rows ?? []);
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
@@ -94,13 +97,27 @@ export function SqlEditorView() {
     monacoRef.current.editor.setTheme(monacoTheme);
   }, [colorMode, accentColor, monacoTheme]);
 
+  // Switching tabs swaps the editor buffer + results to that tab's stored state and
+  // clears any in-progress edit/selection UI from the previous tab.
+  useEffect(() => {
+    const storedSql = activeTab?.sql ?? INITIAL_SQL;
+    const storedResult = activeTab?.result ?? null;
+    editorRef.current?.setValue(storedSql);
+    setResult(storedResult);
+    setRowData(storedResult?.rows ?? []);
+    setPendingInsert(null);
+    setSelectedRows([]);
+    setSaveSnippetName(null);
+  }, [activeTabId]);
+
   // Loading a query from history sets `pendingQuerySql` (see `workspaceStore.loadQuery`);
   // consume it into the editor buffer and clear it so it doesn't reapply on remount.
   useEffect(() => {
     if (pendingQuerySql === null) return;
-    setSql(pendingQuerySql);
+    editorRef.current?.setValue(pendingQuerySql);
+    setTabSql(activeTabId, pendingQuerySql);
     clearPendingQuerySql();
-  }, [pendingQuerySql, clearPendingQuerySql]);
+  }, [pendingQuerySql, clearPendingQuerySql, activeTabId, setTabSql]);
 
   const runQuery = useCallback(() => {
     const trimmed = sql.trim();
@@ -116,11 +133,12 @@ export function SqlEditorView() {
         onSuccess: (response) => {
           setResult(response);
           setRowData(response.rows);
+          setTabResult(activeTabId, response);
           queryClient.invalidateQueries({ queryKey: ['history', connectionId] });
         },
       },
     );
-  }, [connectionId, executeQuery, sql, queryClient]);
+  }, [connectionId, executeQuery, sql, queryClient, activeTabId, setTabResult]);
 
   // Monaco's Cmd/Ctrl+Enter command is registered once in `onMount`, so route it through a
   // ref to always call the latest `runQuery` (current `sql`/`connectionId`).
@@ -248,10 +266,11 @@ export function SqlEditorView() {
           height="100%"
           defaultLanguage="sql"
           value={sql}
-          onChange={(value) => setSql(value ?? '')}
+          onChange={(value) => setTabSql(activeTabId, value ?? '')}
           theme={monacoTheme}
           beforeMount={defineProstMonacoThemes}
           onMount={(editor, monaco) => {
+            editorRef.current = editor;
             monacoRef.current = monaco;
             editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runQueryRef.current());
             const position = editor.getPosition();
