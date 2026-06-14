@@ -1,8 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ConfigService } from '@nestjs/config';
+import type { Pool } from 'pg';
 import type { CryptoService } from '../common/crypto.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import { PgConnectionService } from './pg-connection.service';
+
+// Typed interface exposing the private internals we need to inspect in tests.
+interface PgConnectionServiceInternals {
+  pools: Map<string, Promise<Pool>>;
+  poolLastUsed: Map<string, number>;
+  poolSize: number;
+  poolIdleMs: number;
+  poolMax: number;
+  sweep: () => void;
+}
+
+function internals(svc: PgConnectionService): PgConnectionServiceInternals {
+  return svc as unknown as PgConnectionServiceInternals;
+}
 
 // Minimal mock of a pg.Pool
 function makePool() {
@@ -14,21 +29,28 @@ function makePool() {
 }
 
 function makeConfig(overrides: Record<string, string | number> = {}): ConfigService {
-  return {
-    get: (key: string) => {
-      const map: Record<string, string | number> = {
-        QUERY_TIMEOUT_MS: 30_000,
-        TARGET_POOL_SIZE: 5,
-        TARGET_POOL_IDLE_MS: 600_000,
-        TARGET_POOL_MAX: 20,
-        ...overrides,
-      };
-      return map[key];
-    },
-  } as unknown as ConfigService;
+  const map: Record<string, string | number> = {
+    QUERY_TIMEOUT_MS: 30_000,
+    TARGET_POOL_SIZE: 5,
+    TARGET_POOL_IDLE_MS: 600_000,
+    TARGET_POOL_MAX: 20,
+    ...overrides,
+  };
+  return { get: (key: string) => map[key] } as unknown as ConfigService;
 }
 
-function makePrisma(connection = { id: 'conn-1', host: 'localhost', port: 5432, database: 'db', username: 'u', encryptedCredentials: {}, sslEnabled: false, sslRejectUnauthorized: true }): PrismaService {
+function makePrisma(
+  connection = {
+    id: 'conn-1',
+    host: 'localhost',
+    port: 5432,
+    database: 'db',
+    username: 'u',
+    encryptedCredentials: {},
+    sslEnabled: false,
+    sslRejectUnauthorized: true,
+  },
+): PrismaService {
   return { connection: { findUniqueOrThrow: vi.fn().mockResolvedValue(connection) } } as unknown as PrismaService;
 }
 
@@ -41,7 +63,6 @@ describe('PgConnectionService — pool lifecycle', () => {
 
   beforeEach(() => {
     pool = makePool();
-    // Patch pg.Pool constructor so we can inspect the instance without a real DB
     vi.mock('pg', () => ({
       Pool: vi.fn(() => pool),
       Client: vi.fn(() => ({ connect: vi.fn(), query: vi.fn(), end: vi.fn() })),
@@ -55,10 +76,10 @@ describe('PgConnectionService — pool lifecycle', () => {
   it('reads pool config values from ConfigService', () => {
     const config = makeConfig({ TARGET_POOL_SIZE: 3, TARGET_POOL_IDLE_MS: 5_000, TARGET_POOL_MAX: 10 });
     const svc = new PgConnectionService(makePrisma(), makeCrypto(), config);
-    // Access private fields via type assertion
-    expect((svc as unknown as Record<string, number>)['poolSize']).toBe(3);
-    expect((svc as unknown as Record<string, number>)['poolIdleMs']).toBe(5_000);
-    expect((svc as unknown as Record<string, number>)['poolMax']).toBe(10);
+    const i = internals(svc);
+    expect(i.poolSize).toBe(3);
+    expect(i.poolIdleMs).toBe(5_000);
+    expect(i.poolMax).toBe(10);
   });
 
   it('onModuleInit starts the sweep interval; onModuleDestroy clears it', async () => {
@@ -75,11 +96,10 @@ describe('PgConnectionService — pool lifecycle', () => {
 
   it('onModuleDestroy closes all cached pools', async () => {
     const svc = new PgConnectionService(makePrisma(), makeCrypto(), makeConfig());
+    const { pools } = internals(svc);
 
-    // Inject a fake resolved pool directly into the private map
-    const pools = (svc as unknown as Record<string, Map<string, Promise<unknown>>>)['pools'];
-    pools.set('conn-1', Promise.resolve(pool));
-    pools.set('conn-2', Promise.resolve(pool));
+    pools.set('conn-1', Promise.resolve(pool as unknown as Pool));
+    pools.set('conn-2', Promise.resolve(pool as unknown as Pool));
 
     await svc.onModuleDestroy();
 
@@ -92,20 +112,16 @@ describe('PgConnectionService — pool lifecycle', () => {
     const svc = new PgConnectionService(makePrisma(), makeCrypto(), makeConfig({ TARGET_POOL_IDLE_MS: 1_000 }));
     svc.onModuleInit();
 
-    const pools = (svc as unknown as Record<string, Map<string, Promise<unknown>>>)['pools'];
-    const lastUsed = (svc as unknown as Record<string, Map<string, number>>)['poolLastUsed'];
+    const { pools, poolLastUsed } = internals(svc);
+    pools.set('conn-stale', Promise.resolve(pool as unknown as Pool));
+    poolLastUsed.set('conn-stale', Date.now() - 2_000);
 
-    pools.set('conn-stale', Promise.resolve(pool));
-    lastUsed.set('conn-stale', Date.now() - 2_000); // idle for 2s > 1s threshold
-
-    // Advance time past the sweep interval (poolIdleMs / 2 = 500ms)
+    // Advance past the sweep interval (poolIdleMs / 2 = 500ms)
     vi.advanceTimersByTime(600);
-
-    // Allow async evictPool microtasks to settle
     await Promise.resolve();
 
     expect(pools.has('conn-stale')).toBe(false);
-    expect(lastUsed.has('conn-stale')).toBe(false);
+    expect(poolLastUsed.has('conn-stale')).toBe(false);
 
     vi.useRealTimers();
     await svc.onModuleDestroy();
@@ -113,23 +129,20 @@ describe('PgConnectionService — pool lifecycle', () => {
 
   it('LRU cap evicts least-recently-used pools when exceeding poolMax', async () => {
     const svc = new PgConnectionService(makePrisma(), makeCrypto(), makeConfig({ TARGET_POOL_MAX: 2 }));
-
-    const pools = (svc as unknown as Record<string, Map<string, Promise<unknown>>>)['pools'];
-    const lastUsed = (svc as unknown as Record<string, Map<string, number>>)['poolLastUsed'];
+    const { pools, poolLastUsed, sweep } = internals(svc);
 
     const now = Date.now();
-    pools.set('conn-old', Promise.resolve(pool));
-    lastUsed.set('conn-old', now - 3_000);
-    pools.set('conn-mid', Promise.resolve(pool));
-    lastUsed.set('conn-mid', now - 2_000);
-    pools.set('conn-new', Promise.resolve(pool));
-    lastUsed.set('conn-new', now - 1_000);
+    pools.set('conn-old', Promise.resolve(pool as unknown as Pool));
+    poolLastUsed.set('conn-old', now - 3_000);
+    pools.set('conn-mid', Promise.resolve(pool as unknown as Pool));
+    poolLastUsed.set('conn-mid', now - 2_000);
+    pools.set('conn-new', Promise.resolve(pool as unknown as Pool));
+    poolLastUsed.set('conn-new', now - 1_000);
 
-    // Trigger sweep manually
-    (svc as unknown as Record<string, () => void>)['sweep']();
+    sweep();
     await Promise.resolve();
 
-    // poolMax=2, so the oldest (conn-old) should be evicted
+    // poolMax=2: oldest (conn-old) evicted; newer two remain
     expect(pools.has('conn-old')).toBe(false);
     expect(pools.has('conn-mid')).toBe(true);
     expect(pools.has('conn-new')).toBe(true);
@@ -137,18 +150,16 @@ describe('PgConnectionService — pool lifecycle', () => {
 
   it('evictPool deletes pool and calls end()', async () => {
     const svc = new PgConnectionService(makePrisma(), makeCrypto(), makeConfig());
+    const { pools, poolLastUsed } = internals(svc);
 
-    const pools = (svc as unknown as Record<string, Map<string, Promise<unknown>>>)['pools'];
-    const lastUsed = (svc as unknown as Record<string, Map<string, number>>)['poolLastUsed'];
-
-    pools.set('conn-1', Promise.resolve(pool));
-    lastUsed.set('conn-1', Date.now());
+    pools.set('conn-1', Promise.resolve(pool as unknown as Pool));
+    poolLastUsed.set('conn-1', Date.now());
 
     await svc.evictPool('conn-1');
 
     expect(pool.end).toHaveBeenCalledOnce();
     expect(pools.has('conn-1')).toBe(false);
-    expect(lastUsed.has('conn-1')).toBe(false);
+    expect(poolLastUsed.has('conn-1')).toBe(false);
   });
 
   it('evictPool is a no-op for unknown connectionId', async () => {
