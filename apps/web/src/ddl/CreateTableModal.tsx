@@ -156,11 +156,10 @@ export function CreateTableModal({
   const previewSql = buildPreviewSql(schema, tableName, columns);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-md md:items-center" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-md md:items-center">
       <Surface
         level="overlay"
         bordered
-        onClick={(e) => e.stopPropagation()}
         className="flex h-[min(680px,90vh)] w-full max-w-2xl flex-col overflow-hidden rounded-lg shadow-2xl"
       >
         {/* Header */}

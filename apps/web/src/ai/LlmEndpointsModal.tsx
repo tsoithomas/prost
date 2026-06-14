@@ -158,11 +158,10 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
   const saving = createEndpoint.isPending || updateEndpoint.isPending;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-md" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-md">
       <Surface
         level="overlay"
         bordered
-        onClick={(event) => event.stopPropagation()}
         className="flex h-[min(560px,90vh)] w-full max-w-3xl flex-col overflow-hidden rounded-lg shadow-2xl md:flex-row"
       >
         {/* List pane */}

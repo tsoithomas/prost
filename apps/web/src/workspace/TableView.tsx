@@ -266,7 +266,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
       </div>
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-sm p-md sm:items-end">
         {toasts.map((toast) => (
-          <div key={toast.id} className="pointer-events-auto w-full max-w-sm">
+          <div key={toast.id} className="pointer-events-auto w-full max-w-[24rem]">
             <Toast variant={toast.variant} message={toast.message} onDismiss={() => dismissToast(toast.id)} />
           </div>
         ))}

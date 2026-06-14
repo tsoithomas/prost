@@ -309,7 +309,7 @@ export function SqlEditorView() {
           {error ? (
             <div className="flex h-full flex-col items-center justify-center gap-xs p-md text-center">
               <Badge variant="danger">{errorCode ?? 'ERROR'}</Badge>
-              <p className="max-w-md text-sm text-text">{apiErrorMessage(error, 'Query failed.')}</p>
+              <p className="max-w-[28rem] text-sm text-text">{apiErrorMessage(error, 'Query failed.')}</p>
               {error instanceof ApiError && error.correlationId ? (
                 <p className="text-xs text-text-faint">ref: {error.correlationId}</p>
               ) : null}
@@ -343,7 +343,7 @@ export function SqlEditorView() {
       </div>
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-sm p-md sm:items-end">
         {toasts.map((toast) => (
-          <div key={toast.id} className="pointer-events-auto w-full max-w-sm">
+          <div key={toast.id} className="pointer-events-auto w-full max-w-[24rem]">
             <Toast variant={toast.variant} message={toast.message} onDismiss={() => dismissToast(toast.id)} />
           </div>
         ))}

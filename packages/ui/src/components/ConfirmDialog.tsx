@@ -32,18 +32,14 @@ export function ConfirmDialog({
   if (!open) return null;
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-md max-md:items-end max-md:justify-stretch max-md:p-0"
-      onClick={onCancel}
-    >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-md max-md:items-end max-md:justify-stretch max-md:p-0">
       <Surface
         level="overlay"
         bordered
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-dialog-title"
-        onClick={(event) => event.stopPropagation()}
-        className="flex w-full max-w-sm flex-col gap-md rounded-lg p-lg shadow-2xl max-md:max-w-none max-md:rounded-b-none max-md:rounded-t-lg"
+        className="flex w-full max-w-[24rem] flex-col gap-md rounded-lg p-lg shadow-2xl max-md:max-w-none max-md:rounded-b-none max-md:rounded-t-lg"
       >
         <h2 id="confirm-dialog-title" className="text-sm font-semibold text-text">
           {title}

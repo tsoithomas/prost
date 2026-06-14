@@ -144,12 +144,11 @@ export function EditColumnModal({ open, onClose, col, connectionId, schema, tabl
   return (
     <>
       {dialog}
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-md md:items-center" onClick={onClose}>
+      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-md md:items-center">
         <Surface
           level="overlay"
           bordered
-          onClick={(e) => e.stopPropagation()}
-          className="flex w-full max-w-lg flex-col overflow-hidden rounded-lg shadow-2xl"
+          className="flex w-full max-w-[32rem] flex-col overflow-hidden rounded-lg shadow-2xl"
         >
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-lg">
             <span className="text-sm font-semibold text-text">Edit column <span className="font-mono">{c.name}</span></span>
