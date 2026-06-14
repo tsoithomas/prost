@@ -6,11 +6,15 @@ export type FilterOperator =
   | 'gt'
   | 'gte'
   | 'contains'
+  | 'notContains'
   | 'startsWith'
+  | 'notStartsWith'
   | 'endsWith'
+  | 'notEndsWith'
   | 'isNull'
   | 'isNotNull'
-  | 'in';
+  | 'in'
+  | 'notIn';
 
 export interface ColumnFilter {
   column: string;

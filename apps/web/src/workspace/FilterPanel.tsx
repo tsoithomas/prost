@@ -42,16 +42,20 @@ const ALL_OPERATORS: { value: FilterOperator; label: string }[] = [
   { value: 'gt', label: '>' },
   { value: 'gte', label: '≥' },
   { value: 'contains', label: 'contains' },
+  { value: 'notContains', label: 'not contains' },
   { value: 'startsWith', label: 'starts with' },
+  { value: 'notStartsWith', label: 'not starts with' },
   { value: 'endsWith', label: 'ends with' },
+  { value: 'notEndsWith', label: 'not ends with' },
   { value: 'in', label: 'in (comma-separated)' },
+  { value: 'notIn', label: 'not in (comma-separated)' },
   { value: 'isNull', label: 'is null' },
   { value: 'isNotNull', label: 'is not null' },
 ];
 
 const OPERATORS_BY_FAMILY: Record<TypeFamily, Set<FilterOperator>> = {
-  text: new Set(['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'contains', 'startsWith', 'endsWith', 'isNull', 'isNotNull', 'in']),
-  numeric: new Set(['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'isNull', 'isNotNull', 'in']),
+  text: new Set(['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'contains', 'notContains', 'startsWith', 'notStartsWith', 'endsWith', 'notEndsWith', 'isNull', 'isNotNull', 'in', 'notIn']),
+  numeric: new Set(['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'isNull', 'isNotNull', 'in', 'notIn']),
   datetime: new Set(['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'isNull', 'isNotNull']),
   boolean: new Set(['eq', 'neq', 'isNull', 'isNotNull']),
   other: new Set(['eq', 'neq', 'isNull', 'isNotNull']),
@@ -114,7 +118,7 @@ export function FilterPanel({ columns, activeFilter, onChange }: FilterPanelProp
   }
 
   function handleValueChange(index: number, raw: string, op: FilterOperator) {
-    if (op === 'in') {
+    if (op === 'in' || op === 'notIn') {
       const values = raw.split(',').map((v) => v.trim()).filter(Boolean);
       updateCondition(index, { value: raw, values });
     } else {

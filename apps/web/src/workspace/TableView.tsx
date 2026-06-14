@@ -46,13 +46,22 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
 
   const filterKey = activeFilter?.conditions.length ? JSON.stringify(activeFilter) : null;
 
+  // Stable query — no filter in key. Columns/editable/primaryKey never change with filtering.
   const columnsQuery = useQuery({
-    queryKey: ['grid-columns', connectionId, schema, table, filterKey],
+    queryKey: ['grid-columns', connectionId, schema, table],
+    queryFn: () =>
+      apiFetch<GridResponse>(rowsUrl(connectionId, schema, table, new URLSearchParams({ limit: '1', offset: '0' }))),
+  });
+
+  // Separate count query that re-runs when the filter changes.
+  const countQuery = useQuery({
+    queryKey: ['grid-count', connectionId, schema, table, filterKey],
     queryFn: () => {
       const search = new URLSearchParams({ limit: '1', offset: '0' });
       if (filterKey) search.set('filter', filterKey);
       return apiFetch<GridResponse>(rowsUrl(connectionId, schema, table, search));
     },
+    placeholderData: (prev) => prev,
   });
 
   const editable = columnsQuery.data?.editable ?? false;
@@ -235,8 +244,10 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
           </>
         ) : null}
         <div className="ml-auto flex items-center gap-sm">
-          {viewMode === 'rows' && columnsQuery.data ? (
-            <span className="text-xs text-text-faint">~{columnsQuery.data.totalRows.toLocaleString()} rows</span>
+          {viewMode === 'rows' && countQuery.data ? (
+            <span className="text-xs text-text-faint">
+              {filterKey ? '' : '~'}{countQuery.data.totalRows.toLocaleString()} rows
+            </span>
           ) : null}
           <div className="flex overflow-hidden rounded-sm border border-border">
             <Button

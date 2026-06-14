@@ -32,8 +32,8 @@ function typeFamily(dataType: string): TypeFamily {
 }
 
 const OPERATORS_BY_FAMILY: Record<TypeFamily, Set<FilterOperator>> = {
-  text: new Set(['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'contains', 'startsWith', 'endsWith', 'isNull', 'isNotNull', 'in']),
-  numeric: new Set(['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'isNull', 'isNotNull', 'in']),
+  text: new Set(['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'contains', 'notContains', 'startsWith', 'notStartsWith', 'endsWith', 'notEndsWith', 'isNull', 'isNotNull', 'in', 'notIn']),
+  numeric: new Set(['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'isNull', 'isNotNull', 'in', 'notIn']),
   datetime: new Set(['eq', 'neq', 'lt', 'lte', 'gt', 'gte', 'isNull', 'isNotNull']),
   boolean: new Set(['eq', 'neq', 'isNull', 'isNotNull']),
   other: new Set(['eq', 'neq', 'isNull', 'isNotNull']),
@@ -61,16 +61,24 @@ function compileSingleCondition(
       return { fragment: `${col} >= $${paramIndex}`, params: [condition.value] };
     case 'contains':
       return { fragment: `${col} ILIKE $${paramIndex}`, params: [`%${String(condition.value)}%`] };
+    case 'notContains':
+      return { fragment: `${col} NOT ILIKE $${paramIndex}`, params: [`%${String(condition.value)}%`] };
     case 'startsWith':
       return { fragment: `${col} ILIKE $${paramIndex}`, params: [`${String(condition.value)}%`] };
+    case 'notStartsWith':
+      return { fragment: `${col} NOT ILIKE $${paramIndex}`, params: [`${String(condition.value)}%`] };
     case 'endsWith':
       return { fragment: `${col} ILIKE $${paramIndex}`, params: [`%${String(condition.value)}`] };
+    case 'notEndsWith':
+      return { fragment: `${col} NOT ILIKE $${paramIndex}`, params: [`%${String(condition.value)}`] };
     case 'isNull':
       return { fragment: `${col} IS NULL`, params: [] };
     case 'isNotNull':
       return { fragment: `${col} IS NOT NULL`, params: [] };
     case 'in':
       return { fragment: `${col} = ANY($${paramIndex})`, params: [condition.values ?? []] };
+    case 'notIn':
+      return { fragment: `${col} <> ALL($${paramIndex})`, params: [condition.values ?? []] };
   }
 }
 
