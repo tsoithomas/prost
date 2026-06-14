@@ -3,7 +3,14 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SqlEditorView } from './SqlEditorView';
 import { renderWithProviders } from '../test/renderWithProviders';
-import type { QueryResult } from '@prost/shared-types';
+import type {
+  CommandStatementResult,
+  ErrorStatementResult,
+  ExecuteQueryResponse,
+  PlanStatementResult,
+  RowsStatementResult,
+  StatementResult,
+} from '@prost/shared-types';
 
 // Monaco and AG Grid are heavy; replace them with lightweight stubs.
 vi.mock('@monaco-editor/react', () => ({
@@ -61,14 +68,14 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function makeResult(overrides: Partial<QueryResult> = {}): QueryResult {
+function makeRowsResult(overrides: Partial<RowsStatementResult> = {}): RowsStatementResult {
   return {
+    kind: 'rows',
+    sql: 'SELECT 1',
     columns: [{ name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false }],
     rows: [{ id: 1 }],
     totalRows: 1,
-    rowCount: 1,
     executionTimeMs: 5,
-    command: 'SELECT',
     editable: false,
     primaryKey: [],
     sourceTable: undefined,
@@ -77,10 +84,48 @@ function makeResult(overrides: Partial<QueryResult> = {}): QueryResult {
   };
 }
 
-function simulateQuery(result: QueryResult) {
+function makeCommandResult(overrides: Partial<CommandStatementResult> = {}): CommandStatementResult {
+  return {
+    kind: 'command',
+    sql: "UPDATE users SET email = 'x'",
+    command: 'UPDATE',
+    rowCount: 1,
+    executionTimeMs: 5,
+    ...overrides,
+  };
+}
+
+function makePlanResult(overrides: Partial<PlanStatementResult> = {}): PlanStatementResult {
+  return {
+    kind: 'plan',
+    sql: 'EXPLAIN SELECT 1',
+    planText: 'Seq Scan on users',
+    analyze: false,
+    executionTimeMs: 5,
+    ...overrides,
+  };
+}
+
+function makeErrorResult(overrides: Partial<ErrorStatementResult> = {}): ErrorStatementResult {
+  return {
+    kind: 'error',
+    sql: 'SELECT bad',
+    message: 'syntax error',
+    code: '42601',
+    correlationId: 'corr-1',
+    executionTimeMs: 0,
+    ...overrides,
+  };
+}
+
+function makeResponse(statements: StatementResult[], transactional = false, statementCount = statements.length): ExecuteQueryResponse {
+  return { statements, transactional, statementCount };
+}
+
+function simulateQuery(response: ExecuteQueryResponse) {
   mockExecuteMutate.mockImplementation(
-    (_payload: unknown, callbacks: { onSuccess?: (r: QueryResult) => void }) => {
-      callbacks?.onSuccess?.(result);
+    (_payload: unknown, callbacks: { onSuccess?: (r: ExecuteQueryResponse) => void }) => {
+      callbacks?.onSuccess?.(response);
     },
   );
 }
@@ -120,7 +165,7 @@ describe('SqlEditorView — editability gating', () => {
   });
 
   it('shows the Add Row button as disabled when the result is read-only', async () => {
-    simulateQuery(makeResult({ editable: false, columns: [{ name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false }] }));
+    simulateQuery(makeResponse([makeRowsResult({ editable: false })]));
 
     renderWithProviders(<SqlEditorView />);
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
@@ -130,14 +175,7 @@ describe('SqlEditorView — editability gating', () => {
   });
 
   it('shows the Add Row button as enabled when the result is editable', async () => {
-    simulateQuery(
-      makeResult({
-        editable: true,
-        primaryKey: ['id'],
-        sourceTable: 'public.users',
-        columns: [{ name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false }],
-      }),
-    );
+    simulateQuery(makeResponse([makeRowsResult({ editable: true, primaryKey: ['id'], sourceTable: 'public.users' })]));
 
     renderWithProviders(<SqlEditorView />);
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
@@ -147,18 +185,102 @@ describe('SqlEditorView — editability gating', () => {
   });
 
   it('shows "Read-only" badge for a non-editable result', async () => {
-    simulateQuery(makeResult({ editable: false, columns: [{ name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false }] }));
+    simulateQuery(makeResponse([makeRowsResult({ editable: false })]));
     renderWithProviders(<SqlEditorView />);
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
     expect(screen.getByText('Read-only')).toBeInTheDocument();
   });
 
   it('shows "Editable" badge for an editable result', async () => {
-    simulateQuery(
-      makeResult({ editable: true, primaryKey: ['id'], sourceTable: 'public.users', columns: [{ name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false }] }),
-    );
+    simulateQuery(makeResponse([makeRowsResult({ editable: true, primaryKey: ['id'], sourceTable: 'public.users' })]));
     renderWithProviders(<SqlEditorView />);
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
     expect(screen.getByText('Editable')).toBeInTheDocument();
+  });
+});
+
+describe('SqlEditorView — multi-statement results', () => {
+  it('renders one panel per statement and no editability controls', async () => {
+    simulateQuery(makeResponse([makeRowsResult({ sql: 'SELECT id FROM users' }), makeCommandResult()]));
+
+    renderWithProviders(<SqlEditorView />);
+    await userEvent.click(screen.getByRole('button', { name: /run/i }));
+
+    expect(screen.getByTestId('statement-panel-0')).toBeInTheDocument();
+    expect(screen.getByTestId('statement-panel-1')).toBeInTheDocument();
+    expect(screen.queryByText('Editable')).not.toBeInTheDocument();
+    expect(screen.queryByText('Read-only')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /add row/i })).not.toBeInTheDocument();
+  });
+
+  it('shows a placeholder when the script splits into zero statements', async () => {
+    simulateQuery(makeResponse([]));
+
+    renderWithProviders(<SqlEditorView />);
+    await userEvent.click(screen.getByRole('button', { name: /run/i }));
+
+    expect(screen.getByText('No statements to run.')).toBeInTheDocument();
+  });
+});
+
+describe('SqlEditorView — transaction toggle', () => {
+  it('is unchecked by default and is passed to executeQuery.mutate when checked', async () => {
+    simulateQuery(makeResponse([makeCommandResult()]));
+    renderWithProviders(<SqlEditorView />);
+
+    const checkbox = screen.getByRole('checkbox', { name: /run as transaction/i });
+    expect(checkbox).not.toBeChecked();
+
+    await userEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+
+    await userEvent.click(screen.getByRole('button', { name: /run/i }));
+    expect(mockExecuteMutate).toHaveBeenCalledWith(expect.objectContaining({ transactional: true }), expect.any(Object));
+  });
+});
+
+describe('SqlEditorView — EXPLAIN', () => {
+  it('renders plan text in a <pre> block for a single EXPLAIN statement', async () => {
+    simulateQuery(makeResponse([makePlanResult({ planText: 'Seq Scan on users', analyze: false })]));
+    renderWithProviders(<SqlEditorView />);
+    await userEvent.click(screen.getByRole('button', { name: /run/i }));
+
+    const planText = screen.getByText('Seq Scan on users');
+    expect(planText.tagName).toBe('PRE');
+    expect(screen.queryByText('This executes')).not.toBeInTheDocument();
+  });
+
+  it('shows "This executes" badge for EXPLAIN ANALYZE', async () => {
+    simulateQuery(makeResponse([makePlanResult({ planText: 'Seq Scan ...', analyze: true })]));
+    renderWithProviders(<SqlEditorView />);
+    await userEvent.click(screen.getByRole('button', { name: /run/i }));
+
+    expect(screen.getByText('This executes')).toBeInTheDocument();
+  });
+});
+
+describe('SqlEditorView — per-statement error', () => {
+  it('shows the failing statement details alongside a successful sibling', async () => {
+    simulateQuery(
+      makeResponse([makeRowsResult({ sql: 'SELECT 1' }), makeErrorResult({ message: 'duplicate key value', code: '23505', correlationId: 'corr-123' })]),
+    );
+    renderWithProviders(<SqlEditorView />);
+    await userEvent.click(screen.getByRole('button', { name: /run/i }));
+
+    expect(screen.getByTestId('statement-panel-0')).toBeInTheDocument();
+    const errorPanel = screen.getByTestId('statement-panel-1');
+    expect(errorPanel).toHaveTextContent('duplicate key value');
+    expect(errorPanel).toHaveTextContent('23505');
+    expect(errorPanel).toHaveTextContent('ref: corr-123');
+  });
+});
+
+describe('SqlEditorView — rolled-back transaction note', () => {
+  it('shows "N of M statement(s) ran" when a transactional batch is rolled back early', async () => {
+    simulateQuery(makeResponse([makeCommandResult(), makeErrorResult()], true, 3));
+    renderWithProviders(<SqlEditorView />);
+    await userEvent.click(screen.getByRole('button', { name: /run/i }));
+
+    expect(screen.getByText(/2 of 3 statement\(s\) ran/)).toBeInTheDocument();
   });
 });

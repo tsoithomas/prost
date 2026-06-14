@@ -23,6 +23,20 @@ export interface ParameterizedResult<T extends QueryResultRow = QueryResultRow> 
   command: string;
 }
 
+export interface ClientQuery {
+  sql: string;
+  params?: unknown[];
+}
+
+export interface ClientQueryResult<T extends QueryResultRow = QueryResultRow> {
+  rows: T[];
+  fields: { name: string; dataTypeID: number }[];
+  rowCount: number | null;
+  command: string;
+}
+
+export type ClientQueryFn = <R extends QueryResultRow = QueryResultRow>(query: ClientQuery) => Promise<ClientQueryResult<R>>;
+
 const CONNECT_TIMEOUT_MS = 5000;
 
 /**
@@ -109,6 +123,45 @@ export class PgConnectionService implements OnModuleInit, OnModuleDestroy {
         }`,
       );
       throw error;
+    }
+  }
+
+  /**
+   * Runs `fn` against a single checked-out `PoolClient` (the only other entry point besides
+   * `runParameterized`, principle §1) — used for the "run as transaction" multi-statement path,
+   * where BEGIN/COMMIT/ROLLBACK must share one Postgres session. `fn` receives a `query`
+   * callback bound to the client; callers never see the raw `PoolClient`. If `fn` throws, issues
+   * `ROLLBACK` (best-effort) before releasing, so a connection is never returned to the pool
+   * mid-transaction. Client is always released in `finally`.
+   */
+  async withTransactionClient<T>(connectionId: string, fn: (query: ClientQueryFn) => Promise<T>): Promise<T> {
+    const pool = await this.getPool(connectionId);
+    this.poolLastUsed.set(connectionId, Date.now());
+    const client = await pool.connect();
+
+    const query: ClientQueryFn = async ({ sql, params = [] }) => {
+      const start = Date.now();
+      try {
+        const result = await client.query(sql, params);
+        this.logger.log(`target query ok connectionId=${connectionId} durationMs=${Date.now() - start}`);
+        return { rows: result.rows, fields: result.fields, rowCount: result.rowCount, command: result.command };
+      } catch (error) {
+        this.logger.warn(
+          `target query failed connectionId=${connectionId} durationMs=${Date.now() - start} error=${
+            error instanceof Error ? error.message : 'unknown'
+          }`,
+        );
+        throw error;
+      }
+    };
+
+    try {
+      return await fn(query);
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
     }
   }
 

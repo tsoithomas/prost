@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import type { QueryResult } from '@prost/shared-types';
+import type { ExecuteQueryResponse } from '@prost/shared-types';
 import { INITIAL_SQL, useWorkspaceStore } from './workspaceStore';
 
 const initialState = {
@@ -9,12 +9,10 @@ const initialState = {
   cursorPosition: null,
 };
 
-const mockResult: QueryResult = {
-  rows: [{ id: 1 }],
-  columns: [],
-  totalRows: 1,
-  editable: false,
-  executionTimeMs: 1,
+const mockResult: ExecuteQueryResponse = {
+  statements: [{ kind: 'rows', sql: 'SELECT 1', rows: [{ id: 1 }], columns: [], totalRows: 1, editable: false, executionTimeMs: 1 }],
+  transactional: false,
+  statementCount: 1,
 };
 
 afterEach(() => {
@@ -103,6 +101,18 @@ describe('workspaceStore — setTabSql / setTabResult', () => {
     const state = useWorkspaceStore.getState();
     expect(state.tabs.find((tab) => tab.id === 'query-1')?.result).toEqual(mockResult);
     expect(state.tabs.find((tab) => tab.id === secondTabId)?.result).toBeNull();
+  });
+
+  it('setTabTransactional updates only the target tab, defaulting to falsy on a fresh tab', () => {
+    useWorkspaceStore.getState().newQueryTab();
+    const secondTabId = useWorkspaceStore.getState().activeTabId;
+
+    expect(useWorkspaceStore.getState().tabs.find((tab) => tab.id === 'query-1')?.transactional).toBeFalsy();
+
+    useWorkspaceStore.getState().setTabTransactional('query-1', true);
+    const state = useWorkspaceStore.getState();
+    expect(state.tabs.find((tab) => tab.id === 'query-1')?.transactional).toBe(true);
+    expect(state.tabs.find((tab) => tab.id === secondTabId)?.transactional).toBeFalsy();
   });
 });
 

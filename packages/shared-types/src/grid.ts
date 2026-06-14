@@ -9,21 +9,60 @@ export interface GridResponse {
   primaryKey?: string[];
 }
 
-export interface QueryResult extends GridResponse {
+interface StatementResultBase {
+  /** The statement's own source text (as split from the script) — used for per-statement headers. */
+  sql: string;
   executionTimeMs: number;
+}
+
+export interface RowsStatementResult extends GridResponse, StatementResultBase {
+  kind: 'rows';
   /** `true` when more rows exist beyond the returned page (architecture principle §7). */
   truncated?: boolean;
-  /**
-   * For non-`SELECT` statements (`UPDATE`/`INSERT`/`DELETE`/DDL): the executed command (e.g.
-   * `'UPDATE'`) and rows affected. `rows`/`columns` are empty and `editable` is `false`.
-   */
-  command?: string;
-  rowCount?: number;
+}
+
+/** A statement that ran but produced no rows (INSERT/UPDATE/DELETE/DDL/transaction control). */
+export interface CommandStatementResult extends StatementResultBase {
+  kind: 'command';
+  command: string;
+  rowCount: number;
+}
+
+/**
+ * `EXPLAIN` / `EXPLAIN ANALYZE` output. `planText` is the `QUERY PLAN` column's rows joined
+ * with `\n`, rendered verbatim in a monospace block. `analyze: true` means this statement
+ * actually executed the underlying query.
+ */
+export interface PlanStatementResult extends StatementResultBase {
+  kind: 'plan';
+  planText: string;
+  analyze: boolean;
+}
+
+/** A statement that failed. `code` is the Postgres SQLSTATE if available. */
+export interface ErrorStatementResult extends StatementResultBase {
+  kind: 'error';
+  message: string;
+  code?: string;
+  correlationId: string;
+}
+
+export type StatementResult = RowsStatementResult | CommandStatementResult | PlanStatementResult | ErrorStatementResult;
+
+/** Response for `POST /connections/:id/query`. */
+export interface ExecuteQueryResponse {
+  statements: StatementResult[];
+  /** Echoes the request's `transactional` flag. */
+  transactional: boolean;
+  /** Total statements split from the script — lets the UI report "N of M ran" after a rollback. */
+  statementCount: number;
 }
 
 /** Body for `POST /connections/:id/query`. */
 export interface ExecuteQueryBody {
   sql: string;
+  /** Wrap the whole batch in BEGIN/COMMIT, ROLLBACK the batch on any error. Default `false`. */
+  transactional?: boolean;
 }
 
 export interface RowUpdateRequest {

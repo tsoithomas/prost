@@ -19,12 +19,23 @@ function internals(svc: PgConnectionService): PgConnectionServiceInternals {
   return svc as unknown as PgConnectionServiceInternals;
 }
 
-// Minimal mock of a pg.Pool
-function makePool() {
+// Minimal mock of a pg.PoolClient
+function makeClient() {
   return {
     query: vi.fn().mockResolvedValue({ rows: [], fields: [], rowCount: 0, command: 'SELECT' }),
+    release: vi.fn(),
+  };
+}
+
+// Minimal mock of a pg.Pool
+function makePool() {
+  const client = makeClient();
+  return {
+    query: vi.fn().mockResolvedValue({ rows: [], fields: [], rowCount: 0, command: 'SELECT' }),
+    connect: vi.fn().mockResolvedValue(client),
     end: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
+    client,
   };
 }
 
@@ -165,5 +176,83 @@ describe('PgConnectionService — pool lifecycle', () => {
   it('evictPool is a no-op for unknown connectionId', async () => {
     const svc = new PgConnectionService(makePrisma(), makeCrypto(), makeConfig());
     await expect(svc.evictPool('unknown')).resolves.toBeUndefined();
+  });
+});
+
+describe('PgConnectionService — withTransactionClient', () => {
+  let pool: ReturnType<typeof makePool>;
+
+  beforeEach(() => {
+    pool = makePool();
+    vi.mock('pg', () => ({
+      Pool: vi.fn(() => pool),
+      Client: vi.fn(() => ({ connect: vi.fn(), query: vi.fn(), end: vi.fn() })),
+    }));
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function setup(): PgConnectionService {
+    const svc = new PgConnectionService(makePrisma(), makeCrypto(), makeConfig());
+    internals(svc).pools.set('conn-1', Promise.resolve(pool as unknown as Pool));
+    return svc;
+  }
+
+  it('checks out a client via pool.connect(), runs fn, and releases it once on success', async () => {
+    const svc = setup();
+
+    const result = await svc.withTransactionClient('conn-1', async (query) => {
+      await query({ sql: 'BEGIN' });
+      return 'done';
+    });
+
+    expect(result).toBe('done');
+    expect(pool.connect).toHaveBeenCalledOnce();
+    expect(pool.client.release).toHaveBeenCalledOnce();
+  });
+
+  it('rolls back before releasing when fn throws, and rethrows the original error', async () => {
+    const svc = setup();
+    const error = new Error('boom');
+
+    await expect(
+      svc.withTransactionClient('conn-1', async () => {
+        throw error;
+      }),
+    ).rejects.toThrow('boom');
+
+    const rollbackCallIndex = pool.client.query.mock.calls.findIndex(([sql]) => sql === 'ROLLBACK');
+    expect(rollbackCallIndex).toBeGreaterThanOrEqual(0);
+    expect(pool.client.release).toHaveBeenCalledOnce();
+
+    const rollbackOrder = pool.client.query.mock.invocationCallOrder[rollbackCallIndex]!;
+    const releaseOrder = pool.client.release.mock.invocationCallOrder[0]!;
+    expect(rollbackOrder).toBeLessThan(releaseOrder);
+  });
+
+  it('still rethrows the original error and releases when ROLLBACK itself throws', async () => {
+    const svc = setup();
+    pool.client.query.mockRejectedValueOnce(new Error('rollback failed'));
+    const error = new Error('boom');
+
+    await expect(
+      svc.withTransactionClient('conn-1', async () => {
+        throw error;
+      }),
+    ).rejects.toThrow('boom');
+
+    expect(pool.client.release).toHaveBeenCalledOnce();
+  });
+
+  it('query() proxies to client.query and maps the result', async () => {
+    const svc = setup();
+    pool.client.query.mockResolvedValueOnce({ rows: [{ id: 1 }], fields: [{ name: 'id', dataTypeID: 23 }], rowCount: 1, command: 'SELECT' });
+
+    const result = await svc.withTransactionClient('conn-1', async (query) => query({ sql: 'SELECT 1', params: [] }));
+
+    expect(pool.client.query).toHaveBeenCalledWith('SELECT 1', []);
+    expect(result).toEqual({ rows: [{ id: 1 }], fields: [{ name: 'id', dataTypeID: 23 }], rowCount: 1, command: 'SELECT' });
   });
 });

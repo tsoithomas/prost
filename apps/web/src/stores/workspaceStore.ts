@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { QueryResult } from '@prost/shared-types';
+import type { ExecuteQueryResponse } from '@prost/shared-types';
 
 export interface WorkspaceTab {
   id: string;
@@ -9,7 +9,9 @@ export interface WorkspaceTab {
   table?: string;
   viewMode?: 'rows' | 'structure';
   sql?: string;
-  result?: QueryResult | null;
+  result?: ExecuteQueryResponse | null;
+  /** "Run as transaction" toggle, per tab. Default `false`. */
+  transactional?: boolean;
 }
 
 export interface CursorPosition {
@@ -28,7 +30,8 @@ interface WorkspaceState {
   closeTab: (id: string) => void;
   newQueryTab: () => void;
   setTabSql: (id: string, sql: string) => void;
-  setTabResult: (id: string, result: QueryResult | null) => void;
+  setTabResult: (id: string, result: ExecuteQueryResponse | null) => void;
+  setTabTransactional: (id: string, transactional: boolean) => void;
   loadQuery: (sql: string) => void;
   clearPendingQuerySql: () => void;
   setCursorPosition: (position: CursorPosition) => void;
@@ -99,6 +102,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   setTabResult: (id, result) =>
     set((state) => ({
       tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, result } : tab)),
+    })),
+
+  setTabTransactional: (id, transactional) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, transactional } : tab)),
     })),
 
   loadQuery: (sql) =>

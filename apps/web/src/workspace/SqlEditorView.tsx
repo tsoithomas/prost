@@ -10,10 +10,11 @@ import type {
   SelectionChangedEvent,
 } from 'ag-grid-community';
 import { Bookmark, Play, Plus, Save, Trash2, X } from 'lucide-react';
-import type { QueryResult } from '@prost/shared-types';
+import type { ExecuteQueryResponse } from '@prost/shared-types';
 import {
   Badge,
   Button,
+  Checkbox,
   IconButton,
   Input,
   PROST_DARK_THEME,
@@ -33,6 +34,7 @@ import { ApiError, apiErrorDetail, apiErrorMessage } from '../lib/apiClient';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useThemeStore } from '../stores/themeStore';
 import { INITIAL_SQL, useWorkspaceStore } from '../stores/workspaceStore';
+import { PlanPanel, StatementResultPanel } from './StatementResultPanel';
 
 /** `sourceTable` is `schema.table` (see `editability.ts`) — split it back for the Phase 2 mutation hooks. */
 function splitSourceTable(sourceTable: string | undefined): { schema: string; table: string } | null {
@@ -53,6 +55,7 @@ export function SqlEditorView() {
   const activeTab = useWorkspaceStore((state) => state.tabs.find((tab) => tab.id === state.activeTabId));
   const setTabSql = useWorkspaceStore((state) => state.setTabSql);
   const setTabResult = useWorkspaceStore((state) => state.setTabResult);
+  const setTabTransactional = useWorkspaceStore((state) => state.setTabTransactional);
   const queryClient = useQueryClient();
   const monacoTheme = resolveColorMode(colorMode) === 'dark' ? PROST_DARK_THEME : PROST_LIGHT_THEME;
   const monacoRef = useRef<Monaco | null>(null);
@@ -60,9 +63,12 @@ export function SqlEditorView() {
   const gridApiRef = useRef<GridApi | null>(null);
 
   const sql = activeTab?.sql ?? INITIAL_SQL;
+  const transactional = activeTab?.transactional ?? false;
   const [saveSnippetName, setSaveSnippetName] = useState<string | null>(null);
-  const [result, setResult] = useState<QueryResult | null>(activeTab?.result ?? null);
-  const [rowData, setRowData] = useState<Record<string, unknown>[]>(activeTab?.result?.rows ?? []);
+  const [response, setResponse] = useState<ExecuteQueryResponse | null>(activeTab?.result ?? null);
+  const initialStatements = activeTab?.result?.statements ?? [];
+  const initialSingle = initialStatements.length === 1 ? initialStatements[0] : null;
+  const [rowData, setRowData] = useState<Record<string, unknown>[]>(initialSingle?.kind === 'rows' ? initialSingle.rows : []);
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
@@ -71,16 +77,23 @@ export function SqlEditorView() {
 
   const executeQuery = useExecuteQuery(connectionId ?? '');
 
-  const sourceTable = result ? splitSourceTable(result.sourceTable) : null;
+  const statements = response?.statements ?? [];
+  const single = statements.length === 1 ? statements[0]! : null;
+  const editableResult = single?.kind === 'rows' ? single : null;
+
+  const sourceTable = editableResult ? splitSourceTable(editableResult.sourceTable) : null;
   const updateCell = useUpdateCell(connectionId ?? '', sourceTable?.schema ?? '', sourceTable?.table ?? '');
   const insertRow = useInsertRow(connectionId ?? '', sourceTable?.schema ?? '', sourceTable?.table ?? '');
   const deleteRow = useDeleteRow(connectionId ?? '', sourceTable?.schema ?? '', sourceTable?.table ?? '');
 
-  const editable = result?.editable ?? false;
-  const primaryKey = result?.primaryKey ?? [];
-  const isGridResult = result !== null && result.columns.length > 0;
+  const editable = editableResult?.editable ?? false;
+  const primaryKey = editableResult?.primaryKey ?? [];
+  const isGridResult = editableResult !== null;
 
-  const columnDefs = useMemo(() => (result ? buildColumnDefs(result.columns, editable) : []), [result, editable]);
+  const columnDefs = useMemo(
+    () => (editableResult ? buildColumnDefs(editableResult.columns, editable) : []),
+    [editableResult, editable],
+  );
 
   const getRowId = useMemo(() => {
     if (primaryKey.length === 0) return undefined;
@@ -101,10 +114,12 @@ export function SqlEditorView() {
   // clears any in-progress edit/selection UI from the previous tab.
   useEffect(() => {
     const storedSql = activeTab?.sql ?? INITIAL_SQL;
-    const storedResult = activeTab?.result ?? null;
+    const storedResponse = activeTab?.result ?? null;
     editorRef.current?.setValue(storedSql);
-    setResult(storedResult);
-    setRowData(storedResult?.rows ?? []);
+    setResponse(storedResponse);
+    const storedStatements = storedResponse?.statements ?? [];
+    const storedSingle = storedStatements.length === 1 ? storedStatements[0]! : null;
+    setRowData(storedSingle?.kind === 'rows' ? storedSingle.rows : []);
     setPendingInsert(null);
     setSelectedRows([]);
     setSaveSnippetName(null);
@@ -128,17 +143,19 @@ export function SqlEditorView() {
     gridApiRef.current?.deselectAll();
 
     executeQuery.mutate(
-      { sql: trimmed },
+      { sql: trimmed, transactional },
       {
-        onSuccess: (response) => {
-          setResult(response);
-          setRowData(response.rows);
-          setTabResult(activeTabId, response);
+        onSuccess: (data) => {
+          setResponse(data);
+          const resultStatements = data.statements;
+          const resultSingle = resultStatements.length === 1 ? resultStatements[0]! : null;
+          setRowData(resultSingle?.kind === 'rows' ? resultSingle.rows : []);
+          setTabResult(activeTabId, data);
           queryClient.invalidateQueries({ queryKey: ['history', connectionId] });
         },
       },
     );
-  }, [connectionId, executeQuery, sql, queryClient, activeTabId, setTabResult]);
+  }, [connectionId, executeQuery, sql, transactional, queryClient, activeTabId, setTabResult]);
 
   // Monaco's Cmd/Ctrl+Enter command is registered once in `onMount`, so route it through a
   // ref to always call the latest `runQuery` (current `sql`/`connectionId`).
@@ -299,6 +316,17 @@ export function SqlEditorView() {
             <Play size={12} />
             {executeQuery.isPending ? 'Running…' : 'Run'}
           </Button>
+          <label
+            className="flex shrink-0 items-center gap-xs text-xs text-text-faint"
+            title="Wrap the script in BEGIN/COMMIT and roll back on any error. Don't combine with your own BEGIN/COMMIT."
+          >
+            <Checkbox
+              checked={transactional}
+              onChange={(e) => setTabTransactional(activeTabId, e.target.checked)}
+              aria-label="Run as transaction"
+            />
+            Transaction
+          </label>
           {saveSnippetName === null ? (
             <IconButton aria-label="Save snippet" onClick={() => setSaveSnippetName('')}>
               <Bookmark size={14} />
@@ -357,17 +385,27 @@ export function SqlEditorView() {
             </>
           ) : null}
           <div className="ml-auto flex shrink-0 items-center gap-sm whitespace-nowrap text-xs text-text-faint">
-            {result ? (
+            {single?.kind === 'rows' ? (
               <>
                 <Badge variant={editable ? 'success' : 'neutral'}>{editable ? 'Editable' : 'Read-only'}</Badge>
-                {result.truncated ? <Badge variant="warning">Truncated</Badge> : null}
+                {single.truncated ? <Badge variant="warning">Truncated</Badge> : null}
                 <span>
-                  {isGridResult
-                    ? `${rowData.length} row${rowData.length === 1 ? '' : 's'} · ${result.executionTimeMs} ms`
-                    : `${result.command ?? 'OK'} · ${result.rowCount ?? 0} row${result.rowCount === 1 ? '' : 's'} affected · ${result.executionTimeMs} ms`}
+                  {rowData.length} row{rowData.length === 1 ? '' : 's'} · {single.executionTimeMs} ms
                 </span>
               </>
             ) : null}
+            {single?.kind === 'command' ? (
+              <span>
+                {single.command} · {single.rowCount} row{single.rowCount === 1 ? '' : 's'} affected · {single.executionTimeMs} ms
+              </span>
+            ) : null}
+            {single?.kind === 'plan' ? (
+              <>
+                {single.analyze ? <Badge variant="warning">Analyze</Badge> : null}
+                <span>{single.executionTimeMs} ms</span>
+              </>
+            ) : null}
+            {single?.kind === 'error' ? <Badge variant="danger">{single.code ?? 'SQL_ERROR'}</Badge> : null}
           </div>
         </div>
         <div className="min-h-0 flex-1">
@@ -383,25 +421,50 @@ export function SqlEditorView() {
             <div className="flex h-full items-center justify-center text-sm text-text-faint">
               Select a connection to run queries.
             </div>
-          ) : result === null ? (
+          ) : response === null ? (
             <div className="flex h-full items-center justify-center text-sm text-text-faint">
               Run a query to see results here.
             </div>
-          ) : isGridResult ? (
-            <AgGridReact
-              theme={prostGridTheme}
-              columnDefs={columnDefs}
-              rowData={rowData}
-              getRowId={getRowId}
-              pinnedTopRowData={pinnedTopRowData}
-              rowSelection={editable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: false } : undefined}
-              onGridReady={onGridReady}
-              onSelectionChanged={onSelectionChanged}
-              onCellValueChanged={onCellValueChanged}
-            />
-          ) : (
+          ) : single ? (
+            single.kind === 'rows' ? (
+              <AgGridReact
+                theme={prostGridTheme}
+                columnDefs={columnDefs}
+                rowData={rowData}
+                getRowId={getRowId}
+                pinnedTopRowData={pinnedTopRowData}
+                rowSelection={editable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: false } : undefined}
+                onGridReady={onGridReady}
+                onSelectionChanged={onSelectionChanged}
+                onCellValueChanged={onCellValueChanged}
+              />
+            ) : single.kind === 'command' ? (
+              <div className="flex h-full items-center justify-center text-sm text-text-faint">
+                {single.command} — {single.rowCount} row{single.rowCount === 1 ? '' : 's'} affected.
+              </div>
+            ) : single.kind === 'plan' ? (
+              <PlanPanel planText={single.planText} analyze={single.analyze} className="h-full" />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-xs p-md text-center">
+                <Badge variant="danger">{single.code ?? 'SQL_ERROR'}</Badge>
+                <p className="max-w-[28rem] text-sm text-text">{single.message}</p>
+                <p className="text-xs text-text-faint">ref: {single.correlationId}</p>
+              </div>
+            )
+          ) : statements.length === 0 ? (
             <div className="flex h-full items-center justify-center text-sm text-text-faint">
-              {result.command ?? 'OK'} — {result.rowCount ?? 0} row{result.rowCount === 1 ? '' : 's'} affected.
+              No statements to run.
+            </div>
+          ) : (
+            <div className="flex h-full flex-col gap-sm overflow-y-auto p-sm">
+              {statements.map((statement, i) => (
+                <StatementResultPanel key={i} index={i} total={statements.length} statement={statement} />
+              ))}
+              {response.transactional && statements.length < response.statementCount ? (
+                <Badge variant="warning">
+                  Transaction rolled back — {statements.length} of {response.statementCount} statement(s) ran
+                </Badge>
+              ) : null}
             </div>
           )}
         </div>

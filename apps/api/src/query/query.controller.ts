@@ -1,6 +1,7 @@
-import { Body, Controller, Param, Post } from '@nestjs/common';
-import type { QueryResult } from '@prost/shared-types';
+import { Body, Controller, Param, Post, Req } from '@nestjs/common';
+import type { ExecuteQueryResponse } from '@prost/shared-types';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
+import type { RequestWithCorrelationId } from '../common/correlation-id.middleware';
 import { ConnectionsService } from '../connections/connections.service';
 import { ExecuteQueryDto } from './dto/execute-query.dto';
 import { QueryService } from './query.service';
@@ -17,8 +18,9 @@ export class QueryController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
     @Body() dto: ExecuteQueryDto,
-  ): Promise<QueryResult> {
+    @Req() req: RequestWithCorrelationId,
+  ): Promise<ExecuteQueryResponse> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.queryService.execute(id, dto.sql, user.userId);
+    return this.queryService.execute(id, dto.sql, user.userId, req.correlationId, dto.transactional ?? false);
   }
 }
