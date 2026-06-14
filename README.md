@@ -3,37 +3,53 @@
 A web-based PostgreSQL client (TablePlus-style) for internal developer use: connection
 management, schema browsing, table viewing/editing, and a SQL editor with query results.
 
-> **Status:** Phases 0–10 complete — the MVP (login, connection management, real schema browsing,
-> a paginated/editable table grid, a SQL editor with query history, theming/responsiveness) plus
-> the first post-MVP wave: `postgres://` connection-string import, table structure viewing,
-> create/alter table + index DDL, and an AI chat assistant with metadata-grounded RAG. The next
-> wave (Phases 11–22) is **planned** — two "strengthening" phases that harden already-built
-> features (reliability/abuse hardening, a frontend test foundation) followed by the remaining
-> backlog (snippets, row filtering, multi-query tabs, multi-statement/`EXPLAIN`, schema-aware
-> autocomplete, deeper grid editing, history management, global search, expanded preferences,
-> streaming results). See [`docs/plans/README.md`](docs/plans/README.md) for per-phase status and
-> [`docs/plans/roadmap-phase-11-22.md`](docs/plans/roadmap-phase-11-22.md) for the next-wave plan.
+> **Status:** Phases 0–16 complete. See [`docs/plans/README.md`](docs/plans/README.md) for
+> per-phase status and [`docs/plans/roadmap-phase-11-22.md`](docs/plans/roadmap-phase-11-22.md)
+> for the remaining backlog (Phases 17–22: schema-aware autocomplete, deeper grid editing,
+> history management, global search, expanded preferences, streaming results).
 
-## Highlights
+## Features
 
-- 🔐 **JWT auth** with a seeded admin (no public sign-up); every data route is guarded.
-- 🗄️ **Connection management** — create/test/edit/delete, or paste a `postgres://` connection
-  string to fill in the form; target-DB credentials encrypted at rest (AES-256-GCM), never
-  returned to the client.
-- 🌳 **Schema explorer** — real schemas/tables/columns/primary keys from system catalogs.
-- 📊 **Data grid** — AG Grid with server-side pagination (Infinite Row Model); built to stay
-  responsive on tables of 100,000+ rows, with inline cell editing + row insert/delete where the
-  backend deems the result set editable.
-- 📝 **SQL editor** — Monaco with real execution, a server-side editability analyzer, and a
-  query-history panel; results render in the same grid.
-- 🏗️ **Schema management** — read-only table structure (columns + indexes) plus DDL writes
-  (create/alter table, create/drop index) via a generate → preview → confirm → execute flow.
-- 🤖 **AI assistant** — a chat panel grounded by retrieval over schema metadata (no credentials or
-  row data ever sent), with user-managed OpenAI-compatible LLM endpoints and "Load into editor"
-  for suggested SQL — never auto-run.
-- 🎨 **Theming** — light/dark/system color mode + user-selectable accent, no flash on load,
-  applied consistently across the grid and Monaco editor.
-- 📱 **Responsive** — separate desktop (sidebar) and mobile (bottom-nav + bottom-sheet) shells.
+- 🔐 **JWT auth** — seeded admin account (no public sign-up); every data route is guarded.
+- 🗄️ **Connection management** — create/test/edit/delete; paste a `postgres://` URI to fill
+  the form; target-DB credentials encrypted at rest (AES-256-GCM), never returned to the
+  client.
+- 🌳 **Schema explorer** — real schemas/tables/columns/primary keys from system catalogs, with
+  a resizable sidebar.
+- 📊 **Data grid** — AG Grid with server-side pagination (Infinite Row Model); stays
+  responsive on tables of 100k+ rows. Inline cell editing, row insert, and row delete where the
+  backend deems the result editable.
+- 🔍 **Row filtering** — structured `WHERE` builder per column (=, ≠, contains, starts with,
+  ends with, is null, IN, NOT LIKE, …) compiled to parameterized SQL server-side.
+- 🏗️ **Schema management** — read-only table structure (columns + indexes) plus DDL writes:
+  create table (with column builder and live SQL preview), alter table (add/drop/rename columns,
+  set NOT NULL / DEFAULT / type), create index, drop index — all gated behind a
+  preview → confirm → execute flow.
+- 📝 **SQL editor** — Monaco with multi-statement script execution, a server-side editability
+  analyzer, query history, and saved snippets. Results render per-statement in stacked panels.
+- 🔀 **Multi-statement scripts** — run any number of SQL statements in one shot; each
+  statement gets its own result panel (rows grid, command tag, plan text, or error) with
+  per-statement timing.
+- 💱 **Transactions** — "Run as transaction" toggle wraps the batch in `BEGIN`/`COMMIT`,
+  rolling back on any error; a rolled-back badge shows how many of N statements ran.
+- 📋 **EXPLAIN / EXPLAIN ANALYZE** — plan output rendered verbatim in a monospace panel;
+  `ANALYZE` (or `EXPLAIN (ANALYZE, BUFFERS)`) shows real timings with a "This executes"
+  warning badge.
+- 🔖 **Saved snippets** — bookmark any query with a name, browse from the Sidebar's Snippets
+  tab, click to load back into the editor.
+- 🗂️ **Multi-query tabs** — independent SQL buffers per tab, each with its own result,
+  transaction toggle, and cursor position.
+- 📜 **Query history** — every successful query recorded server-side; browsable in the
+  Sidebar's History tab and mobile Settings; click to reload into Monaco.
+- 🤖 **AI assistant** — chat panel grounded by retrieval over schema metadata (≤8 k chars; no
+  credentials or row data ever sent). User-managed OpenAI-compatible LLM endpoints (OpenAI,
+  Ollama, LM Studio, OpenRouter, …) with per-user API-key encryption. "Load into editor" for
+  suggested SQL — never auto-run.
+- 🎨 **Theming** — light/dark/system color mode + user-selectable accent color; no flash on
+  load; applied consistently across the grid and Monaco editor; preference synced to the server
+  and persisted across sessions.
+- 📱 **Responsive** — separate desktop (resizable left/right sidebars + top bar + status bar)
+  and mobile (bottom-nav + bottom-sheet) shells; safe-area-aware; touch targets ≥ 44 px.
 
 ## Architecture
 
@@ -41,7 +57,7 @@ Prost touches **two kinds of database that must never be confused** (the project
 architectural principle):
 
 - **Application DB** — Prost's own data (users, saved connections, preferences, query
-  history). Accessed **only** through Prisma.
+  history, snippets). Accessed **only** through Prisma.
 - **Target DBs** — the PostgreSQL databases users connect to. Accessed **only** through the
   raw `pg` driver, funneled through a single `PgConnectionService` choke point with fully
   parameterized SQL (identifiers quoted via `quoteIdent`, values bound as `$n`).
@@ -64,9 +80,9 @@ apps/
   web/                 React + Vite + TS frontend
   api/                 NestJS + TS backend (app DB only)
 packages/
-  shared-types/        GridResponse, ColumnMetadata, DTOs — imported by both apps
+  shared-types/        GridResponse, StatementResult, ColumnMetadata, DTOs — imported by both apps
   ui/                  design tokens, primitives, AG Grid theme, Monaco theme
-  utils/               framework-free helpers (e.g. quoteIdent)
+  utils/               framework-free helpers (e.g. quoteIdent, parseConnectionString)
 docs/                  spec, architecture principles, per-phase plans
 docker-compose.yml     local app Postgres + demo target Postgres
 ```
@@ -96,7 +112,7 @@ docker compose up -d
 pnpm --filter @prost/api prisma:migrate
 pnpm --filter @prost/api prisma:seed
 
-# 5. Run everything (web on :5173, api on :3001)
+# 5. Run everything (web on :5173, api on :3010)
 pnpm -w dev
 ```
 
@@ -109,7 +125,7 @@ user/password `demo`) is a ready-made target DB with `users`/`orders`/`products`
 ```sh
 pnpm -w build        # build all packages/apps (turbo)
 pnpm -w lint         # eslint across the workspace
-pnpm -w test         # vitest (packages/utils + apps/api)
+pnpm -w test         # vitest (packages/utils + apps/api + apps/web)
 pnpm -w dev          # run all dev servers
 
 pnpm --filter @prost/web dev    # just the frontend
@@ -121,7 +137,8 @@ Run a single test:
 
 ```sh
 pnpm --filter @prost/utils test -- quoteIdent
-pnpm --filter @prost/api test -- crypto.service
+pnpm --filter @prost/api test -- query.service
+pnpm --filter @prost/web test -- SqlEditorView
 ```
 
 ## Releases
