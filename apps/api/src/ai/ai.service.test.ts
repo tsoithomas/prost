@@ -101,7 +101,7 @@ describe('AiService.chat', () => {
   it('calls the provider with the endpoint base URL, key, and model', async () => {
     const { service, provider } = createService();
     await service.chat('user-1', 'conn-1', REQ);
-    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(opts.baseUrl).toBe('https://api.openai.com/v1');
     expect(opts.apiKey).toBe('sk-secret');
     expect(opts.model).toBe('gpt-4o');
@@ -110,14 +110,14 @@ describe('AiService.chat', () => {
   it('includes schema context in the system prompt', async () => {
     const { service, provider } = createService();
     await service.chat('user-1', 'conn-1', REQ);
-    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(opts.systemPrompt).toContain('public.users');
   });
 
   it('passes mode to the system prompt — generateSql changes role', async () => {
     const { service, provider } = createService();
     await service.chat('user-1', 'conn-1', { ...REQ, mode: 'generateSql' });
-    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(opts.systemPrompt).toContain('SQL generator');
   });
 

@@ -71,7 +71,7 @@ describe('LlmEndpointService', () => {
         models: ['gpt-4o'],
       });
       expect(crypto.encrypt).toHaveBeenCalledWith('sk-secret');
-      const data = (llmEndpoint.create as ReturnType<typeof vi.fn>).mock.calls[0][0].data;
+      const data = (llmEndpoint.create as ReturnType<typeof vi.fn>).mock.calls[0]![0].data;
       expect(data.encryptedApiKey).toEqual(ENC);
       expect(data).not.toHaveProperty('apiKey');
     });
@@ -94,7 +94,7 @@ describe('LlmEndpointService', () => {
       const { service, crypto, llmEndpoint } = createService();
       await service.update('user-1', 'ep-1', { apiKey: 'sk-new' });
       expect(crypto.encrypt).toHaveBeenCalledWith('sk-new');
-      const data = (llmEndpoint.update as ReturnType<typeof vi.fn>).mock.calls[0][0].data;
+      const data = (llmEndpoint.update as ReturnType<typeof vi.fn>).mock.calls[0]![0].data;
       expect(data.encryptedApiKey).toEqual(ENC);
     });
 
@@ -102,7 +102,7 @@ describe('LlmEndpointService', () => {
       const { service, crypto, llmEndpoint } = createService();
       await service.update('user-1', 'ep-1', { name: 'Renamed' });
       expect(crypto.encrypt).not.toHaveBeenCalled();
-      const data = (llmEndpoint.update as ReturnType<typeof vi.fn>).mock.calls[0][0].data;
+      const data = (llmEndpoint.update as ReturnType<typeof vi.fn>).mock.calls[0]![0].data;
       expect(data).not.toHaveProperty('encryptedApiKey');
       expect(data.name).toBe('Renamed');
     });
