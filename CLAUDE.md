@@ -11,7 +11,7 @@ implementation plans + status live in [`docs/plans/`](docs/plans/README.md). Dur
 architectural rules (read before making non-trivial changes — a violation is a defect
 even if it works): [`docs/architecture-principles.md`](docs/architecture-principles.md).
 
-**Current status**: Phases 1-5 (MVP) plus Phase 6 complete. Login (JWT via `/auth/login`, guarded `/app/*`
+**Current status**: All phases 0–10 complete. Login (JWT via `/auth/login`, guarded `/app/*`
 routes), connection CRUD + test (`/connections`), real schema tree
 (`/connections/:id/metadata`), paginated table rows via AG Grid's Infinite Row Model
 (`/connections/:id/tables/:schema/:table/rows`) with inline cell editing + row insert/delete,
@@ -29,6 +29,26 @@ a results-favoring SQL editor split (`max-md:h-2/5`/`h-3/5`) round out the respo
 hardening pass. `ConnectionModal` can also parse a pasted `postgres://`/`postgresql://`
 connection string (`parseConnectionString` in `@prost/utils`) to fill in the host/port/
 database/user/password/SSL fields.
+
+**Phases 7–10 (post-MVP)**: A read-only `TableStructurePanel` (Phase 7) shows columns +
+indexes for the active table tab. `DdlModule` (`DdlService`, `DdlController`) handles all DDL
+writes: create table with column builder and preview (Phase 8); alter table (add/drop/rename
+columns, set NOT NULL / DEFAULT / type), create index, drop index — all with live SQL preview
+and `useConfirm` danger gates (Phase 9). Phase 10 adds an `AiModule` with `RetrievalService`
+(schema-only context, ≤8k chars, Decision-1 guard that no credentials or row data leak into the
+prompt) and `AiService` (`POST :id/ai/chat`). LLM providers are **user-managed**: an
+`LlmEndpoint` Prisma model (per-user, OpenAI-compatible `baseUrl` + `models[]` + API key
+encrypted at rest via the shared `CryptoService`, same as connection credentials) with CRUD at
+`/llm-endpoints` (`LlmEndpointService`/`LlmEndpointController`). `AiProviderService` uses the
+`openai` SDK, building a client per-call from the chosen endpoint's `baseUrl`/`apiKey`/`model`
+(any OpenAI-compatible API — OpenAI, Ollama, LM Studio, OpenRouter, …); there are **no AI env
+vars**. `AiService.chat` resolves the endpoint, validates the requested `model` belongs to it
+(400 otherwise), then calls the provider; provider failures map to a safe
+`ServiceUnavailableException`. The frontend `ChatPanel` (with a model picker `<optgroup>` per
+endpoint + a gear opening `LlmEndpointsModal`) lives in a **collapsible right sidebar**
+(`RightSidebar`, toggled from `TopBar`/`aiStore`) on desktop and the bottom-nav "AI" tab on
+mobile. SQL blocks in replies have a "Load into editor" button (`workspaceStore.loadQuery`); no
+auto-execution. When a user has no endpoints, the panel shows an "add an endpoint" empty state.
 
 ## Commands
 

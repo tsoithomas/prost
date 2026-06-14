@@ -12,6 +12,7 @@ import { GridModule } from './grid/grid.module';
 import { QueryModule } from './query/query.module';
 import { DdlModule } from './ddl/ddl.module';
 import { PreferenceModule } from './preference/preference.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { PreferenceModule } from './preference/preference.module';
     QueryModule,
     DdlModule,
     PreferenceModule,
+    AiModule,
   ],
   controllers: [AppController],
 })

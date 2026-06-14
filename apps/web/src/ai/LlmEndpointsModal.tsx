@@ -1,0 +1,292 @@
+import { useEffect, useState } from 'react';
+import { Bot, Plus, Save, Trash2, X } from 'lucide-react';
+import clsx from 'clsx';
+import type { LlmEndpointDto } from '@prost/shared-types';
+import { Badge, Button, IconButton, Input, Surface } from '@prost/ui';
+import {
+  useCreateLlmEndpoint,
+  useDeleteLlmEndpoint,
+  useLlmEndpoints,
+  useUpdateLlmEndpoint,
+} from '../api/ai';
+import { FormField } from '../components/FormField';
+import { useConfirm } from '../hooks/useConfirm';
+import { apiErrorDetail } from '../lib/apiClient';
+
+export interface LlmEndpointsModalProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+interface FormState {
+  name: string;
+  baseUrl: string;
+  apiKey: string;
+  models: string;
+}
+
+const blankForm: FormState = {
+  name: '',
+  baseUrl: 'https://api.openai.com/v1',
+  apiKey: '',
+  models: '',
+};
+
+function toFormState(endpoint: LlmEndpointDto): FormState {
+  return {
+    name: endpoint.name,
+    baseUrl: endpoint.baseUrl,
+    apiKey: '',
+    models: endpoint.models.join('\n'),
+  };
+}
+
+function parseModels(raw: string): string[] {
+  return raw
+    .split(/[\n,]/)
+    .map((m) => m.trim())
+    .filter((m) => m.length > 0);
+}
+
+export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
+  const { data: endpoints = [], isLoading } = useLlmEndpoints();
+  const createEndpoint = useCreateLlmEndpoint();
+  const updateEndpoint = useUpdateLlmEndpoint();
+  const deleteEndpoint = useDeleteLlmEndpoint();
+  const { confirm, dialog: confirmDialog } = useConfirm();
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [form, setForm] = useState<FormState>(blankForm);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) return;
+    setSelectedId(null);
+    setForm(blankForm);
+    setFormError(null);
+    createEndpoint.reset();
+    updateEndpoint.reset();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  function selectEndpoint(endpoint: LlmEndpointDto) {
+    setSelectedId(endpoint.id);
+    setForm(toFormState(endpoint));
+    setFormError(null);
+  }
+
+  function startNew() {
+    setSelectedId(null);
+    setForm(blankForm);
+    setFormError(null);
+  }
+
+  function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function validate(): string | null {
+    if (!form.name.trim()) return 'Name is required.';
+    if (!form.baseUrl.trim()) return 'Base URL is required.';
+    if (parseModels(form.models).length === 0) return 'Add at least one model.';
+    if (!selectedId && !form.apiKey) return 'API key is required (use any placeholder for keyless servers).';
+    return null;
+  }
+
+  function handleSave() {
+    const error = validate();
+    if (error) {
+      setFormError(error);
+      return;
+    }
+    setFormError(null);
+    const models = parseModels(form.models);
+
+    if (selectedId) {
+      updateEndpoint.mutate(
+        {
+          id: selectedId,
+          body: {
+            name: form.name.trim(),
+            baseUrl: form.baseUrl.trim(),
+            models,
+            ...(form.apiKey ? { apiKey: form.apiKey } : {}),
+          },
+        },
+        {
+          onSuccess: () => setForm((prev) => ({ ...prev, apiKey: '' })),
+          onError: (err) => setFormError(apiErrorDetail(err, 'Failed to save endpoint.')),
+        },
+      );
+    } else {
+      createEndpoint.mutate(
+        { name: form.name.trim(), baseUrl: form.baseUrl.trim(), apiKey: form.apiKey, models },
+        {
+          onSuccess: (created) => selectEndpoint(created),
+          onError: (err) => setFormError(apiErrorDetail(err, 'Failed to add endpoint.')),
+        },
+      );
+    }
+  }
+
+  async function handleDelete(endpoint: LlmEndpointDto) {
+    const confirmed = await confirm({
+      title: 'Delete endpoint',
+      description: `Delete "${endpoint.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!confirmed) return;
+    deleteEndpoint.mutate(endpoint.id, {
+      onSuccess: () => {
+        if (selectedId === endpoint.id) startNew();
+      },
+      onError: (err) => setFormError(apiErrorDetail(err, 'Failed to delete endpoint.')),
+    });
+  }
+
+  const saving = createEndpoint.isPending || updateEndpoint.isPending;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-md" onClick={onClose}>
+      <Surface
+        level="overlay"
+        bordered
+        onClick={(event) => event.stopPropagation()}
+        className="flex h-[min(560px,90vh)] w-full max-w-3xl flex-col overflow-hidden rounded-lg shadow-2xl md:flex-row"
+      >
+        {/* List pane */}
+        <div className="flex h-1/3 shrink-0 flex-col border-b border-border md:h-full md:w-1/3 md:border-b-0 md:border-r">
+          <Surface level="raised" className="flex h-12 shrink-0 items-center border-b border-border px-lg">
+            <Bot size={18} className="mr-sm text-accent" />
+            <span className="text-sm font-semibold text-text">LLM Endpoints</span>
+          </Surface>
+          <div className="mt-sm flex items-center justify-between px-md py-sm">
+            <span className="text-xs font-medium uppercase tracking-wider text-text-faint">Saved</span>
+            <IconButton aria-label="New endpoint" onClick={startNew}>
+              <Plus size={16} />
+            </IconButton>
+          </div>
+          <div className="flex-1 space-y-1 overflow-y-auto px-xs py-xs">
+            {isLoading ? (
+              <p className="px-sm py-2 text-xs italic text-text-faint">Loading…</p>
+            ) : endpoints.length === 0 ? (
+              <p className="px-sm py-2 text-xs italic text-text-faint">No endpoints yet.</p>
+            ) : (
+              endpoints.map((endpoint) => {
+                const isSelected = endpoint.id === selectedId;
+                return (
+                  <div key={endpoint.id} className="group relative">
+                    <button
+                      type="button"
+                      onClick={() => selectEndpoint(endpoint)}
+                      className={clsx(
+                        'flex w-full items-center gap-sm rounded-sm border border-transparent p-sm pr-8 text-left transition-colors',
+                        isSelected ? 'bg-accent-muted text-accent' : 'text-text hover:bg-surface-hover',
+                      )}
+                    >
+                      <Bot size={16} className={isSelected ? 'text-accent' : 'text-text-faint'} />
+                      <div className="flex min-w-0 flex-col">
+                        <span className="truncate text-sm">{endpoint.name}</span>
+                        <span className="truncate font-mono text-xs text-text-faint">
+                          {endpoint.models.length} model{endpoint.models.length === 1 ? '' : 's'}
+                        </span>
+                      </div>
+                    </button>
+                    <IconButton
+                      aria-label={`Delete ${endpoint.name}`}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleDelete(endpoint);
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </IconButton>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Form pane */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-lg">
+            <span className="text-sm font-semibold text-text">{selectedId ? 'Edit Endpoint' : 'New Endpoint'}</span>
+            <div className="flex items-center gap-sm">
+              <Badge variant="accent">OpenAI-compatible</Badge>
+              <IconButton aria-label="Close" onClick={onClose}>
+                <X size={16} />
+              </IconButton>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-lg">
+            <form className="flex flex-col gap-lg" onSubmit={(event) => event.preventDefault()}>
+              <FormField label="Name">
+                <Input value={form.name} onChange={(e) => updateField('name', e.target.value)} placeholder="My OpenAI" />
+              </FormField>
+
+              <FormField label="Base URL">
+                <Input
+                  className="font-mono"
+                  value={form.baseUrl}
+                  onChange={(e) => updateField('baseUrl', e.target.value)}
+                  placeholder="https://api.openai.com/v1"
+                />
+              </FormField>
+
+              <FormField label="API Key">
+                <Input
+                  className="font-mono"
+                  type="password"
+                  value={form.apiKey}
+                  onChange={(e) => updateField('apiKey', e.target.value)}
+                  placeholder={selectedId ? 'leave blank to keep current' : 'sk-…'}
+                />
+              </FormField>
+
+              <FormField label="Models (one per line, or comma-separated)">
+                <textarea
+                  value={form.models}
+                  onChange={(e) => updateField('models', e.target.value)}
+                  rows={4}
+                  placeholder={'gpt-4o\ngpt-4o-mini'}
+                  className="w-full resize-y rounded-sm border border-border bg-surface px-sm py-xs font-mono text-xs text-text placeholder-text-faint focus:border-accent focus:outline-none"
+                />
+              </FormField>
+
+              {formError ? (
+                <p className="text-xs text-danger" role="alert">
+                  {formError}
+                </p>
+              ) : null}
+            </form>
+          </div>
+
+          <Surface level="raised" className="flex h-16 shrink-0 items-center justify-end gap-md border-t border-border px-lg">
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Close
+            </Button>
+            <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
+              <Save size={14} />
+              {saving ? 'Saving…' : selectedId ? 'Save' : 'Add Endpoint'}
+            </Button>
+          </Surface>
+        </div>
+      </Surface>
+      {confirmDialog}
+    </div>
+  );
+}

@@ -2,7 +2,7 @@ import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
 import type { CreateTableBody, NewColumn } from '@prost/shared-types';
 
-class NewColumnDto implements NewColumn {
+export class NewColumnDto implements NewColumn {
   @IsString()
   @MinLength(1)
   name!: string;

@@ -20,10 +20,10 @@ passes **and** it violates none of the architecture principles.
 | [4](./phase-4-query-history.md) | Query history | ✅ Complete |
 | [5](./phase-5-theming-responsiveness.md) | Theming & responsiveness hardening | ✅ Complete |
 | [6](./phase-6-connection-string-import.md) | Connection string import (paste a Postgres URI) | ✅ Complete |
-| [7](./phase-7-schema-index-viewing.md) | View schema & indexes (table structure panel) | 📋 Planned |
-| [8](./phase-8-create-table.md) | Create table (first DDL write; preview→confirm→execute) | 📋 Planned |
-| [9](./phase-9-edit-schema-indexes.md) | Edit schema & indexes (alter columns, add/drop indexes) | 📋 Planned |
-| [10](./phase-10-ai-chat-rag.md) | AI chat assistant with metadata-grounded RAG | 📋 Planned |
+| [7](./phase-7-schema-index-viewing.md) | View schema & indexes (table structure panel) | ✅ Complete |
+| [8](./phase-8-create-table.md) | Create table (first DDL write; preview→confirm→execute) | ✅ Complete |
+| [9](./phase-9-edit-schema-indexes.md) | Edit schema & indexes (alter columns, add/drop indexes) | ✅ Complete |
+| [10](./phase-10-ai-chat-rag.md) | AI chat assistant with metadata-grounded RAG | ✅ Complete |
 
 Phases 0–5 are the **MVP** (complete). Phases 6–10 are the **post-MVP backlog** drawn from
 [`../future-features.md`](../future-features.md). Phase 6 is complete; 7–10 are planned but not

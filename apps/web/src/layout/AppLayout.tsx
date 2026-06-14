@@ -7,6 +7,7 @@ import { MobileShell } from '../mobile/MobileShell';
 import { useThemeStore } from '../stores/themeStore';
 import { TopBar } from './TopBar';
 import { Sidebar } from './Sidebar';
+import { RightSidebar } from './RightSidebar';
 import { StatusBar } from './StatusBar';
 
 export interface AppLayoutProps {
@@ -46,6 +47,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar onNewConnection={openConnectionModal} />
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
+        <RightSidebar />
       </div>
       <StatusBar />
       {connectionModal}

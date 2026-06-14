@@ -1,10 +1,11 @@
-import { Network, Settings, Terminal } from 'lucide-react';
+import { Bot, Network, Settings, Terminal } from 'lucide-react';
 import clsx from 'clsx';
 import type { MobileTab } from './MobileShell';
 
 const tabs: { key: MobileTab; label: string; icon: typeof Network }[] = [
   { key: 'explorer', label: 'Explorer', icon: Network },
   { key: 'editor', label: 'Editor', icon: Terminal },
+  { key: 'ai', label: 'AI', icon: Bot },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
 

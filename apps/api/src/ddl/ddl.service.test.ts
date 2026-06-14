@@ -1,11 +1,35 @@
 import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
+import type { ColumnMetadata, IndexMetadata, TableStructure } from '@prost/shared-types';
+import type { MetadataService } from '../metadata/metadata.service';
 import type { PgConnectionService } from '../target-db/pg-connection.service';
 import { DdlService } from './ddl.service';
 
-function createService(runParameterized = vi.fn().mockResolvedValue({ rows: [], rowCount: 0, fields: [], command: 'CREATE' })) {
+const DEFAULT_COLUMNS: ColumnMetadata[] = [
+  { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true },
+  { name: 'email', dataType: 'text', nullable: false, isPrimaryKey: false },
+  { name: 'note', dataType: 'text', nullable: true, isPrimaryKey: false },
+];
+
+const DEFAULT_INDEXES: IndexMetadata[] = [
+  { name: 'users_pkey', columns: ['id'], isUnique: true, isPrimary: true, method: 'btree', definition: '' },
+  { name: 'users_email_idx', columns: ['email'], isUnique: true, isPrimary: false, method: 'btree', definition: '' },
+];
+
+function mockStructure(columns = DEFAULT_COLUMNS, indexes = DEFAULT_INDEXES): TableStructure {
+  return { columns, indexes };
+}
+
+function createService(
+  runParameterized = vi.fn().mockResolvedValue({ rows: [], rowCount: 0, fields: [], command: 'CREATE' }),
+  structure: TableStructure = mockStructure(),
+) {
   const pgConnectionService = { runParameterized } as unknown as PgConnectionService;
-  return { service: new DdlService(pgConnectionService), runParameterized };
+  const metadataService = {
+    getTableStructure: vi.fn().mockResolvedValue(structure),
+    getTableColumns: vi.fn().mockResolvedValue(structure.columns),
+  } as unknown as MetadataService;
+  return { service: new DdlService(pgConnectionService, metadataService), runParameterized, metadataService };
 }
 
 describe('DdlService.buildSql — identifier quoting', () => {
@@ -249,5 +273,267 @@ describe('DdlService.createTable — type/default normalization', () => {
     });
     expect(result.sql).toContain('"col" varchar(255)');
     expect(result.sql).toContain('"ts" timestamptz NOT NULL DEFAULT now()');
+  });
+});
+
+describe('DdlService.alterTable — addColumn', () => {
+  it('emits ALTER TABLE … ADD COLUMN with quoted identifiers', async () => {
+    const { service, runParameterized } = createService();
+    const result = await service.alterTable('conn-1', {
+      schema: 'public',
+      table: 'users',
+      operation: { kind: 'addColumn', column: { name: 'score', type: 'integer', nullable: true, isPrimaryKey: false } },
+    });
+    expect(result.sql).toBe('ALTER TABLE "public"."users" ADD COLUMN "score" integer');
+    expect(runParameterized).toHaveBeenCalledWith('conn-1', result.sql, []);
+  });
+
+  it('emits NOT NULL and DEFAULT when set', async () => {
+    const { service } = createService();
+    const result = await service.alterTable('conn-1', {
+      schema: 'public',
+      table: 'users',
+      operation: { kind: 'addColumn', column: { name: 'score', type: 'integer', nullable: false, isPrimaryKey: false, default: '0' } },
+    });
+    expect(result.sql).toContain('NOT NULL');
+    expect(result.sql).toContain('DEFAULT 0');
+  });
+
+  it('throws 409 when the column already exists', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.alterTable('conn-1', {
+        schema: 'public',
+        table: 'users',
+        operation: { kind: 'addColumn', column: { name: 'email', type: 'text', nullable: true, isPrimaryKey: false } },
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('throws 422 for an unknown type', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.alterTable('conn-1', {
+        schema: 'public',
+        table: 'users',
+        operation: { kind: 'addColumn', column: { name: 'x', type: 'evil; DROP TABLE', nullable: true, isPrimaryKey: false } },
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+});
+
+describe('DdlService.alterTable — dropColumn', () => {
+  it('emits ALTER TABLE … DROP COLUMN with quoted identifier', async () => {
+    const { service } = createService();
+    const result = await service.alterTable('conn-1', {
+      schema: 'public',
+      table: 'users',
+      operation: { kind: 'dropColumn', column: 'note' },
+    });
+    expect(result.sql).toBe('ALTER TABLE "public"."users" DROP COLUMN "note"');
+  });
+
+  it('throws 422 when the column does not exist', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.alterTable('conn-1', { schema: 'public', table: 'users', operation: { kind: 'dropColumn', column: 'nope' } }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('throws 422 when attempting to drop a primary key column', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.alterTable('conn-1', { schema: 'public', table: 'users', operation: { kind: 'dropColumn', column: 'id' } }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+});
+
+describe('DdlService.alterTable — setNotNull / setDefault / changeType', () => {
+  it('emits SET NOT NULL', async () => {
+    const { service } = createService();
+    const result = await service.alterTable('conn-1', {
+      schema: 'public',
+      table: 'users',
+      operation: { kind: 'setNotNull', column: 'note', notNull: true },
+    });
+    expect(result.sql).toBe('ALTER TABLE "public"."users" ALTER COLUMN "note" SET NOT NULL');
+  });
+
+  it('emits DROP NOT NULL', async () => {
+    const { service } = createService();
+    const result = await service.alterTable('conn-1', {
+      schema: 'public',
+      table: 'users',
+      operation: { kind: 'setNotNull', column: 'note', notNull: false },
+    });
+    expect(result.sql).toBe('ALTER TABLE "public"."users" ALTER COLUMN "note" DROP NOT NULL');
+  });
+
+  it('emits SET DEFAULT', async () => {
+    const { service } = createService();
+    const result = await service.alterTable('conn-1', {
+      schema: 'public',
+      table: 'users',
+      operation: { kind: 'setDefault', column: 'note', default: 'now()' },
+    });
+    expect(result.sql).toBe('ALTER TABLE "public"."users" ALTER COLUMN "note" SET DEFAULT now()');
+  });
+
+  it('emits DROP DEFAULT when default is null', async () => {
+    const { service } = createService();
+    const result = await service.alterTable('conn-1', {
+      schema: 'public',
+      table: 'users',
+      operation: { kind: 'setDefault', column: 'note', default: null },
+    });
+    expect(result.sql).toBe('ALTER TABLE "public"."users" ALTER COLUMN "note" DROP DEFAULT');
+  });
+
+  it('throws 422 for a disallowed default value', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.alterTable('conn-1', {
+        schema: 'public',
+        table: 'users',
+        operation: { kind: 'setDefault', column: 'note', default: "'; DROP TABLE users; --" },
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('emits TYPE change', async () => {
+    const { service } = createService();
+    const result = await service.alterTable('conn-1', {
+      schema: 'public',
+      table: 'users',
+      operation: { kind: 'changeType', column: 'note', type: 'varchar(255)' },
+    });
+    expect(result.sql).toBe('ALTER TABLE "public"."users" ALTER COLUMN "note" TYPE varchar(255)');
+  });
+
+  it('emits TYPE … USING when using is provided', async () => {
+    const { service } = createService();
+    const result = await service.alterTable('conn-1', {
+      schema: 'public',
+      table: 'users',
+      operation: { kind: 'changeType', column: 'note', type: 'integer', using: 'note::integer' },
+    });
+    expect(result.sql).toBe('ALTER TABLE "public"."users" ALTER COLUMN "note" TYPE integer USING note::integer');
+  });
+
+  it('throws 422 for a USING expression with disallowed characters', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.alterTable('conn-1', {
+        schema: 'public',
+        table: 'users',
+        operation: { kind: 'changeType', column: 'note', type: 'integer', using: "note; DROP TABLE users; --" },
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('throws 422 when the target column does not exist', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.alterTable('conn-1', { schema: 'public', table: 'users', operation: { kind: 'setNotNull', column: 'nope', notNull: true } }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('maps Postgres 42846 (cannot cast) to 422', async () => {
+    const err = Object.assign(new Error('cannot cast'), { code: '42846' });
+    const { service } = createService(vi.fn().mockRejectedValue(err));
+    await expect(
+      service.alterTable('conn-1', { schema: 'public', table: 'users', operation: { kind: 'changeType', column: 'note', type: 'integer' } }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
+  it('maps Postgres 23502 (not-null violation) to 422', async () => {
+    const err = Object.assign(new Error('not null'), { code: '23502' });
+    const { service } = createService(vi.fn().mockRejectedValue(err));
+    await expect(
+      service.alterTable('conn-1', { schema: 'public', table: 'users', operation: { kind: 'setNotNull', column: 'note', notNull: true } }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+});
+
+describe('DdlService.createIndex', () => {
+  it('emits CREATE UNIQUE INDEX with quoted identifiers and USING btree', async () => {
+    const { service } = createService();
+    const result = await service.createIndex('conn-1', {
+      schema: 'public',
+      table: 'users',
+      name: 'users_email_unique',
+      columns: ['email'],
+      unique: true,
+    });
+    expect(result.sql).toBe('CREATE UNIQUE INDEX "users_email_unique" ON "public"."users" USING btree ("email")');
+    expect(result.name).toBe('users_email_unique');
+  });
+
+  it('auto-generates an index name when name is absent', async () => {
+    const { service } = createService();
+    const result = await service.createIndex('conn-1', {
+      schema: 'public',
+      table: 'users',
+      columns: ['email'],
+      unique: false,
+    });
+    expect(result.name).toBe('users_email_idx');
+    expect(result.sql).toContain('"users_email_idx"');
+  });
+
+  it('throws 422 when a column does not exist', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.createIndex('conn-1', { schema: 'public', table: 'users', columns: ['nope'], unique: false }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('throws 422 for a disallowed index method', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.createIndex('conn-1', { schema: 'public', table: 'users', columns: ['email'], unique: false, method: 'evil' }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('maps Postgres 42P07 (duplicate index) to 409', async () => {
+    const err = Object.assign(new Error('dup'), { code: '42P07' });
+    const { service } = createService(vi.fn().mockRejectedValue(err));
+    await expect(
+      service.createIndex('conn-1', { schema: 'public', table: 'users', name: 'dup', columns: ['email'], unique: false }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+});
+
+describe('DdlService.dropIndex', () => {
+  it('emits DROP INDEX with quoted schema and index name', async () => {
+    const { service } = createService();
+    const result = await service.dropIndex('conn-1', { schema: 'public', table: 'users', index: 'users_email_idx' });
+    expect(result.sql).toBe('DROP INDEX "public"."users_email_idx"');
+    expect(result.index).toBe('users_email_idx');
+  });
+
+  it('throws 422 when the index does not exist on the table, before reaching the database', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.dropIndex('conn-1', { schema: 'public', table: 'users', index: 'nonexistent_idx' }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('maps Postgres 42704 (undefined index) to 422', async () => {
+    const err = Object.assign(new Error('no index'), { code: '42704' });
+    const { service } = createService(vi.fn().mockRejectedValue(err));
+    await expect(
+      service.dropIndex('conn-1', { schema: 'public', table: 'users', index: 'users_email_idx' }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
   });
 });

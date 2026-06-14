@@ -10,7 +10,9 @@ import { CreateTableModal } from '../ddl/CreateTableModal';
 import { QueryHistoryList } from '../explorer/QueryHistoryList';
 import { SchemaTree } from '../explorer/SchemaTree';
 import { useConfirm } from '../hooks/useConfirm';
+import { useResizableWidth } from '../hooks/useResizableWidth';
 import { useConnectionStore } from '../stores/connectionStore';
+import { MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, useLayoutStore } from '../stores/layoutStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 
 type SidebarTab = 'connections' | 'explorer' | 'history' | 'snippets';
@@ -29,6 +31,15 @@ export interface SidebarProps {
 export function Sidebar({ onNewConnection }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('explorer');
   const [collapsed, setCollapsed] = useState(false);
+  const sidebarWidth = useLayoutStore((state) => state.leftSidebarWidth);
+  const setSidebarWidth = useLayoutStore((state) => state.setLeftSidebarWidth);
+  const { isResizing, onPointerDown } = useResizableWidth({
+    width: sidebarWidth,
+    min: MIN_SIDEBAR_WIDTH,
+    max: MAX_SIDEBAR_WIDTH,
+    onResize: setSidebarWidth,
+    side: 'left',
+  });
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
   const setActive = useConnectionStore((state) => state.setActive);
   const activeConnection = useActiveConnection();
@@ -72,9 +83,11 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
   return (
     <aside
       className={clsx(
-        'hidden shrink-0 flex-col border-r border-border bg-surface-sunken transition-[width] duration-150 md:flex',
-        collapsed ? 'w-12' : 'w-sidebar',
+        'relative hidden shrink-0 flex-col border-r border-border bg-surface-sunken md:flex',
+        !isResizing && 'transition-[width] duration-150',
+        collapsed && 'w-12',
       )}
+      style={collapsed ? undefined : { width: sidebarWidth }}
     >
       <div className={clsx('flex items-center gap-sm border-b border-border p-sm', collapsed && 'justify-center')}>
         {collapsed ? (
@@ -242,6 +255,15 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
           schemas={(schemas ?? []).map((s) => s.name)}
         />
       ) : null}
+      {collapsed ? null : (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar"
+          onPointerDown={onPointerDown}
+          className="absolute right-0 top-0 z-10 h-full w-1 -translate-x-1/2 cursor-col-resize hover:bg-accent/50"
+        />
+      )}
     </aside>
   );
 }

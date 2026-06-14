@@ -1,6 +1,18 @@
 import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { quoteIdent } from '@prost/utils';
-import type { CreateTableRequest, CreateTableResult, NewColumn } from '@prost/shared-types';
+import type {
+  AlterTableOperation,
+  AlterTableRequest,
+  AlterTableResult,
+  CreateIndexRequest,
+  CreateIndexResult,
+  CreateTableRequest,
+  CreateTableResult,
+  DropIndexRequest,
+  DropIndexResult,
+  NewColumn,
+} from '@prost/shared-types';
+import { MetadataService } from '../metadata/metadata.service';
 import { PgConnectionService } from '../target-db/pg-connection.service';
 
 const ALLOWED_TYPES = new Set([
@@ -20,9 +32,16 @@ const TYPE_PATTERN = /^([a-z]+(?: [a-z]+)*)(\(\s*\d+\s*(?:,\s*\d+\s*)?\))?$/;
 
 const SAFE_DEFAULT_PATTERN = /^(\d+|true|false|null|now\(\)|current_timestamp|gen_random_uuid\(\))$/i;
 
+const ALLOWED_INDEX_METHODS = new Set(['btree', 'hash', 'gin', 'gist', 'brin']);
+
+const USING_PATTERN = /^[a-z_][a-z0-9_]*(::([a-z][a-z0-9 ]*)(\(\s*\d+\s*(?:,\s*\d+\s*)?\))?)?$/i;
+
 @Injectable()
 export class DdlService {
-  constructor(private readonly pgConnectionService: PgConnectionService) {}
+  constructor(
+    private readonly pgConnectionService: PgConnectionService,
+    private readonly metadataService: MetadataService,
+  ) {}
 
   async createTable(connectionId: string, req: CreateTableRequest): Promise<CreateTableResult> {
     if (req.columns.length === 0) {
@@ -90,6 +109,187 @@ export class DdlService {
       );
     }
     return trimmed.toLowerCase();
+  }
+
+  async alterTable(connectionId: string, req: AlterTableRequest): Promise<AlterTableResult> {
+    const structure = await this.metadataService.getTableStructure(connectionId, req.schema, req.table);
+    const op = req.operation;
+    const colNames = new Set(structure.columns.map((c) => c.name));
+
+    let normalizedOp: AlterTableOperation;
+
+    switch (op.kind) {
+      case 'addColumn': {
+        if (colNames.has(op.column.name)) {
+          throw new ConflictException(`Column "${op.column.name}" already exists`);
+        }
+        const type = this.validateType(op.column.type);
+        const canonDefault = this.validateDefault(op.column.default);
+        const nullable = op.column.isPrimaryKey ? false : op.column.nullable;
+        normalizedOp = {
+          kind: 'addColumn',
+          column: { ...op.column, type, nullable, ...(canonDefault !== null ? { default: canonDefault } : { default: undefined }) },
+        };
+        break;
+      }
+      case 'dropColumn': {
+        if (!colNames.has(op.column)) {
+          throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+        }
+        const col = structure.columns.find((c) => c.name === op.column)!;
+        if (col.isPrimaryKey) {
+          throw new UnprocessableEntityException(`Cannot drop primary key column "${op.column}"`);
+        }
+        normalizedOp = op;
+        break;
+      }
+      case 'setNotNull': {
+        if (!colNames.has(op.column)) {
+          throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+        }
+        normalizedOp = op;
+        break;
+      }
+      case 'setDefault': {
+        if (!colNames.has(op.column)) {
+          throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+        }
+        let canonDefault: string | null = null;
+        if (op.default !== null) {
+          canonDefault = this.validateDefault(op.default);
+          if (canonDefault === null) {
+            throw new UnprocessableEntityException('Default value cannot be empty; pass null to drop the default');
+          }
+        }
+        normalizedOp = { ...op, default: canonDefault };
+        break;
+      }
+      case 'changeType': {
+        if (!colNames.has(op.column)) {
+          throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+        }
+        const type = this.validateType(op.type);
+        let using: string | undefined;
+        if (op.using !== undefined) {
+          const trimmed = op.using.trim();
+          if (!USING_PATTERN.test(trimmed)) {
+            throw new UnprocessableEntityException(
+              `Unsupported USING expression "${op.using}". Allowed: identifier or identifier::type`,
+            );
+          }
+          using = trimmed.toLowerCase();
+        }
+        normalizedOp = { kind: 'changeType', column: op.column, type, ...(using !== undefined ? { using } : {}) };
+        break;
+      }
+      default:
+        throw new UnprocessableEntityException('Unknown operation kind');
+    }
+
+    const sql = this.buildAlterSql(req.schema, req.table, normalizedOp);
+
+    try {
+      await this.pgConnectionService.runParameterized(connectionId, sql, []);
+    } catch (err: unknown) {
+      const pg = err as { code?: string };
+      if (pg.code === '42703') throw new UnprocessableEntityException('Column does not exist');
+      if (pg.code === '42846') throw new UnprocessableEntityException('Cannot cast automatically; provide a USING expression');
+      if (pg.code === '23502') throw new UnprocessableEntityException('Column has existing null values; cannot set NOT NULL');
+      if (pg.code === '42701') throw new ConflictException('Column already exists');
+      throw err;
+    }
+
+    return { schema: req.schema, table: req.table, sql };
+  }
+
+  async createIndex(connectionId: string, req: CreateIndexRequest): Promise<CreateIndexResult> {
+    const cols = await this.metadataService.getTableColumns(connectionId, req.schema, req.table);
+    if (req.columns.length === 0) {
+      throw new UnprocessableEntityException('At least one column is required for an index');
+    }
+    const colNames = new Set(cols.map((c) => c.name));
+    for (const col of req.columns) {
+      if (!colNames.has(col)) {
+        throw new UnprocessableEntityException(`Column "${col}" does not exist`);
+      }
+    }
+
+    const method = (req.method ?? 'btree').toLowerCase();
+    if (!ALLOWED_INDEX_METHODS.has(method)) {
+      throw new UnprocessableEntityException(
+        `Unsupported index method "${req.method}". Allowed: ${[...ALLOWED_INDEX_METHODS].join(', ')}`,
+      );
+    }
+
+    let name = req.name;
+    if (!name) {
+      const raw = `${req.table}_${req.columns.join('_')}_idx`;
+      name = raw.length > 63 ? raw.slice(0, 59) + '_idx' : raw;
+    }
+
+    const colList = req.columns.map(quoteIdent).join(', ');
+    const sql = `CREATE ${req.unique ? 'UNIQUE ' : ''}INDEX ${quoteIdent(name)} ON ${quoteIdent(req.schema)}.${quoteIdent(req.table)} USING ${method} (${colList})`;
+
+    try {
+      await this.pgConnectionService.runParameterized(connectionId, sql, []);
+    } catch (err: unknown) {
+      const pg = err as { code?: string };
+      if (pg.code === '42P07') throw new ConflictException('An index with that name already exists');
+      throw err;
+    }
+
+    return { schema: req.schema, table: req.table, name, sql };
+  }
+
+  async dropIndex(connectionId: string, req: DropIndexRequest): Promise<DropIndexResult> {
+    const structure = await this.metadataService.getTableStructure(connectionId, req.schema, req.table);
+    const exists = structure.indexes.some((idx) => idx.name === req.index);
+    if (!exists) {
+      throw new UnprocessableEntityException(`Index "${req.index}" does not exist on "${req.schema}"."${req.table}"`);
+    }
+
+    const sql = `DROP INDEX ${quoteIdent(req.schema)}.${quoteIdent(req.index)}`;
+
+    try {
+      await this.pgConnectionService.runParameterized(connectionId, sql, []);
+    } catch (err: unknown) {
+      const pg = err as { code?: string };
+      if (pg.code === '42704') throw new UnprocessableEntityException('Index does not exist');
+      throw err;
+    }
+
+    return { schema: req.schema, index: req.index, sql };
+  }
+
+  private buildAlterSql(schema: string, table: string, op: AlterTableOperation): string {
+    const prefix = `ALTER TABLE ${quoteIdent(schema)}.${quoteIdent(table)}`;
+    switch (op.kind) {
+      case 'addColumn': {
+        const col = op.column;
+        let def = `${quoteIdent(col.name)} ${col.type}`;
+        if (col.isPrimaryKey) {
+          def += ' PRIMARY KEY';
+        } else if (!col.nullable) {
+          def += ' NOT NULL';
+        }
+        if (col.default !== undefined && col.default !== '') def += ` DEFAULT ${col.default}`;
+        return `${prefix} ADD COLUMN ${def}`;
+      }
+      case 'dropColumn':
+        return `${prefix} DROP COLUMN ${quoteIdent(op.column)}`;
+      case 'setNotNull':
+        return `${prefix} ALTER COLUMN ${quoteIdent(op.column)} ${op.notNull ? 'SET' : 'DROP'} NOT NULL`;
+      case 'setDefault':
+        if (op.default !== null) {
+          return `${prefix} ALTER COLUMN ${quoteIdent(op.column)} SET DEFAULT ${op.default}`;
+        }
+        return `${prefix} ALTER COLUMN ${quoteIdent(op.column)} DROP DEFAULT`;
+      case 'changeType': {
+        let sql = `${prefix} ALTER COLUMN ${quoteIdent(op.column)} TYPE ${op.type}`;
+        if (op.using) sql += ` USING ${op.using}`;
+        return sql;
+      }
+    }
   }
 
   buildSql(req: CreateTableRequest): string {
