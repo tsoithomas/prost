@@ -6,3 +6,4 @@ export * from './error.js';
 export * from './ddl.js';
 export * from './ai.js';
 export * from './snippets.js';
+export * from './filter.js';

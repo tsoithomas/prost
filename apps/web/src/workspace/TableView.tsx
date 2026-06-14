@@ -11,8 +11,9 @@ import type {
   SelectionChangedEvent,
 } from 'ag-grid-community';
 import { Filter, Plus, Save, Trash2, X } from 'lucide-react';
-import type { GridResponse } from '@prost/shared-types';
-import { Button, IconButton, prostGridTheme, Toast } from '@prost/ui';
+import type { GridResponse, RowFilter } from '@prost/shared-types';
+import { Badge, Button, IconButton, prostGridTheme, Toast } from '@prost/ui';
+import { FilterPanel } from './FilterPanel';
 import { TableStructurePanel } from './TableStructurePanel';
 import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
 import { buildColumnDefs } from '../grid/columnDefs';
@@ -38,12 +39,20 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const gridApiRef = useRef<GridApi | null>(null);
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<RowFilter | null>(null);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const { confirm, dialog: confirmDialog } = useConfirm();
 
+  const filterKey = activeFilter?.conditions.length ? JSON.stringify(activeFilter) : null;
+
   const columnsQuery = useQuery({
-    queryKey: ['grid-columns', connectionId, schema, table],
-    queryFn: () => apiFetch<GridResponse>(rowsUrl(connectionId, schema, table, new URLSearchParams({ limit: '1', offset: '0' }))),
+    queryKey: ['grid-columns', connectionId, schema, table, filterKey],
+    queryFn: () => {
+      const search = new URLSearchParams({ limit: '1', offset: '0' });
+      if (filterKey) search.set('filter', filterKey);
+      return apiFetch<GridResponse>(rowsUrl(connectionId, schema, table, search));
+    },
   });
 
   const editable = columnsQuery.data?.editable ?? false;
@@ -76,6 +85,9 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
           search.set('sortBy', sort.colId);
           search.set('sortDir', sort.sort);
         }
+        if (activeFilter?.conditions.length) {
+          search.set('filter', JSON.stringify(activeFilter));
+        }
         apiFetch<GridResponse>(rowsUrl(connectionId, schema, table, search))
           .then((response) => {
             const lastRow = response.rows.length < limit ? offset + response.rows.length : undefined;
@@ -84,7 +96,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
           .catch(() => params.failCallback());
       },
     }),
-    [connectionId, schema, table],
+    [connectionId, schema, table, activeFilter],
   );
 
   const onGridReady = useCallback((event: GridReadyEvent) => {
@@ -184,8 +196,18 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
       <div className="flex h-8 max-md:h-11 shrink-0 items-center gap-1 border-b border-border bg-surface px-sm">
         {viewMode === 'rows' ? (
           <>
-            <IconButton aria-label="Filter rows" disabled title="Filtering — coming soon">
+            <IconButton
+              aria-label="Filter rows"
+              onClick={() => setFilterOpen((open) => !open)}
+              title="Filter rows"
+              className="relative"
+            >
               <Filter size={14} />
+              {(activeFilter?.conditions.length ?? 0) > 0 ? (
+                <Badge variant="neutral" className="absolute -right-1 -top-1 h-4 min-w-4 px-0.5 text-[10px] leading-none">
+                  {activeFilter!.conditions.length}
+                </Badge>
+              ) : null}
             </IconButton>
             <div className="mx-1 h-4 w-px bg-border" />
             <IconButton aria-label="Add row" onClick={handleAddRow} disabled={!editable || pendingInsert !== null}>
@@ -239,6 +261,13 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
           </div>
         </div>
       </div>
+      {viewMode === 'rows' && filterOpen ? (
+        <FilterPanel
+          columns={columnsQuery.data?.columns ?? []}
+          activeFilter={activeFilter}
+          onChange={setActiveFilter}
+        />
+      ) : null}
       <div className="min-h-0 flex-1">
         {viewMode === 'structure' ? (
           <TableStructurePanel connectionId={connectionId} schema={schema} table={table} />

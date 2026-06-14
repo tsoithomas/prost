@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { quoteIdent } from '@prost/utils';
-import type { ColumnMetadata, GridResponse, RowDeleteBody, RowInsertBody, RowUpdateBody } from '@prost/shared-types';
+import type { ColumnMetadata, GridResponse, RowDeleteBody, RowFilter, RowInsertBody, RowUpdateBody } from '@prost/shared-types';
 import { MetadataService } from '../metadata/metadata.service';
 import { PgConnectionService } from '../target-db/pg-connection.service';
+import { compileWhere } from './filter';
 
 const DEFAULT_LIMIT = 100;
 
@@ -11,6 +12,7 @@ export interface GetRowsOptions {
   offset?: number;
   sortBy?: string;
   sortDir?: 'asc' | 'desc';
+  filter?: RowFilter;
 }
 
 interface ResolvedTable {
@@ -34,6 +36,11 @@ export class GridService {
   ): Promise<GridResponse> {
     const { columns, columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
 
+    const hasFilter = (options.filter?.conditions.length ?? 0) > 0;
+    const { clause: whereClause, params: filterParams } = hasFilter
+      ? compileWhere(options.filter!, columns, 0)
+      : { clause: '', params: [] };
+
     const orderColumn =
       options.sortBy && columnNames.has(options.sortBy) ? options.sortBy : primaryKey[0];
     const sortDir = options.sortDir === 'desc' ? 'DESC' : 'ASC';
@@ -41,14 +48,23 @@ export class GridService {
     const limit = options.limit ?? DEFAULT_LIMIT;
     const offset = options.offset ?? 0;
 
-    let sql = `SELECT * FROM ${quoteIdent(schema)}.${quoteIdent(table)}`;
-    if (orderColumn) {
-      sql += ` ORDER BY ${quoteIdent(orderColumn)} ${sortDir}`;
-    }
-    sql += ' LIMIT $1 OFFSET $2';
+    const limitParam = filterParams.length + 1;
+    const offsetParam = filterParams.length + 2;
 
-    const { rows } = await this.pgConnectionService.runParameterized(connectionId, sql, [limit, offset]);
-    const totalRows = await this.getApproximateRowCount(connectionId, schema, table);
+    let sql = `SELECT * FROM ${quoteIdent(schema)}.${quoteIdent(table)}`;
+    if (whereClause) sql += ` ${whereClause}`;
+    if (orderColumn) sql += ` ORDER BY ${quoteIdent(orderColumn)} ${sortDir}`;
+    sql += ` LIMIT $${limitParam} OFFSET $${offsetParam}`;
+
+    const { rows } = await this.pgConnectionService.runParameterized(connectionId, sql, [
+      ...filterParams,
+      limit,
+      offset,
+    ]);
+
+    const totalRows = hasFilter
+      ? await this.getFilteredRowCount(connectionId, schema, table, whereClause, filterParams)
+      : await this.getApproximateRowCount(connectionId, schema, table);
 
     return {
       rows,
@@ -170,6 +186,22 @@ export class GridService {
         `Primary key for "${schema}.${table}" must be exactly: ${expected.join(', ')}`,
       );
     }
+  }
+
+  private async getFilteredRowCount(
+    connectionId: string,
+    schema: string,
+    table: string,
+    whereClause: string,
+    params: unknown[],
+  ): Promise<number> {
+    const sql = `SELECT COUNT(*) AS count FROM ${quoteIdent(schema)}.${quoteIdent(table)} ${whereClause}`;
+    const { rows } = await this.pgConnectionService.runParameterized<{ count: string }>(
+      connectionId,
+      sql,
+      params,
+    );
+    return parseInt(rows[0]?.count ?? '0', 10);
   }
 
   private async getApproximateRowCount(connectionId: string, schema: string, table: string): Promise<number> {

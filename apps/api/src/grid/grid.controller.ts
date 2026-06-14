@@ -29,6 +29,7 @@ export class GridController {
       offset: query.offset,
       sortBy: query.sortBy,
       sortDir: query.sortDir,
+      filter: query.filter,
     });
   }
 

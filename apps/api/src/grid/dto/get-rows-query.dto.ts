@@ -1,5 +1,6 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import type { RowFilter } from '@prost/shared-types';
 
 export class GetRowsQueryDto {
   @IsOptional()
@@ -22,4 +23,11 @@ export class GetRowsQueryDto {
   @IsOptional()
   @IsIn(['asc', 'desc'])
   sortDir?: 'asc' | 'desc';
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => {
+    if (typeof value !== 'string') return undefined;
+    try { return JSON.parse(value) as RowFilter; } catch { return undefined; }
+  })
+  filter?: RowFilter;
 }
