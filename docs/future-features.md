@@ -10,9 +10,23 @@ decisions, backend/frontend work, verification, out-of-scope) and add it to
 Items are grouped by area. Each entry notes whether a UI affordance already exists (and where)
 and links back to its source for full context where one exists.
 
+> **Status (2026-06-14):** The Stage 6–10 wave (connection-string import, schema view/edit, create
+> table, AI chat) is **complete**. The remaining items below have been sequenced into **Phases
+> 11–22** — two "strengthening" phases that harden already-built features (reliability/abuse
+> hardening, a frontend test foundation) plus the rest of this backlog. See
+> [`plans/roadmap-phase-11-22.md`](./plans/roadmap-phase-11-22.md) for full sequencing and
+> [`plans/README.md`](./plans/README.md) for the status table. Per-area pointers to the owning
+> phase are inline below.
+
 ---
 
 ## Workspace / SQL editor
+
+> **Owning phases:** multi-query tabs → [Phase 15](./plans/phase-15-multi-query-tabs.md);
+> multi-statement/transactions/`EXPLAIN` → [Phase 16](./plans/phase-16-multi-statement-explain.md);
+> autocomplete + formatting → [Phase 17](./plans/phase-17-editor-intellisense.md); streaming results
+> → [Phase 22](./plans/phase-22-streaming-results.md); saved snippets + save-current-query →
+> [Phase 13](./plans/phase-13-saved-snippets.md).
 
 ### Multi-query tabs ("+ New Query")
 Open several query tabs at once, each with its own Monaco buffer, results grid, and run state.
@@ -58,6 +72,10 @@ change.
 ---
 
 ## Table view / grid
+
+> **Owning phases:** row filtering → [Phase 14](./plans/phase-14-row-filtering.md); everything else
+> in this section (type-aware editors, multi-cell/bulk edits, undo/redo + optimistic concurrency,
+> pin/group) → [Phase 18](./plans/phase-18-grid-editing-depth.md).
 
 ### Row filtering (column-level `WHERE` builder)
 A filter popover per column that compiles to a parameterized `WHERE` clause fed into the
@@ -109,6 +127,8 @@ statement in the SQL editor.
 
 ## Search & navigation
 
+> **Owning phase:** global search → [Phase 20](./plans/phase-20-global-search.md).
+
 ### Global search
 Workspace-wide search across schemas, tables, columns, and (maybe) history — client-side
 fuzzy search over already-loaded metadata to start, server-backed later.
@@ -119,6 +139,8 @@ TopBar.
 ---
 
 ## Query history
+
+> **Owning phase:** all history-management items → [Phase 19](./plans/phase-19-history-management.md).
 
 ### Editing, starring, deleting history entries
 Manage history entries beyond the current read-only recent-queries list.
@@ -150,6 +172,8 @@ fields, as a faster alternative to filling each field in individually.
 
 ## Theming / preferences
 
+> **Owning phase:** all theming/preferences items → [Phase 21](./plans/phase-21-preferences-theming.md).
+
 ### Additional preference types
 Font size, grid density, keybindings — beyond the current `colorMode`/`accentColor`.
 **UI today:** `SettingsPanel` covers color mode + accent only.
@@ -169,15 +193,52 @@ Beyond the existing preset + custom-hex accent picker.
 
 ## AI / Assistance
 
+> **Owning phase:** ✅ delivered in [Phase 10](./plans/phase-10-ai-chat-rag.md) (complete).
+
 ### Chat interface with RAG
 A chat-style assistant for the connected database — answer questions, generate/explain SQL —
 grounded via retrieval over schema metadata (and possibly query history).
-**UI today:** none.
-**Source:** user request (2026-06-12).
+**UI today:** delivered — `ChatPanel` in the collapsible right sidebar (desktop) / "AI" bottom-nav
+tab (mobile), with user-managed `LlmEndpoint`s and "Load into editor" for SQL blocks.
+**Source:** user request (2026-06-12). **Done:** Phase 10.
+
+---
+
+## Strengthening already-built features
+
+Not feature requests — gaps found in a 2026-06-14 review of the shipped code. Captured here so
+the backlog reflects *all* known work, not just new features.
+
+> **Owning phases:** reliability & abuse hardening (login/AI throttling, target-DB pool lifecycle,
+> editability fail-safe, single-statement invariant) → [Phase 11](./plans/phase-11-reliability-hardening.md);
+> frontend test foundation (`apps/web` has zero tests today) →
+> [Phase 12](./plans/phase-12-frontend-test-foundation.md).
+
+### Rate limiting / abuse controls
+`@nestjs/throttler` isn't installed; `POST /auth/login` (brute-force) and `POST :id/ai/chat`
+(unbounded external-LLM cost) have no throttling. → Phase 11.
+
+### Target-DB pool lifecycle
+`PgConnectionService.pools` is keyed per connection and only evicted explicitly — no idle-TTL/LRU
+reaping, `MAX_POOL_SIZE` hardcoded rather than config-driven. → Phase 11.
+
+### Editability analyzer fail-safe + statement invariant
+`query/editability.ts` must provably default to read-only on any SQL it can't fully prove maps to
+one updatable base table; the implicit single-statement-per-execution assumption should be an
+explicit, tested guard. → Phase 11.
+
+### Frontend test coverage
+`apps/web/src` has **no tests** vs. 14 API specs — the most user-facing logic (editability gating,
+DDL modals, theme hydration, connection-string parse, chat load-into-editor) is unprotected. →
+Phase 12.
 
 ---
 
 ## Suggested stages for recently-added features
+
+> **Historical (superseded).** This block sequenced the Stage 6–10 wave, now **all complete**. For
+> the next wave (Phases 11–22) see [`plans/roadmap-phase-11-22.md`](./plans/roadmap-phase-11-22.md).
+> Kept for provenance.
 
 A rough sequencing for the four features added above (connection string import, schema/index
 viewing & editing, create table, AI chat with RAG), based on effort and dependency — not a

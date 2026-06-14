@@ -3,12 +3,16 @@
 A web-based PostgreSQL client (TablePlus-style) for internal developer use: connection
 management, schema browsing, table viewing/editing, and a SQL editor with query results.
 
-> **Status:** MVP (Phases 1–5) complete — login, connection management, real schema browsing,
-> a paginated/editable table grid, a SQL editor with query history, and theming/responsiveness
-> hardening all work end-to-end. Phase 6 (paste a `postgres://` connection string into
-> "New Connection") is also complete; Phases 7–10 (schema/index viewing & editing, create
-> table, AI chat) are planned. See [`docs/plans/`](docs/plans/README.md) for per-phase plans
-> and status.
+> **Status:** Phases 0–10 complete — the MVP (login, connection management, real schema browsing,
+> a paginated/editable table grid, a SQL editor with query history, theming/responsiveness) plus
+> the first post-MVP wave: `postgres://` connection-string import, table structure viewing,
+> create/alter table + index DDL, and an AI chat assistant with metadata-grounded RAG. The next
+> wave (Phases 11–22) is **planned** — two "strengthening" phases that harden already-built
+> features (reliability/abuse hardening, a frontend test foundation) followed by the remaining
+> backlog (snippets, row filtering, multi-query tabs, multi-statement/`EXPLAIN`, schema-aware
+> autocomplete, deeper grid editing, history management, global search, expanded preferences,
+> streaming results). See [`docs/plans/README.md`](docs/plans/README.md) for per-phase status and
+> [`docs/plans/roadmap-phase-11-22.md`](docs/plans/roadmap-phase-11-22.md) for the next-wave plan.
 
 ## Highlights
 
@@ -18,7 +22,15 @@ management, schema browsing, table viewing/editing, and a SQL editor with query 
   returned to the client.
 - 🌳 **Schema explorer** — real schemas/tables/columns/primary keys from system catalogs.
 - 📊 **Data grid** — AG Grid with server-side pagination (Infinite Row Model); built to stay
-  responsive on tables of 100,000+ rows.
+  responsive on tables of 100,000+ rows, with inline cell editing + row insert/delete where the
+  backend deems the result set editable.
+- 📝 **SQL editor** — Monaco with real execution, a server-side editability analyzer, and a
+  query-history panel; results render in the same grid.
+- 🏗️ **Schema management** — read-only table structure (columns + indexes) plus DDL writes
+  (create/alter table, create/drop index) via a generate → preview → confirm → execute flow.
+- 🤖 **AI assistant** — a chat panel grounded by retrieval over schema metadata (no credentials or
+  row data ever sent), with user-managed OpenAI-compatible LLM endpoints and "Load into editor"
+  for suggested SQL — never auto-run.
 - 🎨 **Theming** — light/dark/system color mode + user-selectable accent, no flash on load,
   applied consistently across the grid and Monaco editor.
 - 📱 **Responsive** — separate desktop (sidebar) and mobile (bottom-nav + bottom-sheet) shells.
