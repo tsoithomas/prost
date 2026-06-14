@@ -9,6 +9,7 @@ import { useMetadata } from '../api/metadata';
 import { CreateTableModal } from '../ddl/CreateTableModal';
 import { QueryHistoryList } from '../explorer/QueryHistoryList';
 import { SchemaTree } from '../explorer/SchemaTree';
+import { SnippetList } from '../explorer/SnippetList';
 import { useConfirm } from '../hooks/useConfirm';
 import { useResizableWidth } from '../hooks/useResizableWidth';
 import { useConnectionStore } from '../stores/connectionStore';
@@ -115,39 +116,28 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
       </div>
 
       <div className={clsx('flex flex-col gap-1 p-sm', collapsed && 'items-center')}>
-        {sidebarTabs.map(({ key, label, icon: Icon }) => {
-          const disabled = key === 'snippets';
-          return (
-            <button
-              key={key}
-              type="button"
-              title={label}
-              aria-label={label}
-              onClick={() => {
-                setActiveTab(key);
-                if (collapsed) setCollapsed(false);
-              }}
-              disabled={disabled}
-              className={clsx(
-                'flex items-center gap-sm rounded-sm text-xs transition-colors',
-                collapsed ? 'h-8 w-8 justify-center' : 'px-sm py-1.5',
-                disabled
-                  ? 'cursor-not-allowed text-text-faint opacity-50'
-                  : activeTab === key
-                    ? 'bg-accent-muted text-accent'
-                    : 'text-text-muted hover:bg-surface-hover hover:text-text',
-              )}
-            >
-              <Icon size={16} />
-              {!collapsed ? label : null}
-              {!collapsed && disabled ? (
-                <Badge variant="neutral" className="ml-auto">
-                  Soon
-                </Badge>
-              ) : null}
-            </button>
-          );
-        })}
+        {sidebarTabs.map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            type="button"
+            title={label}
+            aria-label={label}
+            onClick={() => {
+              setActiveTab(key);
+              if (collapsed) setCollapsed(false);
+            }}
+            className={clsx(
+              'flex items-center gap-sm rounded-sm text-xs transition-colors',
+              collapsed ? 'h-8 w-8 justify-center' : 'px-sm py-1.5',
+              activeTab === key
+                ? 'bg-accent-muted text-accent'
+                : 'text-text-muted hover:bg-surface-hover hover:text-text',
+            )}
+          >
+            <Icon size={16} />
+            {!collapsed ? label : null}
+          </button>
+        ))}
       </div>
 
       <div className="flex-1 overflow-y-auto px-sm py-1">
@@ -227,9 +217,9 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
               })}
             </div>
           )
-        ) : (
-          <p className="px-sm py-2 text-xs italic text-text-faint">Saved snippets — coming soon.</p>
-        )}
+        ) : activeTab === 'snippets' ? (
+          <SnippetList onSelect={loadQuery} />
+        ) : null}
       </div>
 
       <div className={clsx('border-t border-border p-sm', collapsed && 'flex justify-center')}>

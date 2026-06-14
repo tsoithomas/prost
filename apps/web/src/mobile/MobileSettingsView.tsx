@@ -3,6 +3,7 @@ import { Button, Surface } from '@prost/ui';
 import { useConnections } from '../api/connections';
 import { useQueryHistory } from '../api/history';
 import { QueryHistoryList } from '../explorer/QueryHistoryList';
+import { SnippetList } from '../explorer/SnippetList';
 import { ThemeSettings } from '../layout/ThemeSettings';
 import { useAuthStore } from '../stores/authStore';
 import { useConnectionStore } from '../stores/connectionStore';
@@ -11,9 +12,10 @@ import { useWorkspaceStore } from '../stores/workspaceStore';
 export interface MobileSettingsViewProps {
   onManageConnections: () => void;
   onSelectHistoryQuery: () => void;
+  onSelectSnippet: () => void;
 }
 
-export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery }: MobileSettingsViewProps) {
+export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, onSelectSnippet }: MobileSettingsViewProps) {
   const { data: connections = [] } = useConnections();
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
   const { data: history, isLoading: isHistoryLoading, isError: isHistoryError } = useQueryHistory(activeConnectionId);
@@ -73,6 +75,11 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery }
             />
           </section>
         ) : null}
+
+        <section>
+          <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">Snippets</h2>
+          <SnippetList onSelect={(sql) => { loadQuery(sql); onSelectSnippet(); }} />
+        </section>
 
         <section>
           <Button variant="ghost" size="sm" className="w-full justify-center !text-danger" onClick={clearAuth}>

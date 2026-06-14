@@ -48,14 +48,24 @@ vi.mock('../api/query', () => ({
   }),
 }));
 
+const mockCreateSnippetMutate = vi.fn();
+
+vi.mock('../api/snippets', () => ({
+  useCreateSnippet: () => ({
+    mutate: mockCreateSnippetMutate,
+    isPending: false,
+  }),
+}));
+
 afterEach(() => {
   vi.clearAllMocks();
 });
 
 function makeResult(overrides: Partial<QueryResult> = {}): QueryResult {
   return {
-    columns: [{ name: 'id', dataTypeID: 23 }],
+    columns: [{ name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false }],
     rows: [{ id: 1 }],
+    totalRows: 1,
     rowCount: 1,
     executionTimeMs: 5,
     command: 'SELECT',
@@ -75,6 +85,34 @@ function simulateQuery(result: QueryResult) {
   );
 }
 
+describe('SqlEditorView — save snippet', () => {
+  it('clicking the bookmark button shows the name input', async () => {
+    renderWithProviders(<SqlEditorView />);
+    await userEvent.click(screen.getByRole('button', { name: /save snippet/i }));
+    expect(screen.getByPlaceholderText('Snippet name')).toBeInTheDocument();
+  });
+
+  it('typing a name and clicking Save calls createSnippet.mutate', async () => {
+    renderWithProviders(<SqlEditorView />);
+    await userEvent.click(screen.getByRole('button', { name: /save snippet/i }));
+    await userEvent.type(screen.getByPlaceholderText('Snippet name'), 'My query');
+    await userEvent.click(screen.getByRole('button', { name: /^save$/i }));
+    expect(mockCreateSnippetMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'My query' }),
+      expect.any(Object),
+    );
+  });
+
+  it('clicking Cancel hides the input without calling mutate', async () => {
+    renderWithProviders(<SqlEditorView />);
+    await userEvent.click(screen.getByRole('button', { name: /save snippet/i }));
+    expect(screen.getByPlaceholderText('Snippet name')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /cancel save/i }));
+    expect(screen.queryByPlaceholderText('Snippet name')).not.toBeInTheDocument();
+    expect(mockCreateSnippetMutate).not.toHaveBeenCalled();
+  });
+});
+
 describe('SqlEditorView — editability gating', () => {
   it('does not show the Add Row button before any query is run', () => {
     renderWithProviders(<SqlEditorView />);
@@ -82,7 +120,7 @@ describe('SqlEditorView — editability gating', () => {
   });
 
   it('shows the Add Row button as disabled when the result is read-only', async () => {
-    simulateQuery(makeResult({ editable: false, columns: [{ name: 'id', dataTypeID: 23 }] }));
+    simulateQuery(makeResult({ editable: false, columns: [{ name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false }] }));
 
     renderWithProviders(<SqlEditorView />);
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
@@ -97,7 +135,7 @@ describe('SqlEditorView — editability gating', () => {
         editable: true,
         primaryKey: ['id'],
         sourceTable: 'public.users',
-        columns: [{ name: 'id', dataTypeID: 23 }],
+        columns: [{ name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false }],
       }),
     );
 
@@ -109,7 +147,7 @@ describe('SqlEditorView — editability gating', () => {
   });
 
   it('shows "Read-only" badge for a non-editable result', async () => {
-    simulateQuery(makeResult({ editable: false, columns: [{ name: 'id', dataTypeID: 23 }] }));
+    simulateQuery(makeResult({ editable: false, columns: [{ name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false }] }));
     renderWithProviders(<SqlEditorView />);
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
     expect(screen.getByText('Read-only')).toBeInTheDocument();
@@ -117,7 +155,7 @@ describe('SqlEditorView — editability gating', () => {
 
   it('shows "Editable" badge for an editable result', async () => {
     simulateQuery(
-      makeResult({ editable: true, primaryKey: ['id'], sourceTable: 'public.users', columns: [{ name: 'id', dataTypeID: 23 }] }),
+      makeResult({ editable: true, primaryKey: ['id'], sourceTable: 'public.users', columns: [{ name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false }] }),
     );
     renderWithProviders(<SqlEditorView />);
     await userEvent.click(screen.getByRole('button', { name: /run/i }));

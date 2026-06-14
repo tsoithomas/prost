@@ -15,6 +15,7 @@ import { QueryModule } from './query/query.module';
 import { DdlModule } from './ddl/ddl.module';
 import { PreferenceModule } from './preference/preference.module';
 import { AiModule } from './ai/ai.module';
+import { SnippetModule } from './snippets/snippet.module';
 
 const globalThrottleGuard: Provider = { provide: APP_GUARD, useClass: ThrottlerGuard };
 
@@ -46,6 +47,7 @@ const globalThrottleGuard: Provider = { provide: APP_GUARD, useClass: ThrottlerG
     DdlModule,
     PreferenceModule,
     AiModule,
+    SnippetModule,
   ],
   controllers: [AppController],
   providers: [globalThrottleGuard],

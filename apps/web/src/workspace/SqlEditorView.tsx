@@ -9,12 +9,13 @@ import type {
   GridReadyEvent,
   SelectionChangedEvent,
 } from 'ag-grid-community';
-import { Play, Plus, Save, Trash2, X } from 'lucide-react';
+import { Bookmark, Play, Plus, Save, Trash2, X } from 'lucide-react';
 import type { QueryResult } from '@prost/shared-types';
 import {
   Badge,
   Button,
   IconButton,
+  Input,
   PROST_DARK_THEME,
   PROST_LIGHT_THEME,
   Toast,
@@ -24,6 +25,7 @@ import {
 } from '@prost/ui';
 import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
 import { useExecuteQuery } from '../api/query';
+import { useCreateSnippet } from '../api/snippets';
 import { buildColumnDefs } from '../grid/columnDefs';
 import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
@@ -55,12 +57,14 @@ export function SqlEditorView() {
   const gridApiRef = useRef<GridApi | null>(null);
 
   const [sql, setSql] = useState(DEFAULT_QUERY);
+  const [saveSnippetName, setSaveSnippetName] = useState<string | null>(null);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [rowData, setRowData] = useState<Record<string, unknown>[]>([]);
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const { confirm, dialog: confirmDialog } = useConfirm();
+  const createSnippet = useCreateSnippet();
 
   const executeQuery = useExecuteQuery(connectionId ?? '');
 
@@ -221,6 +225,19 @@ export function SqlEditorView() {
     });
   }
 
+  function handleSaveSnippet() {
+    if (saveSnippetName === null) return;
+    const name = saveSnippetName.trim();
+    if (!name) return;
+    createSnippet.mutate(
+      { name, body: sql.trim() },
+      {
+        onSuccess: () => setSaveSnippetName(null),
+        onError: (err) => pushToast('danger', apiErrorMessage(err, 'Failed to save snippet.')),
+      },
+    );
+  }
+
   const error = executeQuery.error;
   const errorCode = error instanceof ApiError ? error.code : null;
 
@@ -263,6 +280,35 @@ export function SqlEditorView() {
             <Play size={12} />
             {executeQuery.isPending ? 'Running…' : 'Run'}
           </Button>
+          {saveSnippetName === null ? (
+            <IconButton aria-label="Save snippet" onClick={() => setSaveSnippetName('')}>
+              <Bookmark size={14} />
+            </IconButton>
+          ) : (
+            <>
+              <Input
+                value={saveSnippetName}
+                onChange={(e) => setSaveSnippetName(e.target.value)}
+                placeholder="Snippet name"
+                className="h-6 w-40 text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveSnippet();
+                  if (e.key === 'Escape') setSaveSnippetName(null);
+                }}
+                autoFocus
+              />
+              <Button
+                size="sm"
+                onClick={handleSaveSnippet}
+                disabled={!saveSnippetName.trim() || createSnippet.isPending}
+              >
+                Save
+              </Button>
+              <IconButton aria-label="Cancel save" onClick={() => setSaveSnippetName(null)}>
+                <X size={14} />
+              </IconButton>
+            </>
+          )}
           <span className="hidden text-xs text-text-faint sm:inline">⌘/Ctrl + Enter</span>
           {isGridResult ? (
             <>
