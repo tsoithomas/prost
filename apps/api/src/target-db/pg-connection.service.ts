@@ -79,7 +79,7 @@ export class PgConnectionService implements OnModuleInit, OnModuleDestroy {
   }
 
   onModuleInit(): void {
-    this.sweepInterval = setInterval(() => { this.sweep(); }, Math.floor(this.poolIdleMs / 2));
+    this.sweepInterval = setInterval(this.sweep, Math.floor(this.poolIdleMs / 2));
   }
 
   async onModuleDestroy(): Promise<void> {
@@ -195,7 +195,7 @@ export class PgConnectionService implements OnModuleInit, OnModuleDestroy {
     return pool;
   }
 
-  private sweep(): void {
+  private readonly sweep = (): void => {
     const now = Date.now();
     const entries = [...this.poolLastUsed.entries()].sort((a, b) => a[1] - b[1]);
 
