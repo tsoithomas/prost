@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client, Pool, type QueryResultRow } from 'pg';
 import type { TestConnectionResult } from '@prost/shared-types';
@@ -24,7 +24,6 @@ export interface ParameterizedResult<T extends QueryResultRow = QueryResultRow> 
 }
 
 const CONNECT_TIMEOUT_MS = 5000;
-const MAX_POOL_SIZE = 5;
 
 /**
  * Node's `net` module connects to both IPv4/IPv6 addresses for a host (Happy Eyeballs) and,
@@ -50,19 +49,43 @@ function describeConnectionError(error: unknown): string {
  * principle #1). Every query against a target DB must go through `runParameterized`,
  * which always binds values as `$n` parameters — callers are responsible for quoting
  * any identifiers with `quoteIdent` before interpolating them into SQL text.
+ *
+ * Pool lifecycle: each connection gets one `pg.Pool` cached in `pools`. The idle sweep
+ * (running every `poolIdleMs / 2`) closes and drops pools unused for `poolIdleMs`. If the
+ * number of live pools exceeds `poolMax`, the least-recently-used are evicted first. All
+ * pools are closed cleanly on module destroy.
  */
 @Injectable()
-export class PgConnectionService {
+export class PgConnectionService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PgConnectionService.name);
   private readonly pools = new Map<string, Promise<Pool>>();
+  private readonly poolLastUsed = new Map<string, number>();
+  private sweepInterval?: ReturnType<typeof setInterval>;
+
   private readonly statementTimeoutMs: number;
+  private readonly poolSize: number;
+  private readonly poolIdleMs: number;
+  private readonly poolMax: number;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
     config: ConfigService,
   ) {
-    this.statementTimeoutMs = Number(config.get('QUERY_TIMEOUT_MS') ?? 30000);
+    this.statementTimeoutMs = Number(config.get('QUERY_TIMEOUT_MS') ?? 30_000);
+    this.poolSize = Number(config.get('TARGET_POOL_SIZE') ?? 5);
+    this.poolIdleMs = Number(config.get('TARGET_POOL_IDLE_MS') ?? 10 * 60_000);
+    this.poolMax = Number(config.get('TARGET_POOL_MAX') ?? 20);
+  }
+
+  onModuleInit(): void {
+    this.sweepInterval = setInterval(() => { this.sweep(); }, Math.floor(this.poolIdleMs / 2));
+  }
+
+  async onModuleDestroy(): Promise<void> {
+    if (this.sweepInterval) clearInterval(this.sweepInterval);
+    const ids = [...this.pools.keys()];
+    await Promise.all(ids.map((id) => this.evictPool(id)));
   }
 
   async runParameterized<T extends QueryResultRow = QueryResultRow>(
@@ -71,6 +94,7 @@ export class PgConnectionService {
     params: unknown[] = [],
   ): Promise<ParameterizedResult<T>> {
     const pool = await this.getPool(connectionId);
+    this.poolLastUsed.set(connectionId, Date.now());
     const start = Date.now();
     try {
       const result = await pool.query<T>(sql, params);
@@ -122,23 +146,26 @@ export class PgConnectionService {
   /** Evicts and closes the cached pool for a connection (e.g. on delete/credential change). */
   async evictPool(connectionId: string): Promise<void> {
     const cached = this.pools.get(connectionId);
-    if (!cached) {
-      return;
-    }
+    if (!cached) return;
     this.pools.delete(connectionId);
+    this.poolLastUsed.delete(connectionId);
     await cached.then((pool) => pool.end()).catch(() => undefined);
+    this.logger.log(`pool evicted connectionId=${connectionId}`);
   }
 
   private getPool(connectionId: string): Promise<Pool> {
     const cached = this.pools.get(connectionId);
     if (cached) {
+      this.poolLastUsed.set(connectionId, Date.now());
       return cached;
     }
 
     const created = this.createPool(connectionId);
     this.pools.set(connectionId, created);
+    this.poolLastUsed.set(connectionId, Date.now());
     created.catch(() => {
       this.pools.delete(connectionId);
+      this.poolLastUsed.delete(connectionId);
     });
     return created;
   }
@@ -158,7 +185,7 @@ export class PgConnectionService {
       ssl: connection.sslEnabled ? { rejectUnauthorized: connection.sslRejectUnauthorized } : undefined,
       connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
       statement_timeout: this.statementTimeoutMs,
-      max: MAX_POOL_SIZE,
+      max: this.poolSize,
     });
 
     pool.on('error', (error) => {
@@ -166,5 +193,29 @@ export class PgConnectionService {
     });
 
     return pool;
+  }
+
+  private sweep(): void {
+    const now = Date.now();
+    const entries = [...this.poolLastUsed.entries()].sort((a, b) => a[1] - b[1]);
+
+    for (const [connectionId, lastUsed] of entries) {
+      if (now - lastUsed > this.poolIdleMs) {
+        this.logger.log(`pool idle sweep evicting connectionId=${connectionId} idleMs=${now - lastUsed}`);
+        void this.evictPool(connectionId);
+      }
+    }
+
+    // LRU cap: evict oldest if over the max
+    const active = [...this.pools.keys()];
+    if (active.length > this.poolMax) {
+      const lruEntries = [...this.poolLastUsed.entries()]
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, active.length - this.poolMax);
+      for (const [connectionId] of lruEntries) {
+        this.logger.log(`pool LRU cap evicting connectionId=${connectionId}`);
+        void this.evictPool(connectionId);
+      }
+    }
   }
 }

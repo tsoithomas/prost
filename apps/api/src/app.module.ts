@@ -1,5 +1,7 @@
-import { MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { MiddlewareConsumer, Module, type NestModule, Provider } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
@@ -14,11 +16,24 @@ import { DdlModule } from './ddl/ddl.module';
 import { PreferenceModule } from './preference/preference.module';
 import { AiModule } from './ai/ai.module';
 
+const globalThrottleGuard: Provider = { provide: APP_GUARD, useClass: ThrottlerGuard };
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env', '../../.env'],
+    }),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => [
+        {
+          name: 'default',
+          ttl: Number(config.get('THROTTLE_GLOBAL_TTL_MS') ?? 60_000),
+          limit: Number(config.get('THROTTLE_GLOBAL_LIMIT') ?? 100),
+        },
+      ],
     }),
     PrismaModule,
     CommonModule,
@@ -33,6 +48,7 @@ import { AiModule } from './ai/ai.module';
     AiModule,
   ],
   controllers: [AppController],
+  providers: [globalThrottleGuard],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

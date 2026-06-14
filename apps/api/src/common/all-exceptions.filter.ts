@@ -107,6 +107,8 @@ function errorCodeForStatus(status: number): ErrorCode {
     case HttpStatus.BAD_REQUEST:
     case HttpStatus.UNPROCESSABLE_ENTITY:
       return 'VALIDATION_ERROR';
+    case HttpStatus.TOO_MANY_REQUESTS:
+      return 'RATE_LIMIT_ERROR';
     default:
       return status >= 500 ? 'INTERNAL_ERROR' : 'VALIDATION_ERROR';
   }

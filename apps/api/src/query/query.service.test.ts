@@ -171,6 +171,31 @@ describe('QueryService.execute — unparsed SELECT', () => {
   });
 });
 
+describe('QueryService.execute — multi-statement guard', () => {
+  it('rejects multi-statement input with a 400 before execution', async () => {
+    const runParameterized = vi.fn();
+    const { service, record } = createService(runParameterized);
+
+    await expect(service.execute('conn-1', 'SELECT 1; SELECT 2;', 'user-1')).rejects.toThrow(
+      'Run one statement at a time',
+    );
+    expect(runParameterized).not.toHaveBeenCalled();
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('does not reject a single statement', async () => {
+    const runParameterized = vi
+      .fn()
+      .mockResolvedValueOnce(result([{ id: 1 }], { fields: [{ name: 'id', dataTypeID: 23 }] }))
+      .mockResolvedValueOnce(pgTypeResult({ 23: 'int4' }));
+    const { service } = createService(runParameterized);
+
+    await expect(service.execute('conn-1', 'SELECT * FROM users', 'user-1')).resolves.toMatchObject({
+      editable: true,
+    });
+  });
+});
+
 describe('QueryService.execute — non-SELECT', () => {
   it('returns an affected-row count instead of a grid for UPDATE', async () => {
     const runParameterized = vi.fn().mockResolvedValueOnce(result([], { rowCount: 1, command: 'UPDATE' }));

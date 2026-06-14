@@ -5,6 +5,7 @@ export type ErrorCode =
   | 'CONNECTION_ERROR'
   | 'SQL_ERROR'
   | 'TIMEOUT_ERROR'
+  | 'RATE_LIMIT_ERROR'
   | 'INTERNAL_ERROR';
 
 export interface ErrorEnvelope {

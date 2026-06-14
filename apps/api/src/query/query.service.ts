@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Parser } from 'node-sql-parser';
 import type { ColumnMetadata, QueryResult } from '@prost/shared-types';
 import { HistoryService } from '../history/history.service';
@@ -31,6 +31,12 @@ export class QueryService {
 
   async execute(connectionId: string, sql: string, userId: string): Promise<QueryResult> {
     const statements = this.parseStatements(sql);
+
+    // Phase 16 lifts this guard to support multi-statement scripts and transactions.
+    if (statements.length > 1) {
+      throw new BadRequestException('Run one statement at a time — multi-statement execution is not yet supported');
+    }
+
     const isSingleSelect = statements.length === 1 && statements[0]?.type === 'select';
     const isUnparsedSelect = statements.length === 0 && looksLikeSingleSelect(sql);
 

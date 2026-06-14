@@ -22,6 +22,7 @@
     "@nestjs/core": "^11",
     "@nestjs/jwt": "^10",
     "@nestjs/platform-express": "^11",
+    "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^6",
     "@prost/shared-types": "workspace:*",
     "@prost/utils": "workspace:*",

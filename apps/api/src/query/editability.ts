@@ -50,11 +50,23 @@ function isSelect(statement: ParsedStatement): statement is ParsedSelect {
 }
 
 /**
+ * Returns true if `node` (anywhere in an AST subtree) contains a nested SELECT — i.e. a
+ * subquery. Used to reject WHERE-clause subqueries that `extractSingleTable` would otherwise
+ * miss because they don't affect the top-level `from` array.
+ */
+function containsSubquery(node: unknown): boolean {
+  if (node === null || node === undefined || typeof node !== 'object') return false;
+  if ((node as Record<string, unknown>)['type'] === 'select') return true;
+  const children = Array.isArray(node) ? node : Object.values(node as Record<string, unknown>);
+  return children.some(containsSubquery);
+}
+
+/**
  * If `statements` is exactly one `SELECT` against exactly one base table (no join, no
- * subquery, no CTE), returns its schema/table so the caller can resolve the table's primary
- * key via `MetadataService`. Returns `null` for anything else — joins, subqueries, CTEs,
- * multi-statement input, or non-`SELECT` statements are never editable, so there's no need
- * to look up a table at all.
+ * subquery, no CTE, no set operation), returns its schema/table so the caller can resolve
+ * the table's primary key via `MetadataService`. Returns `null` for anything else — joins,
+ * subqueries, CTEs, UNION/INTERSECT/EXCEPT, multi-statement input, or non-`SELECT` statements
+ * are never editable, so there's no need to look up a table at all.
  */
 export function extractSingleTable(statements: ParsedStatement[]): SingleTableRef | null {
   if (statements.length !== 1) return null;
@@ -62,11 +74,17 @@ export function extractSingleTable(statements: ParsedStatement[]): SingleTableRe
   if (!statement || !isSelect(statement)) return null;
   if (statement.with && statement.with.length > 0) return null;
 
+  // UNION / INTERSECT / EXCEPT: node-sql-parser chains these via `_next` on the outer SELECT.
+  if ((statement as Record<string, unknown>)['_next'] != null) return null;
+
   const from = statement.from;
   if (!Array.isArray(from) || from.length !== 1) return null;
 
   const [ref] = from;
   if (!ref || ref.join || typeof ref.table !== 'string') return null;
+
+  // Subqueries in WHERE make the result non-updatable even when FROM is a single table.
+  if (containsSubquery((statement as Record<string, unknown>)['where'])) return null;
 
   return { schema: ref.db ?? 'public', table: ref.table };
 }

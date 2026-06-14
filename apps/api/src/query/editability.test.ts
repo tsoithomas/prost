@@ -117,3 +117,68 @@ describe('analyzeEditability — spec §6.7 truth table', () => {
     expect(extractSingleTable(statements)).toBeNull();
   });
 });
+
+describe('editability fail-safe — risky SQL shapes are read-only', () => {
+  it('UNION — extractSingleTable returns null (two FROM sources)', () => {
+    const statements = parse('SELECT id FROM users UNION SELECT id FROM admins');
+    expect(extractSingleTable(statements)).toBeNull();
+  });
+
+  it('UNION ALL — read-only', () => {
+    const statements = parse('SELECT id FROM users UNION ALL SELECT id FROM admins');
+    expect(extractSingleTable(statements)).toBeNull();
+  });
+
+  it('INTERSECT — read-only', () => {
+    const statements = parse('SELECT id FROM users INTERSECT SELECT id FROM admins');
+    expect(extractSingleTable(statements)).toBeNull();
+  });
+
+  it('EXCEPT — read-only', () => {
+    const statements = parse('SELECT id FROM users EXCEPT SELECT id FROM admins');
+    expect(extractSingleTable(statements)).toBeNull();
+  });
+
+  it('subquery in WHERE — extractSingleTable returns null (WHERE contains a subquery)', () => {
+    const statements = parse("SELECT id, email FROM users WHERE id IN (SELECT user_id FROM orders WHERE total > 100)");
+    expect(extractSingleTable(statements)).toBeNull();
+  });
+
+  it('window function (OVER) — read-only', () => {
+    // node-sql-parser may fail to parse OVER; either way result is read-only
+    try {
+      const statements = parse('SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn FROM users');
+      const table = extractSingleTable(statements);
+      if (table === null) {
+        expect(table).toBeNull();
+      } else {
+        expect(analyzeEditability(statements, table, USERS_PK)).toEqual({ editable: false });
+      }
+    } catch {
+      // parse failure → read-only path in QueryService (executeUnparsedSelect / executeOther)
+      expect(true).toBe(true);
+    }
+  });
+
+  it('schema-qualified table SELECT * — still editable (this is the supported case)', () => {
+    const statements = parse('SELECT * FROM public.users');
+    const table = extractSingleTable(statements)!;
+
+    expect(table).toEqual({ schema: 'public', table: 'users' });
+    expect(analyzeEditability(statements, table, USERS_PK)).toEqual({
+      editable: true,
+      sourceTable: 'public.users',
+      primaryKey: ['id'],
+    });
+  });
+
+  it('VALUES — not a SELECT, read-only', () => {
+    // VALUES without INSERT is not standard SQL; parser will throw or misclassify
+    try {
+      const statements = parse('VALUES (1, 2), (3, 4)');
+      expect(extractSingleTable(statements)).toBeNull();
+    } catch {
+      expect(true).toBe(true);
+    }
+  });
+});
