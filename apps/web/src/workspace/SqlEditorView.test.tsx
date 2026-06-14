@@ -31,6 +31,18 @@ vi.mock('../stores/connectionStore', () => ({
     selector({ activeConnectionId: 'conn-1' }),
 }));
 
+vi.mock('../api/metadata', () => ({
+  useMetadata: () => ({ data: undefined }),
+}));
+
+vi.mock('./useMonacoCompletions', () => ({
+  useMonacoCompletions: vi.fn(),
+}));
+
+vi.mock('sql-formatter', () => ({
+  format: (sql: string) => sql.toUpperCase(),
+}));
+
 vi.mock('../hooks/useConfirm', () => ({
   useConfirm: () => ({ confirm: vi.fn().mockResolvedValue(true), dialog: null }),
 }));
@@ -129,6 +141,13 @@ function simulateQuery(response: ExecuteQueryResponse) {
     },
   );
 }
+
+describe('SqlEditorView — toolbar', () => {
+  it('renders the Format SQL button', () => {
+    renderWithProviders(<SqlEditorView />);
+    expect(screen.getByRole('button', { name: /format sql/i })).toBeInTheDocument();
+  });
+});
 
 describe('SqlEditorView — save snippet', () => {
   it('clicking the bookmark button shows the name input', async () => {

@@ -12,6 +12,48 @@ function createService(runParameterized = vi.fn()) {
   return { service: new MetadataService(pgConnectionService), runParameterized };
 }
 
+describe('MetadataService.getSchemas', () => {
+  it('runs two queries in parallel and returns tables with columns', async () => {
+    const runParameterized = vi.fn()
+      .mockResolvedValueOnce(result([
+        { table_schema: 'public', table_name: 'users' },
+        { table_schema: 'public', table_name: 'orders' },
+      ]))
+      .mockResolvedValueOnce(result([
+        { table_schema: 'public', table_name: 'users', column_name: 'id', data_type: 'integer', is_nullable: 'NO', is_primary_key: true },
+        { table_schema: 'public', table_name: 'users', column_name: 'email', data_type: 'character varying', is_nullable: 'NO', is_primary_key: false },
+        { table_schema: 'public', table_name: 'orders', column_name: 'id', data_type: 'integer', is_nullable: 'NO', is_primary_key: true },
+      ]));
+    const { service } = createService(runParameterized);
+
+    const schemas = await service.getSchemas('conn-1');
+
+    expect(runParameterized).toHaveBeenCalledTimes(2);
+    expect(schemas).toHaveLength(1);
+    expect(schemas[0]!.name).toBe('public');
+
+    const [usersTable, ordersTable] = schemas[0]!.tables;
+    expect(usersTable!.name).toBe('users');
+    expect(usersTable!.columns).toHaveLength(2);
+    expect(usersTable!.columns[0]).toEqual({ name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true });
+    expect(usersTable!.columns[1]).toEqual({ name: 'email', dataType: 'character varying', nullable: false, isPrimaryKey: false });
+
+    expect(ordersTable!.name).toBe('orders');
+    expect(ordersTable!.columns).toHaveLength(1);
+    expect(ordersTable!.columns[0]).toEqual({ name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true });
+  });
+
+  it('returns empty columns array for tables with no matching column rows', async () => {
+    const runParameterized = vi.fn()
+      .mockResolvedValueOnce(result([{ table_schema: 'public', table_name: 'empty_table' }]))
+      .mockResolvedValueOnce(result([]));
+    const { service } = createService(runParameterized);
+
+    const schemas = await service.getSchemas('conn-1');
+    expect(schemas[0]!.tables[0]!.columns).toEqual([]);
+  });
+});
+
 describe('MetadataService.getTableIndexes', () => {
   it('binds schema and table as $1/$2 params — never interpolates them into the SQL', async () => {
     const runParameterized = vi.fn().mockResolvedValue(result([]));

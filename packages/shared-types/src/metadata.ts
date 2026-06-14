@@ -18,7 +18,7 @@ export interface TableSummary {
 
 export interface SchemaMetadata {
   name: string;
-  tables: TableSummary[];
+  tables: TableMetadata[];
 }
 
 export interface IndexMetadata {

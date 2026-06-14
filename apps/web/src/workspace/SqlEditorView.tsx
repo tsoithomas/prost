@@ -9,7 +9,8 @@ import type {
   GridReadyEvent,
   SelectionChangedEvent,
 } from 'ag-grid-community';
-import { Bookmark, Play, Plus, Save, Trash2, X } from 'lucide-react';
+import { Bookmark, Play, Plus, Save, Trash2, WandSparkles, X } from 'lucide-react';
+import { format } from 'sql-formatter';
 import type { ExecuteQueryResponse } from '@prost/shared-types';
 import {
   Badge,
@@ -25,6 +26,7 @@ import {
   resolveColorMode,
 } from '@prost/ui';
 import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
+import { useMetadata } from '../api/metadata';
 import { useExecuteQuery } from '../api/query';
 import { useCreateSnippet } from '../api/snippets';
 import { buildColumnDefs } from '../grid/columnDefs';
@@ -35,6 +37,7 @@ import { useConnectionStore } from '../stores/connectionStore';
 import { useThemeStore } from '../stores/themeStore';
 import { INITIAL_SQL, useWorkspaceStore } from '../stores/workspaceStore';
 import { PlanPanel, StatementResultPanel } from './StatementResultPanel';
+import { useMonacoCompletions } from './useMonacoCompletions';
 
 /** `sourceTable` is `schema.table` (see `editability.ts`) — split it back for the Phase 2 mutation hooks. */
 function splitSourceTable(sourceTable: string | undefined): { schema: string; table: string } | null {
@@ -61,6 +64,7 @@ export function SqlEditorView() {
   const monacoRef = useRef<Monaco | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const gridApiRef = useRef<GridApi | null>(null);
+  const [monacoInstance, setMonacoInstance] = useState<Monaco | null>(null);
 
   const sql = activeTab?.sql ?? INITIAL_SQL;
   const transactional = activeTab?.transactional ?? false;
@@ -76,6 +80,8 @@ export function SqlEditorView() {
   const createSnippet = useCreateSnippet();
 
   const executeQuery = useExecuteQuery(connectionId ?? '');
+  const { data: schemaMetadata } = useMetadata(connectionId);
+  useMonacoCompletions(monacoInstance, schemaMetadata);
 
   const statements = response?.statements ?? [];
   const single = statements.length === 1 ? statements[0]! : null;
@@ -289,7 +295,14 @@ export function SqlEditorView() {
           onMount={(editor, monaco) => {
             editorRef.current = editor;
             monacoRef.current = monaco;
+            setMonacoInstance(monaco);
             editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runQueryRef.current());
+            monaco.languages.registerDocumentFormattingEditProvider('sql', {
+              provideDocumentFormattingEdits(model) {
+                const formatted = format(model.getValue(), { language: 'postgresql', tabWidth: 2, keywordCase: 'upper' });
+                return [{ range: model.getFullModelRange(), text: formatted }];
+              },
+            });
             const position = editor.getPosition();
             if (position) setCursorPosition({ line: position.lineNumber, column: position.column });
             editor.onDidChangeCursorPosition((event) => {
@@ -356,6 +369,13 @@ export function SqlEditorView() {
               </IconButton>
             </>
           )}
+          <IconButton
+            aria-label="Format SQL"
+            title="Format SQL (Shift+Alt+F)"
+            onClick={() => editorRef.current?.getAction('editor.action.formatDocument')?.run()}
+          >
+            <WandSparkles size={14} />
+          </IconButton>
           <span className="hidden text-xs text-text-faint sm:inline">⌘/Ctrl + Enter</span>
           {isGridResult ? (
             <>
