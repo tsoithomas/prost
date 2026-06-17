@@ -16,6 +16,6 @@ import { PgDriver } from './drivers/pg/pg-driver';
     // PgConnectionService is deleted in a later task. Keeps DI resolvable.
     PgConnectionService,
   ],
-  exports: [PoolManager, DbDriverRegistry, PgConnectionService],
+  exports: [PoolManager, DbDriverRegistry, PgDriver, PgConnectionService],
 })
 export class DatabaseModule {}
