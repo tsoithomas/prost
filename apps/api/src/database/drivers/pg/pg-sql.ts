@@ -1,4 +1,5 @@
 import { quoteIdent } from '@prost/utils';
+import type { AlterTableOperation, CreateIndexRequest, CreateTableRequest } from '@prost/shared-types';
 import type { SelectRowsOptions, SqlFragment, TableRef } from '../../types';
 
 export const pgQuoteIdent = quoteIdent;
@@ -134,6 +135,64 @@ export function pgBuildUpdateRow(ref: TableRef, column: string, value: unknown, 
 export function pgBuildDeleteRow(ref: TableRef, pkColumns: string[], pkValues: unknown[]): SqlFragment {
   const whereClause = pkColumns.map((c, i) => `${pgQuoteIdent(c)} = ${pgPlaceholder(i + 1)}`).join(' AND ');
   return { sql: `DELETE FROM ${qualify(ref)} WHERE ${whereClause}`, params: pkValues };
+}
+
+export function pgBuildCreateTable(req: CreateTableRequest): SqlFragment {
+  const pkColumns = req.columns.filter((c) => c.isPrimaryKey).map((c) => c.name);
+  const colDefs = req.columns.map((col) => {
+    let def = `  ${pgQuoteIdent(col.name)} ${col.type}`;
+    if (!col.nullable) def += ' NOT NULL';
+    if (col.default !== undefined && col.default !== '') def += ` DEFAULT ${col.default.trim()}`;
+    return def;
+  });
+  if (pkColumns.length > 0) {
+    colDefs.push(`  PRIMARY KEY (${pkColumns.map(pgQuoteIdent).join(', ')})`);
+  }
+  return { sql: `CREATE TABLE ${pgQuoteIdent(req.schema)}.${pgQuoteIdent(req.table)} (\n${colDefs.join(',\n')}\n)`, params: [] };
+}
+
+export function pgBuildAlterTable(ref: TableRef, op: AlterTableOperation): SqlFragment {
+  const prefix = `ALTER TABLE ${qualify(ref)}`;
+  switch (op.kind) {
+    case 'addColumn': {
+      const col = op.column;
+      let def = `${pgQuoteIdent(col.name)} ${col.type}`;
+      if (col.isPrimaryKey) def += ' PRIMARY KEY';
+      else if (!col.nullable) def += ' NOT NULL';
+      if (col.default !== undefined && col.default !== '') def += ` DEFAULT ${col.default}`;
+      return { sql: `${prefix} ADD COLUMN ${def}`, params: [] };
+    }
+    case 'dropColumn':
+      return { sql: `${prefix} DROP COLUMN ${pgQuoteIdent(op.column)}`, params: [] };
+    case 'setNotNull':
+      return { sql: `${prefix} ALTER COLUMN ${pgQuoteIdent(op.column)} ${op.notNull ? 'SET' : 'DROP'} NOT NULL`, params: [] };
+    case 'setDefault':
+      return op.default !== null
+        ? { sql: `${prefix} ALTER COLUMN ${pgQuoteIdent(op.column)} SET DEFAULT ${op.default}`, params: [] }
+        : { sql: `${prefix} ALTER COLUMN ${pgQuoteIdent(op.column)} DROP DEFAULT`, params: [] };
+    case 'changeType': {
+      let sql = `${prefix} ALTER COLUMN ${pgQuoteIdent(op.column)} TYPE ${op.type}`;
+      if (op.using) sql += ` USING ${op.using}`;
+      return { sql, params: [] };
+    }
+  }
+}
+
+export function pgBuildCreateIndex(req: CreateIndexRequest, name: string, method: string): SqlFragment {
+  const colList = req.columns.map(pgQuoteIdent).join(', ');
+  return {
+    sql: `CREATE ${req.unique ? 'UNIQUE ' : ''}INDEX ${pgQuoteIdent(name)} ON ${pgQuoteIdent(req.schema)}.${pgQuoteIdent(req.table)} USING ${method} (${colList})`,
+    params: [],
+  };
+}
+
+/** `ref.name` is the index name, `ref.namespace` the schema. */
+export function pgBuildDropIndex(ref: TableRef, indexName: string): SqlFragment {
+  return { sql: `DROP INDEX ${pgQuoteIdent(ref.namespace!)}.${pgQuoteIdent(indexName)}`, params: [] };
+}
+
+export function pgBuildResolveTypeNames(oids: number[]): SqlFragment {
+  return { sql: 'SELECT oid, typname FROM pg_type WHERE oid = ANY($1::oid[])', params: [oids] };
 }
 
 export { qualify as pgQualify };

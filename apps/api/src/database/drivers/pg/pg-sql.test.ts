@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { pgPlaceholder, pgQuoteIdent, pgBuildListColumns, pgBuildListIndexes, pgBuildListTables } from './pg-sql';
 import { pgBuildSelectRows, pgBuildInsertRow, pgBuildUpdateRow, pgBuildDeleteRow, pgBuildRowCountEstimate } from './pg-sql';
+import { pgBuildCreateTable, pgBuildAlterTable, pgBuildCreateIndex, pgBuildDropIndex, pgBuildResolveTypeNames } from './pg-sql';
 
 describe('pg-sql quoting/placeholders', () => {
   it('double-quotes and escapes identifiers', () => {
@@ -64,5 +65,33 @@ describe('pg-sql grid builders', () => {
     const { sql, params } = pgBuildRowCountEstimate(ref);
     expect(sql).toContain('reltuples');
     expect(params).toEqual(['public', 'users']);
+  });
+});
+
+describe('pg-sql ddl builders', () => {
+  it('builds CREATE TABLE with PK constraint', () => {
+    const { sql } = pgBuildCreateTable({
+      schema: 'public', table: 't',
+      columns: [{ name: 'id', type: 'integer', nullable: false, isPrimaryKey: true }],
+    } as any);
+    expect(sql).toContain('CREATE TABLE "public"."t"');
+    expect(sql).toContain('PRIMARY KEY ("id")');
+  });
+  it('builds ADD COLUMN alter', () => {
+    const { sql } = pgBuildAlterTable({ namespace: 'public', name: 't' },
+      { kind: 'addColumn', column: { name: 'c', type: 'text', nullable: true, isPrimaryKey: false } } as any);
+    expect(sql).toBe('ALTER TABLE "public"."t" ADD COLUMN "c" text');
+  });
+  it('builds CREATE INDEX', () => {
+    const { sql } = pgBuildCreateIndex({ schema: 'public', table: 't', columns: ['a'], unique: true } as any, 't_a_idx', 'btree');
+    expect(sql).toBe('CREATE UNIQUE INDEX "t_a_idx" ON "public"."t" USING btree ("a")');
+  });
+  it('builds DROP INDEX', () => {
+    expect(pgBuildDropIndex({ namespace: 'public', name: 'i' }, 'i').sql).toBe('DROP INDEX "public"."i"');
+  });
+  it('resolves type names by oid array', () => {
+    const { sql, params } = pgBuildResolveTypeNames([23, 25]);
+    expect(sql).toContain('pg_type');
+    expect(params).toEqual([[23, 25]]);
   });
 });
