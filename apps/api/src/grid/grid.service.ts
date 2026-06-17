@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
-import { quoteIdent } from '@prost/utils';
 import type { ColumnMetadata, GridResponse, RowDeleteBody, RowFilter, RowInsertBody, RowUpdateBody } from '@prost/shared-types';
 import { MetadataService } from '../metadata/metadata.service';
-import { PgConnectionService } from '../target-db/pg-connection.service';
+import { PoolManager } from '../database/pool-manager.service';
+import { PgDriver } from '../database/drivers/pg/pg-driver';
 import { compileWhere } from './filter';
 
 const DEFAULT_LIMIT = 100;
@@ -24,7 +24,8 @@ interface ResolvedTable {
 @Injectable()
 export class GridService {
   constructor(
-    private readonly pgConnectionService: PgConnectionService,
+    private readonly pool: PoolManager,
+    private readonly driver: PgDriver,
     private readonly metadataService: MetadataService,
   ) {}
 
@@ -48,19 +49,16 @@ export class GridService {
     const limit = options.limit ?? DEFAULT_LIMIT;
     const offset = options.offset ?? 0;
 
-    const limitParam = filterParams.length + 1;
-    const offsetParam = filterParams.length + 2;
-
-    let sql = `SELECT * FROM ${quoteIdent(schema)}.${quoteIdent(table)}`;
-    if (whereClause) sql += ` ${whereClause}`;
-    if (orderColumn) sql += ` ORDER BY ${quoteIdent(orderColumn)} ${sortDir}`;
-    sql += ` LIMIT $${limitParam} OFFSET $${offsetParam}`;
-
-    const { rows } = await this.pgConnectionService.runParameterized(connectionId, sql, [
-      ...filterParams,
+    const ref = { namespace: schema, name: table };
+    const frag = this.driver.buildSelectRows(ref, {
+      whereClause,
+      whereParams: filterParams,
+      orderColumn,
+      sortDir,
       limit,
       offset,
-    ]);
+    });
+    const { rows } = await this.pool.run(connectionId, frag);
 
     const totalRows = hasFilter
       ? await this.getFilteredRowCount(connectionId, schema, table, whereClause, filterParams)
@@ -95,14 +93,14 @@ export class GridService {
     }
     this.assertPrimaryKeyMatches(req.primaryKey, primaryKey, schema, table);
 
-    const setClause = `${quoteIdent(req.column)} = $1`;
-    const whereClause = primaryKey
-      .map((column, index) => `${quoteIdent(column)} = $${index + 2}`)
-      .join(' AND ');
-    const sql = `UPDATE ${quoteIdent(schema)}.${quoteIdent(table)} SET ${setClause} WHERE ${whereClause} RETURNING *`;
-    const params = [req.value, ...primaryKey.map((column) => req.primaryKey[column])];
-
-    const { rows, rowCount } = await this.pgConnectionService.runParameterized(connectionId, sql, params);
+    const frag = this.driver.buildUpdateRow(
+      { namespace: schema, name: table },
+      req.column,
+      req.value,
+      primaryKey,
+      primaryKey.map((c) => req.primaryKey[c]),
+    );
+    const { rows, rowCount } = await this.pool.run(connectionId, frag);
     if (rowCount !== 1) {
       throw new NotFoundException(
         `Row in "${schema}.${table}" no longer exists — it may have been changed or deleted`,
@@ -126,15 +124,8 @@ export class GridService {
 
     const entries = Object.entries(req.values).filter(([column]) => columnNames.has(column));
 
-    const sql =
-      entries.length === 0
-        ? `INSERT INTO ${quoteIdent(schema)}.${quoteIdent(table)} DEFAULT VALUES RETURNING *`
-        : `INSERT INTO ${quoteIdent(schema)}.${quoteIdent(table)} (${entries
-            .map(([column]) => quoteIdent(column))
-            .join(', ')}) VALUES (${entries.map((_, index) => `$${index + 1}`).join(', ')}) RETURNING *`;
-    const params = entries.map(([, value]) => value);
-
-    const { rows } = await this.pgConnectionService.runParameterized(connectionId, sql, params);
+    const frag = this.driver.buildInsertRow({ namespace: schema, name: table }, entries);
+    const { rows } = await this.pool.run(connectionId, frag);
     return rows[0]!;
   }
 
@@ -144,11 +135,12 @@ export class GridService {
     this.assertEditable(primaryKey, schema, table);
     this.assertPrimaryKeyMatches(req.primaryKey, primaryKey, schema, table);
 
-    const whereClause = primaryKey.map((column, index) => `${quoteIdent(column)} = $${index + 1}`).join(' AND ');
-    const sql = `DELETE FROM ${quoteIdent(schema)}.${quoteIdent(table)} WHERE ${whereClause}`;
-    const params = primaryKey.map((column) => req.primaryKey[column]);
-
-    const { rowCount } = await this.pgConnectionService.runParameterized(connectionId, sql, params);
+    const frag = this.driver.buildDeleteRow(
+      { namespace: schema, name: table },
+      primaryKey,
+      primaryKey.map((c) => req.primaryKey[c]),
+    );
+    const { rowCount } = await this.pool.run(connectionId, frag);
     if (rowCount !== 1) {
       throw new NotFoundException(`Row in "${schema}.${table}" no longer exists`);
     }
@@ -195,22 +187,19 @@ export class GridService {
     whereClause: string,
     params: unknown[],
   ): Promise<number> {
-    const sql = `SELECT COUNT(*) AS count FROM ${quoteIdent(schema)}.${quoteIdent(table)} ${whereClause}`;
-    const { rows } = await this.pgConnectionService.runParameterized<{ count: string }>(
+    const { rows } = await this.pool.run(
       connectionId,
-      sql,
-      params,
+      this.driver.buildFilteredRowCount({ namespace: schema, name: table }, whereClause, params),
     );
-    return parseInt(rows[0]?.count ?? '0', 10);
+    return parseInt((rows[0] as { count?: string })?.count ?? '0', 10);
   }
 
   private async getApproximateRowCount(connectionId: string, schema: string, table: string): Promise<number> {
-    const { rows } = await this.pgConnectionService.runParameterized<{ reltuples: number | null }>(
+    const { rows } = await this.pool.run(
       connectionId,
-      "SELECT reltuples FROM pg_class WHERE oid = to_regclass(format('%I.%I', $1::text, $2::text))",
-      [schema, table],
+      this.driver.buildRowCountEstimate({ namespace: schema, name: table }),
     );
-    const estimate = rows[0]?.reltuples ?? 0;
+    const estimate = (rows[0] as { reltuples?: number | null })?.reltuples ?? 0;
     return Math.max(0, Math.round(Number(estimate)));
   }
 }
