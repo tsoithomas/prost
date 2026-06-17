@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsString, Max, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 import type { CreateConnectionDto as CreateConnectionDtoShape } from '@prost/shared-types';
 
 export class CreateConnectionDto implements CreateConnectionDtoShape {
@@ -31,4 +31,8 @@ export class CreateConnectionDto implements CreateConnectionDtoShape {
 
   @IsBoolean()
   sslRejectUnauthorized!: boolean;
+
+  @IsOptional()
+  @IsIn(['postgres'])
+  engine?: string;
 }

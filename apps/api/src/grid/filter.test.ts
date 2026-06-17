@@ -164,6 +164,17 @@ describe('compileWhere — paramOffset', () => {
   });
 });
 
+describe('compileWhere — dialect injection', () => {
+  it('uses the injected placeholder and quoteIdent functions', () => {
+    const { clause } = compileWhere(
+      { conditions: [{ column: 'age', operator: 'eq', value: 30 }], combinator: 'and' },
+      COLUMNS, 0,
+      { placeholder: (i) => `?${i}`, quoteIdent: (s) => `[${s}]` },
+    );
+    expect(clause).toBe('WHERE [age] = ?1');
+  });
+});
+
 describe('compileWhere — validation errors', () => {
   it('throws BadRequestException for unknown column', () => {
     expect(() =>

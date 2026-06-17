@@ -9,9 +9,11 @@ import type {
   RowsStatementResult,
   StatementResult,
 } from '@prost/shared-types';
+import { PoolManager } from '../database/pool-manager.service';
+import { PgDriver } from '../database/drivers/pg/pg-driver';
+import type { DriverResult, SqlFragment } from '../database/types';
 import { HistoryService } from '../history/history.service';
 import { MetadataService } from '../metadata/metadata.service';
-import { PgConnectionService, type ClientQueryResult, type ParameterizedResult } from '../target-db/pg-connection.service';
 import { analyzeEditability, extractSingleTable, type EditabilityResult, type ParsedStatement } from './editability';
 import { buildPagedQuery, looksLikeSingleSelect, QUERY_PAGE_SIZE } from './paging';
 import { splitStatements } from './statement-splitter';
@@ -21,7 +23,7 @@ interface FieldInfo {
   dataTypeID: number;
 }
 
-type RunFn = (sql: string, params?: unknown[]) => Promise<ClientQueryResult | ParameterizedResult>;
+type RunFn = (frag: SqlFragment) => Promise<DriverResult>;
 
 /**
  * `node-sql-parser@5.4.0` throws on ANY `EXPLAIN ...` input for the postgresql dialect, so
@@ -44,7 +46,8 @@ export class QueryService {
   private readonly parser = new Parser();
 
   constructor(
-    private readonly pgConnectionService: PgConnectionService,
+    private readonly pool: PoolManager,
+    private readonly driver: PgDriver,
     private readonly metadataService: MetadataService,
     private readonly historyService: HistoryService,
   ) {}
@@ -78,9 +81,7 @@ export class QueryService {
     for (const statementText of statementTexts) {
       try {
         results.push(
-          await this.executeOneStatement(connectionId, statementText, isOnlyStatement, (runSql, params) =>
-            this.pgConnectionService.runParameterized(connectionId, runSql, params),
-          ),
+          await this.executeOneStatement(connectionId, statementText, isOnlyStatement, (frag) => this.pool.run(connectionId, frag)),
         );
       } catch (error) {
         results.push(this.toErrorResult(statementText, error, correlationId));
@@ -92,21 +93,21 @@ export class QueryService {
 
   /** All statements share one client/session under BEGIN; the first failure rolls back the whole batch and stops. */
   private async executeTransactional(connectionId: string, statementTexts: string[], correlationId: string): Promise<StatementResult[]> {
-    return this.pgConnectionService.withTransactionClient(connectionId, async (query) => {
+    return this.pool.withTransaction(connectionId, async (query) => {
       const results: StatementResult[] = [];
-      await query({ sql: 'BEGIN' });
+      await query({ sql: 'BEGIN', params: [] });
 
       for (const statementText of statementTexts) {
         try {
-          results.push(await this.executeOneStatement(connectionId, statementText, false, (runSql, params) => query({ sql: runSql, params })));
+          results.push(await this.executeOneStatement(connectionId, statementText, false, (frag) => query(frag)));
         } catch (error) {
           results.push(this.toErrorResult(statementText, error, correlationId));
-          await query({ sql: 'ROLLBACK' });
+          await query({ sql: 'ROLLBACK', params: [] });
           return results;
         }
       }
 
-      await query({ sql: 'COMMIT' });
+      await query({ sql: 'COMMIT', params: [] });
       return results;
     });
   }
@@ -133,7 +134,7 @@ export class QueryService {
   /** `node-sql-parser` throws on input it can't parse — return `null` and let the caller fall back. */
   private tryAstifyOne(sql: string): ParsedStatement | null {
     try {
-      const ast = this.parser.astify(sql, { database: 'postgresql' });
+      const ast = this.parser.astify(sql, { database: this.driver.capabilities.parserDialect });
       const [first] = Array.isArray(ast) ? ast : [ast];
       return (first as unknown as ParsedStatement) ?? null;
     } catch {
@@ -151,17 +152,17 @@ export class QueryService {
     const { sql: pagedSql, params } = buildPagedQuery(statementText);
     const start = Date.now();
 
-    let queryResult: ClientQueryResult | ParameterizedResult;
+    let queryResult: DriverResult;
     if (ast === null) {
       // Unparsed-but-looks-like-a-SELECT: try paged, fall back to executeCommand if the wrapper itself fails.
       try {
-        queryResult = await run(pagedSql, params);
+        queryResult = await run({ sql: pagedSql, params });
       } catch {
         return this.executeCommand(statementText, run);
       }
     } else {
       // astify-confirmed SELECT — a failure here is a real error.
-      queryResult = await run(pagedSql, params);
+      queryResult = await run({ sql: pagedSql, params });
     }
 
     const executionTimeMs = Date.now() - start;
@@ -189,7 +190,7 @@ export class QueryService {
 
   private async executeCommand(statementText: string, run: RunFn): Promise<StatementResult> {
     const start = Date.now();
-    const { rowCount, command } = await run(statementText);
+    const { rowCount, command } = await run({ sql: statementText, params: [] });
     const result: CommandStatementResult = {
       kind: 'command',
       sql: statementText,
@@ -206,7 +207,7 @@ export class QueryService {
     const analyze = /^\s*explain\s+analyze\b/i.test(statementText) || /\banalyze\b/i.test(optionsList);
 
     const start = Date.now();
-    const { rows } = await run(statementText);
+    const { rows } = await run({ sql: statementText, params: [] });
     const planText = rows.map((row) => String((row as Record<string, unknown>)['QUERY PLAN'] ?? '')).join('\n');
 
     const result: PlanStatementResult = {
@@ -247,12 +248,9 @@ export class QueryService {
     if (fields.length === 0) return [];
 
     const oids = [...new Set(fields.map((field) => field.dataTypeID))];
-    const { rows } = await this.pgConnectionService.runParameterized<{ oid: number; typname: string }>(
-      connectionId,
-      'SELECT oid, typname FROM pg_type WHERE oid = ANY($1::oid[])',
-      [oids],
-    );
-    const typeNames = new Map(rows.map((row) => [Number(row.oid), row.typname]));
+    const { rows } = await this.pool.run(connectionId, this.driver.buildResolveTypeNames(oids));
+    const typeRows = rows as unknown as { oid: number; typname: string }[];
+    const typeNames = new Map(typeRows.map((row) => [Number(row.oid), row.typname]));
     const primaryKeySet = new Set(primaryKey);
 
     return fields.map((field) => ({

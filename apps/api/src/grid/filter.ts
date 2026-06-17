@@ -39,46 +39,53 @@ const OPERATORS_BY_FAMILY: Record<TypeFamily, Set<FilterOperator>> = {
   other: new Set(['eq', 'neq', 'isNull', 'isNotNull']),
 };
 
+interface WhereDialect {
+  placeholder: (index: number) => string;
+  quoteIdent: (identifier: string) => string;
+}
+
 /** Returns the SQL fragment and bound params for a single condition. */
 function compileSingleCondition(
   condition: ColumnFilter,
   paramIndex: number,
+  dialect: WhereDialect,
 ): { fragment: string; params: unknown[] } {
-  const col = quoteIdent(condition.column);
+  const col = dialect.quoteIdent(condition.column);
+  const ph = dialect.placeholder(paramIndex);
 
   switch (condition.operator) {
     case 'eq':
-      return { fragment: `${col} = $${paramIndex}`, params: [condition.value] };
+      return { fragment: `${col} = ${ph}`, params: [condition.value] };
     case 'neq':
-      return { fragment: `${col} <> $${paramIndex}`, params: [condition.value] };
+      return { fragment: `${col} <> ${ph}`, params: [condition.value] };
     case 'lt':
-      return { fragment: `${col} < $${paramIndex}`, params: [condition.value] };
+      return { fragment: `${col} < ${ph}`, params: [condition.value] };
     case 'lte':
-      return { fragment: `${col} <= $${paramIndex}`, params: [condition.value] };
+      return { fragment: `${col} <= ${ph}`, params: [condition.value] };
     case 'gt':
-      return { fragment: `${col} > $${paramIndex}`, params: [condition.value] };
+      return { fragment: `${col} > ${ph}`, params: [condition.value] };
     case 'gte':
-      return { fragment: `${col} >= $${paramIndex}`, params: [condition.value] };
+      return { fragment: `${col} >= ${ph}`, params: [condition.value] };
     case 'contains':
-      return { fragment: `${col} ILIKE $${paramIndex}`, params: [`%${String(condition.value)}%`] };
+      return { fragment: `${col} ILIKE ${ph}`, params: [`%${String(condition.value)}%`] };
     case 'notContains':
-      return { fragment: `${col} NOT ILIKE $${paramIndex}`, params: [`%${String(condition.value)}%`] };
+      return { fragment: `${col} NOT ILIKE ${ph}`, params: [`%${String(condition.value)}%`] };
     case 'startsWith':
-      return { fragment: `${col} ILIKE $${paramIndex}`, params: [`${String(condition.value)}%`] };
+      return { fragment: `${col} ILIKE ${ph}`, params: [`${String(condition.value)}%`] };
     case 'notStartsWith':
-      return { fragment: `${col} NOT ILIKE $${paramIndex}`, params: [`${String(condition.value)}%`] };
+      return { fragment: `${col} NOT ILIKE ${ph}`, params: [`${String(condition.value)}%`] };
     case 'endsWith':
-      return { fragment: `${col} ILIKE $${paramIndex}`, params: [`%${String(condition.value)}`] };
+      return { fragment: `${col} ILIKE ${ph}`, params: [`%${String(condition.value)}`] };
     case 'notEndsWith':
-      return { fragment: `${col} NOT ILIKE $${paramIndex}`, params: [`%${String(condition.value)}`] };
+      return { fragment: `${col} NOT ILIKE ${ph}`, params: [`%${String(condition.value)}`] };
     case 'isNull':
       return { fragment: `${col} IS NULL`, params: [] };
     case 'isNotNull':
       return { fragment: `${col} IS NOT NULL`, params: [] };
     case 'in':
-      return { fragment: `${col} = ANY($${paramIndex})`, params: [condition.values ?? []] };
+      return { fragment: `${col} = ANY(${ph})`, params: [condition.values ?? []] };
     case 'notIn':
-      return { fragment: `${col} <> ALL($${paramIndex})`, params: [condition.values ?? []] };
+      return { fragment: `${col} <> ALL(${ph})`, params: [condition.values ?? []] };
   }
 }
 
@@ -94,6 +101,7 @@ export function compileWhere(
   filter: RowFilter,
   columns: ColumnMetadata[],
   paramOffset: number,
+  dialect: WhereDialect = { placeholder: (i) => `$${i}`, quoteIdent },
 ): { clause: string; params: unknown[] } {
   if (!filter.conditions.length) {
     return { clause: '', params: [] };
@@ -118,7 +126,7 @@ export function compileWhere(
     }
 
     const paramIndex = paramOffset + params.length + 1;
-    const { fragment, params: condParams } = compileSingleCondition(condition, paramIndex);
+    const { fragment, params: condParams } = compileSingleCondition(condition, paramIndex, dialect);
     fragments.push(fragment);
     params.push(...condParams);
   }

@@ -122,13 +122,22 @@ This is principle #1 in `docs/architecture-principles.md` and shapes `apps/api`:
 
 - **App DB** (users, connections, history, preferences) — Prisma only
   (`apps/api/prisma/schema.prisma`).
-- **Target DBs** (the Postgres databases users connect to/manage) — raw `pg` driver
-  only, through a single `PgConnectionService` / `runParameterized` choke point
-  (Phase 1+, not yet built).
-- Prisma never touches a target DB; `pg` never touches the app DB. No target credential,
-  schema, or row data ever lands in an app-DB table. All target SQL is parameterized;
-  identifiers go through `quoteIdent` (`packages/utils`) — never raw string
-  concatenation.
+- **Target DBs** (the databases users connect to/manage) — reached only through
+  `PoolManager` (`apps/api/src/database/`), the single choke point that owns pool
+  caching, idle-sweep, and LRU eviction, delegating all native connection work to a
+  `DbDriver`. There is **one driver per engine**, resolved per `Connection.engine` via the
+  engine-keyed `DbDriverRegistry`; `PgDriver` (`apps/api/src/database/drivers/pg/`) is the
+  only driver today.
+- All dialect-specific SQL — quoting, placeholders, and the metadata/CRUD/DDL query
+  builders — lives in the driver. The builders in `pg-sql.ts` are pure functions returning
+  `{ sql, params }` fragments; feature services (`metadata`/`grid`/`ddl`/`query`) hold **no
+  raw target SQL** and reach builders only via the driver. Adding a new engine = implement
+  `DbDriver` + register it in `DatabaseModule`'s `DB_DRIVERS`, with the conformance suite
+  `runDriverContractTests` (`apps/api/src/database/testing/`) proving it conforms.
+- Prisma never touches a target DB; the driver layer never touches the app DB. No target
+  credential, schema, or row data ever lands in an app-DB table. All target SQL is
+  parameterized; identifiers go through the driver's `quoteIdent` (built on
+  `quoteIdent` in `packages/utils`) — never raw string concatenation.
 
 ## Theming system
 
