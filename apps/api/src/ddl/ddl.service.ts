@@ -1,5 +1,4 @@
 import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
-import { quoteIdent } from '@prost/utils';
 import type {
   AlterTableOperation,
   AlterTableRequest,
@@ -12,8 +11,9 @@ import type {
   DropIndexResult,
   NewColumn,
 } from '@prost/shared-types';
+import { PoolManager } from '../database/pool-manager.service';
+import { PgDriver } from '../database/drivers/pg/pg-driver';
 import { MetadataService } from '../metadata/metadata.service';
-import { PgConnectionService } from '../target-db/pg-connection.service';
 
 const ALLOWED_TYPES = new Set([
   'integer', 'bigint', 'smallint', 'serial', 'bigserial',
@@ -39,7 +39,8 @@ const USING_PATTERN = /^[a-z_][a-z0-9_]*(::([a-z][a-z0-9 ]*)(\(\s*\d+\s*(?:,\s*\
 @Injectable()
 export class DdlService {
   constructor(
-    private readonly pgConnectionService: PgConnectionService,
+    private readonly pool: PoolManager,
+    private readonly driver: PgDriver,
     private readonly metadataService: MetadataService,
   ) {}
 
@@ -66,22 +67,19 @@ export class DdlService {
       };
     });
 
-    const sql = this.buildSql({ schema: req.schema, table: req.table, columns });
+    const frag = this.driver.buildCreateTable({ schema: req.schema, table: req.table, columns });
 
     try {
-      await this.pgConnectionService.runParameterized(connectionId, sql, []);
+      await this.pool.run(connectionId, frag);
     } catch (err: unknown) {
-      const pg = err as { code?: string };
-      if (pg.code === '42P07') {
-        throw new ConflictException(`Table "${req.schema}"."${req.table}" already exists`);
-      }
+      this.driver.mapError(err, { operation: 'createTable', detail: `Table "${req.schema}"."${req.table}" already exists` });
       throw err;
     }
 
-    return { schema: req.schema, table: req.table, sql };
+    return { schema: req.schema, table: req.table, sql: frag.sql };
   }
 
-  /** Returns the canonical (lowercased, whitespace-normalized) type that `buildSql` will emit verbatim. */
+  /** Returns the canonical (lowercased, whitespace-normalized) type that the create-table builder will emit verbatim. */
   private validateType(type: string): string {
     const normalized = type.trim().toLowerCase().replace(/\s+/g, ' ');
     const match = TYPE_PATTERN.exec(normalized);
@@ -98,7 +96,7 @@ export class DdlService {
     return `${base}${params ? params.replace(/\s+/g, '') : ''}`;
   }
 
-  /** Returns the canonical (trimmed, lowercased) default that `buildSql` will emit verbatim, or `null` if none. */
+  /** Returns the canonical (trimmed, lowercased) default that the create-table builder will emit verbatim, or `null` if none. */
   private validateDefault(value: string | undefined): string | null {
     if (value === undefined) return null;
     const trimmed = value.trim();
@@ -186,20 +184,16 @@ export class DdlService {
         throw new UnprocessableEntityException('Unknown operation kind');
     }
 
-    const sql = this.buildAlterSql(req.schema, req.table, normalizedOp);
+    const frag = this.driver.buildAlterTable({ namespace: req.schema, name: req.table }, normalizedOp);
 
     try {
-      await this.pgConnectionService.runParameterized(connectionId, sql, []);
+      await this.pool.run(connectionId, frag);
     } catch (err: unknown) {
-      const pg = err as { code?: string };
-      if (pg.code === '42703') throw new UnprocessableEntityException('Column does not exist');
-      if (pg.code === '42846') throw new UnprocessableEntityException('Cannot cast automatically; provide a USING expression');
-      if (pg.code === '23502') throw new UnprocessableEntityException('Column has existing null values; cannot set NOT NULL');
-      if (pg.code === '42701') throw new ConflictException('Column already exists');
+      this.driver.mapError(err, { operation: 'alterTable' });
       throw err;
     }
 
-    return { schema: req.schema, table: req.table, sql };
+    return { schema: req.schema, table: req.table, sql: frag.sql };
   }
 
   async createIndex(connectionId: string, req: CreateIndexRequest): Promise<CreateIndexResult> {
@@ -227,18 +221,20 @@ export class DdlService {
       name = raw.length > 63 ? raw.slice(0, 59) + '_idx' : raw;
     }
 
-    const colList = req.columns.map(quoteIdent).join(', ');
-    const sql = `CREATE ${req.unique ? 'UNIQUE ' : ''}INDEX ${quoteIdent(name)} ON ${quoteIdent(req.schema)}.${quoteIdent(req.table)} USING ${method} (${colList})`;
+    const frag = this.driver.buildCreateIndex(
+      { schema: req.schema, table: req.table, columns: req.columns, unique: req.unique, name: req.name, method: req.method },
+      name,
+      method,
+    );
 
     try {
-      await this.pgConnectionService.runParameterized(connectionId, sql, []);
+      await this.pool.run(connectionId, frag);
     } catch (err: unknown) {
-      const pg = err as { code?: string };
-      if (pg.code === '42P07') throw new ConflictException('An index with that name already exists');
+      this.driver.mapError(err, { operation: 'createIndex' });
       throw err;
     }
 
-    return { schema: req.schema, table: req.table, name, sql };
+    return { schema: req.schema, table: req.table, name, sql: frag.sql };
   }
 
   async dropIndex(connectionId: string, req: DropIndexRequest): Promise<DropIndexResult> {
@@ -248,64 +244,15 @@ export class DdlService {
       throw new UnprocessableEntityException(`Index "${req.index}" does not exist on "${req.schema}"."${req.table}"`);
     }
 
-    const sql = `DROP INDEX ${quoteIdent(req.schema)}.${quoteIdent(req.index)}`;
+    const frag = this.driver.buildDropIndex({ namespace: req.schema, name: req.index }, req.index);
 
     try {
-      await this.pgConnectionService.runParameterized(connectionId, sql, []);
+      await this.pool.run(connectionId, frag);
     } catch (err: unknown) {
-      const pg = err as { code?: string };
-      if (pg.code === '42704') throw new UnprocessableEntityException('Index does not exist');
+      this.driver.mapError(err, { operation: 'dropIndex' });
       throw err;
     }
 
-    return { schema: req.schema, index: req.index, sql };
-  }
-
-  private buildAlterSql(schema: string, table: string, op: AlterTableOperation): string {
-    const prefix = `ALTER TABLE ${quoteIdent(schema)}.${quoteIdent(table)}`;
-    switch (op.kind) {
-      case 'addColumn': {
-        const col = op.column;
-        let def = `${quoteIdent(col.name)} ${col.type}`;
-        if (col.isPrimaryKey) {
-          def += ' PRIMARY KEY';
-        } else if (!col.nullable) {
-          def += ' NOT NULL';
-        }
-        if (col.default !== undefined && col.default !== '') def += ` DEFAULT ${col.default}`;
-        return `${prefix} ADD COLUMN ${def}`;
-      }
-      case 'dropColumn':
-        return `${prefix} DROP COLUMN ${quoteIdent(op.column)}`;
-      case 'setNotNull':
-        return `${prefix} ALTER COLUMN ${quoteIdent(op.column)} ${op.notNull ? 'SET' : 'DROP'} NOT NULL`;
-      case 'setDefault':
-        if (op.default !== null) {
-          return `${prefix} ALTER COLUMN ${quoteIdent(op.column)} SET DEFAULT ${op.default}`;
-        }
-        return `${prefix} ALTER COLUMN ${quoteIdent(op.column)} DROP DEFAULT`;
-      case 'changeType': {
-        let sql = `${prefix} ALTER COLUMN ${quoteIdent(op.column)} TYPE ${op.type}`;
-        if (op.using) sql += ` USING ${op.using}`;
-        return sql;
-      }
-    }
-  }
-
-  buildSql(req: CreateTableRequest): string {
-    const pkColumns = req.columns.filter((c) => c.isPrimaryKey).map((c) => c.name);
-
-    const colDefs = req.columns.map((col) => {
-      let def = `  ${quoteIdent(col.name)} ${col.type}`;
-      if (!col.nullable) def += ' NOT NULL';
-      if (col.default !== undefined && col.default !== '') def += ` DEFAULT ${col.default.trim()}`;
-      return def;
-    });
-
-    if (pkColumns.length > 0) {
-      colDefs.push(`  PRIMARY KEY (${pkColumns.map(quoteIdent).join(', ')})`);
-    }
-
-    return `CREATE TABLE ${quoteIdent(req.schema)}.${quoteIdent(req.table)} (\n${colDefs.join(',\n')}\n)`;
+    return { schema: req.schema, index: req.index, sql: frag.sql };
   }
 }

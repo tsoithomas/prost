@@ -1,8 +1,10 @@
 import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
+import type { ConfigService } from '@nestjs/config';
 import { describe, expect, it, vi } from 'vitest';
 import type { ColumnMetadata, IndexMetadata, TableStructure } from '@prost/shared-types';
+import { PgDriver } from '../database/drivers/pg/pg-driver';
+import type { PoolManager } from '../database/pool-manager.service';
 import type { MetadataService } from '../metadata/metadata.service';
-import type { PgConnectionService } from '../target-db/pg-connection.service';
 import { DdlService } from './ddl.service';
 
 const DEFAULT_COLUMNS: ColumnMetadata[] = [
@@ -21,21 +23,22 @@ function mockStructure(columns = DEFAULT_COLUMNS, indexes = DEFAULT_INDEXES): Ta
 }
 
 function createService(
-  runParameterized = vi.fn().mockResolvedValue({ rows: [], rowCount: 0, fields: [], command: 'CREATE' }),
+  run = vi.fn().mockResolvedValue({ rows: [], rowCount: 0, fields: [], command: 'CREATE' }),
   structure: TableStructure = mockStructure(),
 ) {
-  const pgConnectionService = { runParameterized } as unknown as PgConnectionService;
+  const pool = { run } as unknown as PoolManager;
+  const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);
   const metadataService = {
     getTableStructure: vi.fn().mockResolvedValue(structure),
     getTableColumns: vi.fn().mockResolvedValue(structure.columns),
   } as unknown as MetadataService;
-  return { service: new DdlService(pgConnectionService, metadataService), runParameterized, metadataService };
+  return { service: new DdlService(pool, driver, metadataService), driver, runParameterized: run, metadataService };
 }
 
-describe('DdlService.buildSql — identifier quoting', () => {
+describe('DdlService buildCreateTable — identifier quoting', () => {
   it('double-quotes schema, table, and all column names', () => {
-    const { service } = createService();
-    const sql = service.buildSql({
+    const { driver } = createService();
+    const { sql } = driver.buildCreateTable({
       schema: 'public',
       table: 'widgets',
       columns: [{ name: 'id', type: 'serial', nullable: false, isPrimaryKey: true }],
@@ -48,8 +51,8 @@ describe('DdlService.buildSql — identifier quoting', () => {
   });
 
   it('escapes double-quote chars inside identifiers', () => {
-    const { service } = createService();
-    const sql = service.buildSql({
+    const { driver } = createService();
+    const { sql } = driver.buildCreateTable({
       schema: 'public',
       table: 'my"table',
       columns: [{ name: 'col', type: 'text', nullable: true, isPrimaryKey: false }],
@@ -58,10 +61,10 @@ describe('DdlService.buildSql — identifier quoting', () => {
   });
 });
 
-describe('DdlService.buildSql — column definitions', () => {
+describe('DdlService buildCreateTable — column definitions', () => {
   it('emits NOT NULL when nullable is false', () => {
-    const { service } = createService();
-    const sql = service.buildSql({
+    const { driver } = createService();
+    const { sql } = driver.buildCreateTable({
       schema: 'public',
       table: 't',
       columns: [{ name: 'name', type: 'text', nullable: false, isPrimaryKey: false }],
@@ -70,8 +73,8 @@ describe('DdlService.buildSql — column definitions', () => {
   });
 
   it('omits NOT NULL when nullable is true', () => {
-    const { service } = createService();
-    const sql = service.buildSql({
+    const { driver } = createService();
+    const { sql } = driver.buildCreateTable({
       schema: 'public',
       table: 't',
       columns: [{ name: 'note', type: 'text', nullable: true, isPrimaryKey: false }],
@@ -80,8 +83,8 @@ describe('DdlService.buildSql — column definitions', () => {
   });
 
   it('emits DEFAULT clause when default is provided', () => {
-    const { service } = createService();
-    const sql = service.buildSql({
+    const { driver } = createService();
+    const { sql } = driver.buildCreateTable({
       schema: 'public',
       table: 't',
       columns: [{ name: 'created_at', type: 'timestamptz', nullable: false, isPrimaryKey: false, default: 'now()' }],
@@ -90,8 +93,8 @@ describe('DdlService.buildSql — column definitions', () => {
   });
 
   it('omits DEFAULT clause when default is absent', () => {
-    const { service } = createService();
-    const sql = service.buildSql({
+    const { driver } = createService();
+    const { sql } = driver.buildCreateTable({
       schema: 'public',
       table: 't',
       columns: [{ name: 'id', type: 'integer', nullable: false, isPrimaryKey: false }],
@@ -100,10 +103,10 @@ describe('DdlService.buildSql — column definitions', () => {
   });
 });
 
-describe('DdlService.buildSql — PRIMARY KEY clause', () => {
+describe('DdlService buildCreateTable — PRIMARY KEY clause', () => {
   it('emits no PRIMARY KEY clause when no column is flagged', () => {
-    const { service } = createService();
-    const sql = service.buildSql({
+    const { driver } = createService();
+    const { sql } = driver.buildCreateTable({
       schema: 'public',
       table: 't',
       columns: [{ name: 'id', type: 'integer', nullable: false, isPrimaryKey: false }],
@@ -112,8 +115,8 @@ describe('DdlService.buildSql — PRIMARY KEY clause', () => {
   });
 
   it('emits a single-column PRIMARY KEY clause', () => {
-    const { service } = createService();
-    const sql = service.buildSql({
+    const { driver } = createService();
+    const { sql } = driver.buildCreateTable({
       schema: 'public',
       table: 't',
       columns: [{ name: 'id', type: 'serial', nullable: false, isPrimaryKey: true }],
@@ -122,8 +125,8 @@ describe('DdlService.buildSql — PRIMARY KEY clause', () => {
   });
 
   it('emits a multi-column PRIMARY KEY clause', () => {
-    const { service } = createService();
-    const sql = service.buildSql({
+    const { driver } = createService();
+    const { sql } = driver.buildCreateTable({
       schema: 'public',
       table: 't',
       columns: [
@@ -285,7 +288,7 @@ describe('DdlService.alterTable — addColumn', () => {
       operation: { kind: 'addColumn', column: { name: 'score', type: 'integer', nullable: true, isPrimaryKey: false } },
     });
     expect(result.sql).toBe('ALTER TABLE "public"."users" ADD COLUMN "score" integer');
-    expect(runParameterized).toHaveBeenCalledWith('conn-1', result.sql, []);
+    expect(runParameterized).toHaveBeenCalledWith('conn-1', { sql: result.sql, params: [] });
   });
 
   it('emits NOT NULL and DEFAULT when set', async () => {
