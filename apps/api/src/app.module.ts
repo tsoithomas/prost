@@ -7,7 +7,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
 import { CorrelationIdMiddleware } from './common/correlation-id.middleware';
 import { AuthModule } from './auth/auth.module';
-import { TargetDbModule } from './target-db/target-db.module';
+import { DatabaseModule } from './database/database.module';
 import { ConnectionsModule } from './connections/connections.module';
 import { MetadataModule } from './metadata/metadata.module';
 import { GridModule } from './grid/grid.module';
@@ -38,7 +38,7 @@ const globalThrottleGuard: Provider = { provide: APP_GUARD, useClass: ThrottlerG
     }),
     PrismaModule,
     CommonModule,
-    TargetDbModule,
+    DatabaseModule,
     AuthModule,
     ConnectionsModule,
     MetadataModule,
