@@ -3,7 +3,7 @@ import type { Connection, Prisma } from '@prisma/client';
 import type { ConnectionDto, TestConnectionResult } from '@prost/shared-types';
 import { CryptoService, type EncryptedPayload } from '../common/crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
-import { PgConnectionService } from '../target-db/pg-connection.service';
+import { PoolManager } from '../database/pool-manager.service';
 import { CreateConnectionDto } from './dto/create-connection.dto';
 import { UpdateConnectionDto } from './dto/update-connection.dto';
 import { TestConnectionDto } from './dto/test-connection.dto';
@@ -13,7 +13,7 @@ export class ConnectionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
-    private readonly pgConnectionService: PgConnectionService,
+    private readonly poolManager: PoolManager,
   ) {}
 
   async list(userId: string): Promise<ConnectionDto[]> {
@@ -35,6 +35,7 @@ export class ConnectionsService {
         username: dto.username,
         sslEnabled: dto.sslEnabled,
         sslRejectUnauthorized: dto.sslRejectUnauthorized,
+        engine: dto.engine ?? 'postgres',
         encryptedCredentials: this.crypto.encrypt(dto.password) as unknown as Prisma.InputJsonValue,
       },
     });
@@ -58,21 +59,21 @@ export class ConnectionsService {
     }
 
     const connection = await this.prisma.connection.update({ where: { id }, data });
-    await this.pgConnectionService.evictPool(id);
+    await this.poolManager.evictPool(id);
     return toConnectionDto(connection);
   }
 
   async remove(userId: string, id: string): Promise<void> {
     await this.requireOwned(userId, id);
     await this.prisma.connection.delete({ where: { id } });
-    await this.pgConnectionService.evictPool(id);
+    await this.poolManager.evictPool(id);
   }
 
   async test(userId: string, dto: TestConnectionDto): Promise<TestConnectionResult> {
     if (dto.id) {
       const existing = await this.requireOwned(userId, dto.id);
       const storedPassword = this.crypto.decrypt(existing.encryptedCredentials as unknown as EncryptedPayload);
-      return this.pgConnectionService.testConnection({
+      return this.poolManager.testConnection(dto.engine ?? existing.engine ?? 'postgres', {
         host: dto.host ?? existing.host,
         port: dto.port ?? existing.port,
         database: dto.database ?? existing.database,
@@ -90,7 +91,7 @@ export class ConnectionsService {
       };
     }
 
-    return this.pgConnectionService.testConnection({
+    return this.poolManager.testConnection(dto.engine ?? 'postgres', {
       host: dto.host,
       port: dto.port,
       database: dto.database,
