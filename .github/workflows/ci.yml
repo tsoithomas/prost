@@ -17,6 +17,23 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Live Postgres for the PgDriver conformance suite (apps/api/.../pg-driver.contract.test.ts).
+    # Matches docker-compose's demo-target-postgres: host port 5434, demo/demo/demo. The suite
+    # creates its own schema/table, so no init SQL is needed; without this it skips itself.
+    services:
+      demo-target-postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: demo
+          POSTGRES_PASSWORD: demo
+          POSTGRES_DB: demo
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U demo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
