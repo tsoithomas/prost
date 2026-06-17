@@ -1,5 +1,5 @@
 import { quoteIdent } from '@prost/utils';
-import type { SqlFragment, TableRef } from '../../types';
+import type { SelectRowsOptions, SqlFragment, TableRef } from '../../types';
 
 export const pgQuoteIdent = quoteIdent;
 export const pgPlaceholder = (index: number): string => `$${index}`;
@@ -93,6 +93,47 @@ export function pgBuildListIndexes(ref: TableRef): SqlFragment {
        ORDER BY ix.indisprimary DESC, i.relname`,
     params: [ref.namespace, ref.name],
   };
+}
+
+export function pgBuildSelectRows(ref: TableRef, opts: SelectRowsOptions): SqlFragment {
+  const limitParam = opts.whereParams.length + 1;
+  const offsetParam = opts.whereParams.length + 2;
+  let sql = `SELECT * FROM ${qualify(ref)}`;
+  if (opts.whereClause) sql += ` ${opts.whereClause}`;
+  if (opts.orderColumn) sql += ` ORDER BY ${pgQuoteIdent(opts.orderColumn)} ${opts.sortDir}`;
+  sql += ` LIMIT ${pgPlaceholder(limitParam)} OFFSET ${pgPlaceholder(offsetParam)}`;
+  return { sql, params: [...opts.whereParams, opts.limit, opts.offset] };
+}
+
+export function pgBuildFilteredRowCount(ref: TableRef, whereClause: string, whereParams: unknown[]): SqlFragment {
+  return { sql: `SELECT COUNT(*) AS count FROM ${qualify(ref)} ${whereClause}`, params: whereParams };
+}
+
+export function pgBuildRowCountEstimate(ref: TableRef): SqlFragment {
+  return {
+    sql: "SELECT reltuples FROM pg_class WHERE oid = to_regclass(format('%I.%I', $1::text, $2::text))",
+    params: [ref.namespace, ref.name],
+  };
+}
+
+export function pgBuildInsertRow(ref: TableRef, entries: [string, unknown][]): SqlFragment {
+  if (entries.length === 0) {
+    return { sql: `INSERT INTO ${qualify(ref)} DEFAULT VALUES RETURNING *`, params: [] };
+  }
+  const cols = entries.map(([c]) => pgQuoteIdent(c)).join(', ');
+  const vals = entries.map((_, i) => pgPlaceholder(i + 1)).join(', ');
+  return { sql: `INSERT INTO ${qualify(ref)} (${cols}) VALUES (${vals}) RETURNING *`, params: entries.map(([, v]) => v) };
+}
+
+export function pgBuildUpdateRow(ref: TableRef, column: string, value: unknown, pkColumns: string[], pkValues: unknown[]): SqlFragment {
+  const setClause = `${pgQuoteIdent(column)} = ${pgPlaceholder(1)}`;
+  const whereClause = pkColumns.map((c, i) => `${pgQuoteIdent(c)} = ${pgPlaceholder(i + 2)}`).join(' AND ');
+  return { sql: `UPDATE ${qualify(ref)} SET ${setClause} WHERE ${whereClause} RETURNING *`, params: [value, ...pkValues] };
+}
+
+export function pgBuildDeleteRow(ref: TableRef, pkColumns: string[], pkValues: unknown[]): SqlFragment {
+  const whereClause = pkColumns.map((c, i) => `${pgQuoteIdent(c)} = ${pgPlaceholder(i + 1)}`).join(' AND ');
+  return { sql: `DELETE FROM ${qualify(ref)} WHERE ${whereClause}`, params: pkValues };
 }
 
 export { qualify as pgQualify };
