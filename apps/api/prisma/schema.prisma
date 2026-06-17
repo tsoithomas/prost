@@ -27,6 +27,7 @@ model Connection {
   id                   String   @id @default(uuid())
   userId               String
   name                 String
+  engine               String   @default("postgres")
   host                 String
   port                 Int
   database             String
