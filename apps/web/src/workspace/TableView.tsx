@@ -15,6 +15,7 @@ import type { GridResponse, RowFilter } from '@prost/shared-types';
 import { Badge, Button, IconButton, prostGridTheme, Toast } from '@prost/ui';
 import { FilterPanel } from './FilterPanel';
 import { TableStructurePanel } from './TableStructurePanel';
+import { useActiveConnection } from '../api/connections';
 import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
 import { buildColumnDefs } from '../grid/columnDefs';
 import { useConfirm } from '../hooks/useConfirm';
@@ -64,7 +65,10 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
     placeholderData: (prev) => prev,
   });
 
-  const editable = columnsQuery.data?.editable ?? false;
+  // Read-only connections (the app DB) never allow grid writes, regardless of table editability.
+  const activeConnection = useActiveConnection();
+  const writable = !activeConnection?.capabilities.readOnly;
+  const editable = (columnsQuery.data?.editable ?? false) && writable;
   const primaryKey = columnsQuery.data?.primaryKey ?? [];
 
   const updateCell = useUpdateCell(connectionId, schema, table);
@@ -281,7 +285,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
       ) : null}
       <div className="min-h-0 flex-1">
         {viewMode === 'structure' ? (
-          <TableStructurePanel connectionId={connectionId} schema={schema} table={table} />
+          <TableStructurePanel connectionId={connectionId} schema={schema} table={table} writable={writable} />
         ) : columnsQuery.isLoading ? (
           <div className="flex h-full items-center justify-center text-sm text-text-faint">Loading table…</div>
         ) : columnsQuery.isError ? (

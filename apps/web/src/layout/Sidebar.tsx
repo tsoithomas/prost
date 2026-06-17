@@ -158,6 +158,8 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
               onSelectTable={(table) => openTable(table.schema, table.name, 'rows')}
               onOpenStructure={(table) => openTable(table.schema, table.name, 'structure')}
               onNewTable={(schema) => setCreateTableState({ open: true, schema })}
+              hasSchemas={activeConnection?.capabilities.hasSchemas ?? true}
+              writable={!activeConnection?.capabilities.readOnly}
             />
           )
         ) : activeTab === 'history' ? (
@@ -197,22 +199,28 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
                           {connectionEndpoint(connection)}
                         </span>
                       </div>
-                      {isActive ? (
+                      {connection.capabilities.readOnly ? (
+                        <Badge variant="neutral" className="ml-auto shrink-0">
+                          Read-only
+                        </Badge>
+                      ) : isActive ? (
                         <Badge variant="success" className="ml-auto shrink-0">
                           Active
                         </Badge>
                       ) : null}
                     </button>
-                    <IconButton
-                      aria-label={`Delete ${connection.name}`}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleDeleteConnection(connection);
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </IconButton>
+                    {connection.capabilities.readOnly ? null : (
+                      <IconButton
+                        aria-label={`Delete ${connection.name}`}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleDeleteConnection(connection);
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </IconButton>
+                    )}
                   </div>
                 );
               })}

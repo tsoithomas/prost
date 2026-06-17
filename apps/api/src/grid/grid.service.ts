@@ -1,9 +1,17 @@
-import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import type { ColumnMetadata, GridResponse, RowDeleteBody, RowFilter, RowInsertBody, RowUpdateBody } from '@prost/shared-types';
 import { MetadataService } from '../metadata/metadata.service';
 import { PoolManager } from '../database/pool-manager.service';
 import type { DbDriver } from '../database/db-driver.interface';
+import { isSystemConnectionId } from '../connections/system-connection';
 import { compileWhere } from './filter';
+
+/** Throws if the connection is read-only (the app-DB self-connection). Belt-and-braces alongside the read-only SQLite handle. */
+function assertWritable(connectionId: string): void {
+  if (isSystemConnectionId(connectionId)) {
+    throw new ForbiddenException('This connection is read-only');
+  }
+}
 
 const DEFAULT_LIMIT = 100;
 
@@ -85,6 +93,7 @@ export class GridService {
     table: string,
     req: RowUpdateBody,
   ): Promise<Record<string, unknown>> {
+    assertWritable(connectionId);
     const driver = await this.pool.driverFor(connectionId);
     const { columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
     this.assertEditable(primaryKey, schema, table);
@@ -120,6 +129,7 @@ export class GridService {
     table: string,
     req: RowInsertBody,
   ): Promise<Record<string, unknown>> {
+    assertWritable(connectionId);
     const driver = await this.pool.driverFor(connectionId);
     const { columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
     this.assertEditable(primaryKey, schema, table);
@@ -133,6 +143,7 @@ export class GridService {
 
   /** Deletes a row by primary key, re-validated against live metadata. */
   async deleteRow(connectionId: string, schema: string, table: string, req: RowDeleteBody): Promise<void> {
+    assertWritable(connectionId);
     const driver = await this.pool.driverFor(connectionId);
     const { primaryKey } = await this.resolveTable(connectionId, schema, table);
     this.assertEditable(primaryKey, schema, table);

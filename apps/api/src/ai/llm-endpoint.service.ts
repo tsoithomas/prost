@@ -14,6 +14,20 @@ export interface DecryptedEndpoint {
   models: string[];
 }
 
+/** `models` is stored as a JSON-encoded string array (SQLite has no scalar-list type). */
+function serializeModels(models: string[]): string {
+  return JSON.stringify(models);
+}
+
+function parseModels(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? (parsed as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 @Injectable()
 export class LlmEndpointService {
   constructor(
@@ -35,7 +49,7 @@ export class LlmEndpointService {
         userId,
         name: dto.name,
         baseUrl: dto.baseUrl,
-        models: dto.models,
+        models: serializeModels(dto.models),
         encryptedApiKey: this.crypto.encrypt(dto.apiKey) as unknown as Prisma.InputJsonValue,
       },
     });
@@ -47,7 +61,7 @@ export class LlmEndpointService {
     const data: Prisma.LlmEndpointUpdateInput = {};
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.baseUrl !== undefined) data.baseUrl = dto.baseUrl;
-    if (dto.models !== undefined) data.models = dto.models;
+    if (dto.models !== undefined) data.models = serializeModels(dto.models);
     if (dto.apiKey !== undefined) {
       data.encryptedApiKey = this.crypto.encrypt(dto.apiKey) as unknown as Prisma.InputJsonValue;
     }
@@ -67,7 +81,7 @@ export class LlmEndpointService {
       name: row.name,
       baseUrl: row.baseUrl,
       apiKey: this.crypto.decrypt(row.encryptedApiKey as unknown as EncryptedPayload),
-      models: row.models,
+      models: parseModels(row.models),
     };
   }
 
@@ -85,7 +99,7 @@ export function toLlmEndpointDto(row: LlmEndpoint): LlmEndpointDto {
     id: row.id,
     name: row.name,
     baseUrl: row.baseUrl,
-    models: row.models,
+    models: parseModels(row.models),
     hasApiKey: true,
     createdAt: row.createdAt.toISOString(),
   };

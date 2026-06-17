@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { CryptoService, type EncryptedPayload } from '../common/crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { buildSystemConnectionParams, isSystemConnectionId } from '../connections/system-connection';
 import { DbDriverRegistry } from './db-driver.registry';
 import type { DbDriver } from './db-driver.interface';
 import type { ConnectionParams, DriverQueryFn, DriverResult, NativePool, SqlFragment, TestConnectionResult } from './types';
@@ -21,7 +22,7 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
     private readonly prisma: PrismaService,
     private readonly crypto: CryptoService,
     private readonly registry: DbDriverRegistry,
-    config: ConfigService,
+    private readonly config: ConfigService,
   ) {
     this.poolIdleMs = Number(config.get('TARGET_POOL_IDLE_MS') ?? 10 * 60_000);
     this.poolMax = Number(config.get('TARGET_POOL_MAX') ?? 20);
@@ -67,6 +68,10 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
   async driverFor(connectionId: string): Promise<DbDriver> {
     const cached = this.poolEngine.get(connectionId);
     if (cached) return this.registry.get(cached);
+    if (isSystemConnectionId(connectionId)) {
+      this.poolEngine.set(connectionId, 'sqlite');
+      return this.registry.get('sqlite');
+    }
     const { engine } = await this.prisma.connection.findUniqueOrThrow({
       where: { id: connectionId },
       select: { engine: true },
@@ -87,9 +92,9 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
   }
 
   private async resolve(connectionId: string): Promise<{ driver: DbDriver; pool: NativePool }> {
-    const connection = await this.prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
-    const driver = this.registry.get(connection.engine);
-    this.poolEngine.set(connectionId, connection.engine);
+    const { engine, params } = await this.resolveConfig(connectionId);
+    const driver = this.registry.get(engine);
+    this.poolEngine.set(connectionId, engine);
 
     const cached = this.pools.get(connectionId);
     if (cached) {
@@ -97,16 +102,31 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
       return { driver, pool: await cached };
     }
 
-    const password = this.crypto.decrypt(connection.encryptedCredentials as unknown as EncryptedPayload);
-    const params: ConnectionParams = {
-      host: connection.host, port: connection.port, database: connection.database,
-      username: connection.username, password, sslEnabled: connection.sslEnabled, sslRejectUnauthorized: connection.sslRejectUnauthorized,
-    };
     const created = driver.createPool(params);
     this.pools.set(connectionId, created);
     this.poolLastUsed.set(connectionId, Date.now());
     created.catch(() => { this.pools.delete(connectionId); this.poolLastUsed.delete(connectionId); this.poolEngine.delete(connectionId); });
     return { driver, pool: await created };
+  }
+
+  /**
+   * Builds the engine + connection params for a connection id. The virtual app-DB self-connection
+   * is synthesized from `DATABASE_URL` (read-only, no Prisma row, no credential decrypt); everything
+   * else comes from its stored row with its credential decrypted in memory.
+   */
+  private async resolveConfig(connectionId: string): Promise<{ engine: string; params: ConnectionParams }> {
+    if (isSystemConnectionId(connectionId)) {
+      return { engine: 'sqlite', params: buildSystemConnectionParams(this.config.getOrThrow('DATABASE_URL')) };
+    }
+    const connection = await this.prisma.connection.findUniqueOrThrow({ where: { id: connectionId } });
+    const password = this.crypto.decrypt(connection.encryptedCredentials as unknown as EncryptedPayload);
+    return {
+      engine: connection.engine,
+      params: {
+        host: connection.host, port: connection.port, database: connection.database,
+        username: connection.username, password, sslEnabled: connection.sslEnabled, sslRejectUnauthorized: connection.sslRejectUnauthorized,
+      },
+    };
   }
 
   private readonly sweep = (): void => {

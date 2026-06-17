@@ -15,6 +15,7 @@ import { FormField } from '../components/FormField';
 import { useConfirm } from '../hooks/useConfirm';
 import { apiErrorMessage } from '../lib/apiClient';
 import { useConnectionStore } from '../stores/connectionStore';
+import { connectionEndpoint, connectionLocation } from './connectionDisplay';
 
 export interface ConnectionModalProps {
   open: boolean;
@@ -110,6 +111,10 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
   }, [open, onClose]);
 
   if (!open) return null;
+
+  const selectedConnection = connections.find((c) => c.id === selectedId) ?? null;
+  const selectedReadOnly = selectedConnection?.capabilities.readOnly ?? false;
+  const engineLabel = selectedConnection?.engine === 'sqlite' ? 'SQLite' : 'PostgreSQL';
 
   function selectConnection(connection: ConnectionDto) {
     setSelectedId(connection.id);
@@ -314,25 +319,31 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                       <div className="flex min-w-0 flex-col">
                         <span className="truncate text-sm">{connection.name}</span>
                         <span className="truncate font-mono text-xs text-text-faint">
-                          {connection.host}:{connection.port}
+                          {connectionEndpoint(connection)}
                         </span>
                       </div>
-                      {isActiveConnection ? (
+                      {connection.capabilities.readOnly ? (
+                        <Badge variant="neutral" className="ml-auto shrink-0">
+                          Read-only
+                        </Badge>
+                      ) : isActiveConnection ? (
                         <Badge variant="success" className="ml-auto shrink-0">
                           Active
                         </Badge>
                       ) : null}
                     </button>
-                    <IconButton
-                      aria-label={`Delete ${connection.name}`}
-                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleDelete(connection);
-                      }}
-                    >
-                      <Trash2 size={14} />
-                    </IconButton>
+                    {connection.capabilities.readOnly ? null : (
+                      <IconButton
+                        aria-label={`Delete ${connection.name}`}
+                        className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleDelete(connection);
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </IconButton>
+                    )}
                   </div>
                 );
               })
@@ -342,9 +353,11 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
 
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-lg">
-            <span className="text-sm font-semibold text-text">{selectedId ? 'Edit Connection' : 'New Connection'}</span>
+            <span className="text-sm font-semibold text-text">
+              {selectedReadOnly ? 'Connection' : selectedId ? 'Edit Connection' : 'New Connection'}
+            </span>
             <div className="flex items-center gap-sm">
-              <Badge variant="accent">PostgreSQL</Badge>
+              <Badge variant="accent">{engineLabel}</Badge>
               <IconButton aria-label="Close" onClick={onClose}>
                 <X size={16} />
               </IconButton>
@@ -352,6 +365,20 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
           </div>
 
           <div className="flex-1 overflow-y-auto p-lg">
+            {selectedReadOnly && selectedConnection ? (
+              <div className="flex flex-col gap-lg">
+                <FormField label="Connection Name">
+                  <Input value={selectedConnection.name} disabled readOnly />
+                </FormField>
+                <FormField label="Location">
+                  <Input className="font-mono" value={connectionLocation(selectedConnection)} disabled readOnly />
+                </FormField>
+                <p className="text-xs text-text-faint">
+                  This is the Prost application database, surfaced for inspection. It is read-only and cannot be edited
+                  or deleted.
+                </p>
+              </div>
+            ) : (
             <form className="flex flex-col gap-lg" onSubmit={(event) => event.preventDefault()}>
               <div>
                 <button
@@ -479,15 +506,20 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                 </p>
               ) : null}
             </form>
+            )}
           </div>
 
           <Surface level="raised" className="flex h-16 shrink-0 items-center justify-between border-t border-border px-lg">
-            <Button variant="secondary" size="sm" onClick={handleTest} disabled={testConnection.isPending}>
-              <Zap size={14} />
-              {testConnection.isPending ? 'Testing…' : 'Test Connection'}
-            </Button>
+            {selectedReadOnly ? (
+              <span />
+            ) : (
+              <Button variant="secondary" size="sm" onClick={handleTest} disabled={testConnection.isPending}>
+                <Zap size={14} />
+                {testConnection.isPending ? 'Testing…' : 'Test Connection'}
+              </Button>
+            )}
             <div className="flex items-center gap-md">
-              {selectedId ? (
+              {selectedId && !selectedReadOnly ? (
                 <Button variant="secondary" size="sm" onClick={handleSave} disabled={updateConnection.isPending}>
                   <Save size={14} />
                   {updateConnection.isPending ? 'Saving…' : 'Save'}

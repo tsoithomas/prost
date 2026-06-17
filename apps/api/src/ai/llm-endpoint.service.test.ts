@@ -14,7 +14,8 @@ function buildRow(overrides: Partial<LlmEndpoint> = {}): LlmEndpoint {
     name: 'My OpenAI',
     baseUrl: 'https://api.openai.com/v1',
     encryptedApiKey: ENC as unknown as LlmEndpoint['encryptedApiKey'],
-    models: ['gpt-4o', 'gpt-4o-mini'],
+    // Stored as a JSON-encoded string array (SQLite has no scalar lists); the service parses it back.
+    models: JSON.stringify(['gpt-4o', 'gpt-4o-mini']),
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     ...overrides,
@@ -74,6 +75,8 @@ describe('LlmEndpointService', () => {
       const data = (llmEndpoint.create as ReturnType<typeof vi.fn>).mock.calls[0]![0].data;
       expect(data.encryptedApiKey).toEqual(ENC);
       expect(data).not.toHaveProperty('apiKey');
+      // models is persisted as a JSON-encoded string array, not a raw array.
+      expect(data.models).toBe(JSON.stringify(['gpt-4o']));
     });
 
     it('returns a DTO with hasApiKey true and no raw key', async () => {

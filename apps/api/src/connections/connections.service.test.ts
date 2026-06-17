@@ -21,9 +21,11 @@ function buildConnection(overrides: Partial<Connection> = {}): Connection {
   };
 }
 
+const CAPS = { hasSchemas: true, readOnly: false };
+
 describe('toConnectionDto', () => {
   it('maps a Connection row to a ConnectionDto', () => {
-    const dto = toConnectionDto(buildConnection());
+    const dto = toConnectionDto(buildConnection(), CAPS);
 
     expect(dto).toEqual({
       id: 'conn-1',
@@ -35,13 +37,14 @@ describe('toConnectionDto', () => {
       username: 'demo',
       sslEnabled: false,
       sslRejectUnauthorized: true,
+      capabilities: { hasSchemas: true, readOnly: false },
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
     });
   });
 
   it('never includes the password or encrypted credentials', () => {
-    const dto = toConnectionDto(buildConnection()) as unknown as Record<string, unknown>;
+    const dto = toConnectionDto(buildConnection(), CAPS) as unknown as Record<string, unknown>;
 
     expect(dto).not.toHaveProperty('password');
     expect(dto).not.toHaveProperty('encryptedCredentials');

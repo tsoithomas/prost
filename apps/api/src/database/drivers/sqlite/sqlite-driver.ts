@@ -37,7 +37,11 @@ export class SqliteDriver implements DbDriver {
   async createPool(params: ConnectionParams): Promise<NativePool> {
     // `database` carries the file path (or `:memory:`). fileMustExist avoids silently creating
     // a stray empty DB when the configured path is wrong — this engine is for inspection.
-    const db = new Database(params.database, { fileMustExist: params.database !== ':memory:' });
+    // `readonly` (the app-DB self-connection) makes SQLite reject every write at the engine level.
+    const db = new Database(params.database, {
+      readonly: params.readOnly ?? false,
+      fileMustExist: params.database !== ':memory:',
+    });
     db.pragma(`busy_timeout = ${this.busyTimeoutMs}`);
     return db;
   }

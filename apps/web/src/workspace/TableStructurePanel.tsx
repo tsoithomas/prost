@@ -13,9 +13,11 @@ export interface TableStructurePanelProps {
   connectionId: string;
   schema: string;
   table: string;
+  /** Read-only connections (the app DB) hide all DDL actions. */
+  writable?: boolean;
 }
 
-export function TableStructurePanel({ connectionId, schema, table }: TableStructurePanelProps) {
+export function TableStructurePanel({ connectionId, schema, table, writable = true }: TableStructurePanelProps) {
   const { data, isLoading, isError } = useTableStructure(connectionId, schema, table);
 
   const [addColumnOpen, setAddColumnOpen] = useState(false);
@@ -78,10 +80,12 @@ export function TableStructurePanel({ connectionId, schema, table }: TableStruct
             <h2 className="text-xs font-medium uppercase tracking-wider text-text-faint">
               Columns ({data.columns.length})
             </h2>
-            <Button variant="ghost" size="sm" onClick={() => setAddColumnOpen(true)}>
-              <Plus size={13} />
-              Add column
-            </Button>
+            {writable ? (
+              <Button variant="ghost" size="sm" onClick={() => setAddColumnOpen(true)}>
+                <Plus size={13} />
+                Add column
+              </Button>
+            ) : null}
           </div>
           <div className="overflow-hidden rounded-md border border-border">
             {data.columns.map((col, i) => (
@@ -93,13 +97,15 @@ export function TableStructurePanel({ connectionId, schema, table }: TableStruct
                 <span className="shrink-0 font-mono text-xs text-text-faint">{col.dataType}</span>
                 {col.isPrimaryKey ? <Badge variant="accent">PK</Badge> : null}
                 {!col.nullable && !col.isPrimaryKey ? <Badge variant="neutral">NOT NULL</Badge> : null}
-                <IconButton
-                  aria-label={`Edit column ${col.name}`}
-                  onClick={() => setEditingColumn(col)}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity max-md:opacity-100"
-                >
-                  <Pencil size={13} />
-                </IconButton>
+                {writable ? (
+                  <IconButton
+                    aria-label={`Edit column ${col.name}`}
+                    onClick={() => setEditingColumn(col)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity max-md:opacity-100"
+                  >
+                    <Pencil size={13} />
+                  </IconButton>
+                ) : null}
               </div>
             ))}
           </div>
@@ -110,10 +116,12 @@ export function TableStructurePanel({ connectionId, schema, table }: TableStruct
             <h2 className="text-xs font-medium uppercase tracking-wider text-text-faint">
               Indexes ({data.indexes.length})
             </h2>
-            <Button variant="ghost" size="sm" onClick={() => setCreateIndexOpen(true)}>
-              <Plus size={13} />
-              Add index
-            </Button>
+            {writable ? (
+              <Button variant="ghost" size="sm" onClick={() => setCreateIndexOpen(true)}>
+                <Plus size={13} />
+                Add index
+              </Button>
+            ) : null}
           </div>
           {data.indexes.length === 0 ? (
             <p className="text-sm italic text-text-faint">No indexes.</p>
@@ -129,7 +137,7 @@ export function TableStructurePanel({ connectionId, schema, table }: TableStruct
                     {idx.isPrimary ? <Badge variant="accent">Primary</Badge> : null}
                     {idx.isUnique && !idx.isPrimary ? <Badge variant="success">Unique</Badge> : null}
                     <span className="text-xs text-text-faint">{idx.method}</span>
-                    {!idx.isPrimary ? (
+                    {writable && !idx.isPrimary ? (
                       <IconButton
                         aria-label={`Drop index ${idx.name}`}
                         onClick={() => void handleDropIndex(idx.name)}

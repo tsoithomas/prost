@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, UnprocessableEntityException } from '@nestjs/common';
 import type {
   AlterTableOperation,
   AlterTableRequest,
@@ -13,6 +13,14 @@ import type {
 } from '@prost/shared-types';
 import { PoolManager } from '../database/pool-manager.service';
 import { MetadataService } from '../metadata/metadata.service';
+import { isSystemConnectionId } from '../connections/system-connection';
+
+/** Throws if the connection is read-only (the app-DB self-connection). */
+function assertWritable(connectionId: string): void {
+  if (isSystemConnectionId(connectionId)) {
+    throw new ForbiddenException('This connection is read-only');
+  }
+}
 
 const ALLOWED_TYPES = new Set([
   'integer', 'bigint', 'smallint', 'serial', 'bigserial',
@@ -43,6 +51,7 @@ export class DdlService {
   ) {}
 
   async createTable(connectionId: string, req: CreateTableRequest): Promise<CreateTableResult> {
+    assertWritable(connectionId);
     if (req.columns.length === 0) {
       throw new UnprocessableEntityException('At least one column is required');
     }
@@ -109,6 +118,7 @@ export class DdlService {
   }
 
   async alterTable(connectionId: string, req: AlterTableRequest): Promise<AlterTableResult> {
+    assertWritable(connectionId);
     const structure = await this.metadataService.getTableStructure(connectionId, req.schema, req.table);
     const op = req.operation;
     const colNames = new Set(structure.columns.map((c) => c.name));
@@ -197,6 +207,7 @@ export class DdlService {
   }
 
   async createIndex(connectionId: string, req: CreateIndexRequest): Promise<CreateIndexResult> {
+    assertWritable(connectionId);
     const cols = await this.metadataService.getTableColumns(connectionId, req.schema, req.table);
     if (req.columns.length === 0) {
       throw new UnprocessableEntityException('At least one column is required for an index');
@@ -239,6 +250,7 @@ export class DdlService {
   }
 
   async dropIndex(connectionId: string, req: DropIndexRequest): Promise<DropIndexResult> {
+    assertWritable(connectionId);
     const structure = await this.metadataService.getTableStructure(connectionId, req.schema, req.table);
     const exists = structure.indexes.some((idx) => idx.name === req.index);
     if (!exists) {

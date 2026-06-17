@@ -10,6 +10,10 @@ export interface SchemaTreeProps {
   onSelectTable: (table: TableSummary) => void;
   onOpenStructure: (table: TableSummary) => void;
   onNewTable: (schema: string) => void;
+  /** Engines without a schema layer (SQLite) render a flat table list instead of schema groups. */
+  hasSchemas?: boolean;
+  /** Read-only connections (the app DB) hide write affordances like "New table". */
+  writable?: boolean;
 }
 
 interface ContextMenuState {
@@ -18,7 +22,15 @@ interface ContextMenuState {
   table: TableSummary;
 }
 
-export function SchemaTree({ schemas, selectedTable, onSelectTable, onOpenStructure, onNewTable }: SchemaTreeProps) {
+export function SchemaTree({
+  schemas,
+  selectedTable,
+  onSelectTable,
+  onOpenStructure,
+  onNewTable,
+  hasSchemas = true,
+  writable = true,
+}: SchemaTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
 
@@ -45,6 +57,44 @@ export function SchemaTree({ schemas, selectedTable, onSelectTable, onOpenStruct
     });
   }
 
+  const renderTableButton = (table: TableSummary) => (
+    <button
+      key={`${table.schema}.${table.name}`}
+      type="button"
+      onClick={() => onSelectTable(table)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setContextMenu({ x: e.clientX, y: e.clientY, table });
+      }}
+      className={clsx(
+        'flex items-center gap-1 rounded-sm px-1 py-1 text-left text-xs transition-colors',
+        selectedTable === `${table.schema}.${table.name}`
+          ? 'bg-accent-muted text-accent'
+          : 'text-text-muted hover:bg-surface-hover hover:text-text',
+      )}
+    >
+      <Table2 size={14} />
+      <span>{table.name}</span>
+    </button>
+  );
+
+  // Engines without a schema layer (SQLite) render a single flat list of tables.
+  if (!hasSchemas) {
+    const tables = schemas.flatMap((schema) => schema.tables);
+    return (
+      <div>
+        <div className="mb-2 px-sm text-xs font-medium uppercase tracking-wider text-text-faint">Tables</div>
+        {tables.length === 0 ? (
+          <p className="px-sm py-1 text-xs italic text-text-faint">No tables</p>
+        ) : (
+          <div className="flex flex-col gap-0.5">{tables.map(renderTableButton)}</div>
+        )}
+        {renderContextMenu()}
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="mb-2 px-sm text-xs font-medium uppercase tracking-wider text-text-faint">Schemas</div>
@@ -62,75 +112,62 @@ export function SchemaTree({ schemas, selectedTable, onSelectTable, onOpenStruct
                 <Box size={14} className="shrink-0 text-accent" />
                 <span className="truncate">{schema.name}</span>
               </button>
-              <button
-                type="button"
-                aria-label={`New table in ${schema.name}`}
-                title={`New table in ${schema.name}`}
-                onClick={(e) => { e.stopPropagation(); onNewTable(schema.name); }}
-                className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:bg-surface-hover hover:text-text group-hover/schema:opacity-100"
-              >
-                <Plus size={12} />
-              </button>
+              {writable ? (
+                <button
+                  type="button"
+                  aria-label={`New table in ${schema.name}`}
+                  title={`New table in ${schema.name}`}
+                  onClick={(e) => { e.stopPropagation(); onNewTable(schema.name); }}
+                  className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:bg-surface-hover hover:text-text group-hover/schema:opacity-100"
+                >
+                  <Plus size={12} />
+                </button>
+              ) : null}
             </div>
             {isCollapsed ? null : (
               <div className="ml-2 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-3">
-                {schema.tables.map((table) => (
-                  <button
-                    key={table.name}
-                    type="button"
-                    onClick={() => onSelectTable(table)}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setContextMenu({ x: e.clientX, y: e.clientY, table });
-                    }}
-                    className={clsx(
-                      'flex items-center gap-1 rounded-sm px-1 py-1 text-left text-xs transition-colors',
-                      selectedTable === `${table.schema}.${table.name}`
-                        ? 'bg-accent-muted text-accent'
-                        : 'text-text-muted hover:bg-surface-hover hover:text-text',
-                    )}
-                  >
-                    <Table2 size={14} />
-                    <span>{table.name}</span>
-                  </button>
-                ))}
+                {schema.tables.map(renderTableButton)}
               </div>
             )}
           </div>
         );
       })}
 
-      {contextMenu ? (
-        <div
-          className="fixed z-50 min-w-[160px] overflow-hidden rounded-md border border-border bg-surface py-1 shadow-lg"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text hover:bg-surface-hover"
-            onClick={() => {
-              onSelectTable(contextMenu.table);
-              setContextMenu(null);
-            }}
-          >
-            <Rows3 size={13} />
-            Browse rows
-          </button>
-          <button
-            type="button"
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text hover:bg-surface-hover"
-            onClick={() => {
-              onOpenStructure(contextMenu.table);
-              setContextMenu(null);
-            }}
-          >
-            <StretchHorizontal size={13} />
-            View structure
-          </button>
-        </div>
-      ) : null}
+      {renderContextMenu()}
     </div>
   );
+
+  function renderContextMenu() {
+    if (!contextMenu) return null;
+    return (
+      <div
+        className="fixed z-50 min-w-[160px] overflow-hidden rounded-md border border-border bg-surface py-1 shadow-lg"
+        style={{ left: contextMenu.x, top: contextMenu.y }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text hover:bg-surface-hover"
+          onClick={() => {
+            onSelectTable(contextMenu.table);
+            setContextMenu(null);
+          }}
+        >
+          <Rows3 size={13} />
+          Browse rows
+        </button>
+        <button
+          type="button"
+          className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text hover:bg-surface-hover"
+          onClick={() => {
+            onOpenStructure(contextMenu.table);
+            setContextMenu(null);
+          }}
+        >
+          <StretchHorizontal size={13} />
+          View structure
+        </button>
+      </div>
+    );
+  }
 }

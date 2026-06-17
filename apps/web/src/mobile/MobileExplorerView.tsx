@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Box } from 'lucide-react';
 import { StatusDot } from '@prost/ui';
 import { useActiveConnection } from '../api/connections';
+import { connectionEndpoint } from '../connection/connectionDisplay';
 import { useMetadata } from '../api/metadata';
 import { CreateTableModal } from '../ddl/CreateTableModal';
 import { SchemaTree } from '../explorer/SchemaTree';
@@ -36,7 +37,9 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex shrink-0 items-center gap-xs border-b border-border bg-surface-sunken px-md py-1.5">
         <Box size={14} className="text-accent" />
-        <span className="font-mono text-xs text-text-muted">{activeConnection?.database ?? 'No database'}</span>
+        <span className="font-mono text-xs text-text-muted">
+          {activeConnection ? connectionEndpoint(activeConnection) : 'No database'}
+        </span>
         <span className="ml-auto flex items-center gap-xs text-xs text-text-faint">
           <StatusDot variant={activeConnectionId ? 'success' : 'neutral'} />
           {activeConnectionId ? 'Connected' : 'Not connected'}
@@ -64,6 +67,8 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
               onSelectTable?.();
             }}
             onNewTable={(schema) => setCreateTableState({ open: true, schema })}
+            hasSchemas={activeConnection?.capabilities.hasSchemas ?? true}
+            writable={!activeConnection?.capabilities.readOnly}
           />
         )}
       </div>

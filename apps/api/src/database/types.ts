@@ -62,6 +62,8 @@ export interface ConnectionParams {
   sslEnabled: boolean;
   /** Only meaningful when `sslEnabled` is true. `false` allows self-signed/unverifiable certs. */
   sslRejectUnauthorized: boolean;
+  /** Open the connection read-only where the engine supports it (SQLite). Enforced at the engine level. */
+  readOnly?: boolean;
 }
 
 export interface SelectRowsOptions {
