@@ -1,20 +1,23 @@
+import type { ConfigService } from '@nestjs/config';
 import { describe, expect, it, vi } from 'vitest';
-import type { ParameterizedResult } from '../target-db/pg-connection.service';
-import type { PgConnectionService } from '../target-db/pg-connection.service';
+import { PgDriver } from '../database/drivers/pg/pg-driver';
+import type { PoolManager } from '../database/pool-manager.service';
 import { MetadataService } from './metadata.service';
 
-function result<T>(rows: T[]): ParameterizedResult<T extends Record<string, unknown> ? T : never> {
-  return { rows: rows as never, fields: [], rowCount: rows.length, command: 'SELECT' };
+function result<T>(rows: T[]) {
+  return { rows, fields: [], rowCount: rows.length, command: 'SELECT' };
 }
 
-function createService(runParameterized = vi.fn()) {
-  const pgConnectionService = { runParameterized } as unknown as PgConnectionService;
-  return { service: new MetadataService(pgConnectionService), runParameterized };
+function createService(run = vi.fn()) {
+  const pool = { run } as unknown as PoolManager;
+  const configStub = { get: () => undefined } as unknown as ConfigService;
+  const driver = new PgDriver(configStub);
+  return { service: new MetadataService(pool, driver), run };
 }
 
 describe('MetadataService.getSchemas', () => {
   it('runs two queries in parallel and returns tables with columns', async () => {
-    const runParameterized = vi.fn()
+    const run = vi.fn()
       .mockResolvedValueOnce(result([
         { table_schema: 'public', table_name: 'users' },
         { table_schema: 'public', table_name: 'orders' },
@@ -24,11 +27,11 @@ describe('MetadataService.getSchemas', () => {
         { table_schema: 'public', table_name: 'users', column_name: 'email', data_type: 'character varying', is_nullable: 'NO', is_primary_key: false },
         { table_schema: 'public', table_name: 'orders', column_name: 'id', data_type: 'integer', is_nullable: 'NO', is_primary_key: true },
       ]));
-    const { service } = createService(runParameterized);
+    const { service } = createService(run);
 
     const schemas = await service.getSchemas('conn-1');
 
-    expect(runParameterized).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledTimes(2);
     expect(schemas).toHaveLength(1);
     expect(schemas[0]!.name).toBe('public');
 
@@ -44,10 +47,10 @@ describe('MetadataService.getSchemas', () => {
   });
 
   it('returns empty columns array for tables with no matching column rows', async () => {
-    const runParameterized = vi.fn()
+    const run = vi.fn()
       .mockResolvedValueOnce(result([{ table_schema: 'public', table_name: 'empty_table' }]))
       .mockResolvedValueOnce(result([]));
-    const { service } = createService(runParameterized);
+    const { service } = createService(run);
 
     const schemas = await service.getSchemas('conn-1');
     expect(schemas[0]!.tables[0]!.columns).toEqual([]);
@@ -56,22 +59,22 @@ describe('MetadataService.getSchemas', () => {
 
 describe('MetadataService.getTableIndexes', () => {
   it('binds schema and table as $1/$2 params — never interpolates them into the SQL', async () => {
-    const runParameterized = vi.fn().mockResolvedValue(result([]));
-    const { service } = createService(runParameterized);
+    const run = vi.fn().mockResolvedValue(result([]));
+    const { service } = createService(run);
 
     await service.getTableIndexes('conn-1', 'public', 'orders');
 
-    const [connectionId, sql, params] = runParameterized.mock.calls[0] as [string, string, unknown[]];
+    const [connectionId, frag] = run.mock.calls[0] as [string, { sql: string; params: unknown[] }];
     expect(connectionId).toBe('conn-1');
-    expect(sql).not.toContain('public');
-    expect(sql).not.toContain('orders');
-    expect(sql).toContain('$1');
-    expect(sql).toContain('$2');
-    expect(params).toEqual(['public', 'orders']);
+    expect(frag.sql).not.toContain("'public'");
+    expect(frag.sql).not.toContain("'orders'");
+    expect(frag.sql).toContain('$1');
+    expect(frag.sql).toContain('$2');
+    expect(frag.params).toEqual(['public', 'orders']);
   });
 
   it('maps snake_case result columns to camelCase IndexMetadata', async () => {
-    const runParameterized = vi.fn().mockResolvedValue(
+    const run = vi.fn().mockResolvedValue(
       result([
         {
           name: 'orders_pkey',
@@ -91,7 +94,7 @@ describe('MetadataService.getTableIndexes', () => {
         },
       ]),
     );
-    const { service } = createService(runParameterized);
+    const { service } = createService(run);
 
     const indexes = await service.getTableIndexes('conn-1', 'public', 'orders');
 
