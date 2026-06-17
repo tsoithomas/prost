@@ -169,7 +169,12 @@ describe('compileWhere — dialect injection', () => {
     const { clause } = compileWhere(
       { conditions: [{ column: 'age', operator: 'eq', value: 30 }], combinator: 'and' },
       COLUMNS, 0,
-      { placeholder: (i) => `?${i}`, quoteIdent: (s) => `[${s}]` },
+      {
+        placeholder: (i) => `?${i}`,
+        quoteIdent: (s) => `[${s}]`,
+        likeOperator: 'LIKE',
+        inList: (col, vals, neg, first) => ({ fragment: `${col} ${neg ? 'NOT IN' : 'IN'} (${vals.map((_, i) => `?${first + i}`).join(', ')})`, params: [...vals] }),
+      },
     );
     expect(clause).toBe('WHERE [age] = ?1');
   });

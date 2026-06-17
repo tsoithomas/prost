@@ -13,15 +13,24 @@ Prost touches two kinds of database, and they must never be confused.
 
 - **Application DB** — Prost's own data: users, saved connections, preferences, query
   history. Accessed **only** through Prisma.
-- **Target DBs** — the user's PostgreSQL databases. Accessed **only** through the raw `pg`
-  driver, via the single connection service.
+- **Target DBs** — the databases users connect to and manage. Accessed **only** through the
+  engine-neutral driver layer (`PoolManager` → a `DbDriver` resolved per `Connection.engine`,
+  e.g. `PgDriver`, `SqliteDriver`), never through Prisma.
 
 **Rules**
-- Prisma never opens a target DB. The `pg` driver never opens the app DB.
+- Prisma never opens a target DB. A `DbDriver` never opens the app DB through the app's Prisma
+  client.
 - No target-DB credential, schema, or row ever lands in an app-DB table (history stores
   SQL text and identifiers only — never result data or credentials).
-- All target-DB access flows through **one** choke point (`PgConnectionService` /
-  `runParameterized`). If you find yourself opening a `pg` client anywhere else, stop.
+- All target-DB access flows through **one** choke point (`PoolManager.run` /
+  `withTransaction`). If you find yourself opening a native client (`pg.Pool`, a
+  `better-sqlite3` `Database`, …) outside a driver, stop.
+
+**Sanctioned exception — inspecting the app DB.** A SQLite *target* connection may point at the
+application's own database file purely for read/inspection (so Prost can browse its own data).
+This still flows entirely through the target-DB seam (`PoolManager` → `SqliteDriver`) — it never
+borrows the app's Prisma client, and it never writes target data back into an app-DB table. The
+boundary (two code paths, never crossed) holds; only the physical file is shared.
 
 ## 2. All target SQL is parameterized — no unsafe interpolation
 

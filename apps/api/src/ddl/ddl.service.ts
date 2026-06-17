@@ -12,7 +12,6 @@ import type {
   NewColumn,
 } from '@prost/shared-types';
 import { PoolManager } from '../database/pool-manager.service';
-import { PgDriver } from '../database/drivers/pg/pg-driver';
 import { MetadataService } from '../metadata/metadata.service';
 
 const ALLOWED_TYPES = new Set([
@@ -40,7 +39,6 @@ const USING_PATTERN = /^[a-z_][a-z0-9_]*(::([a-z][a-z0-9 ]*)(\(\s*\d+\s*(?:,\s*\
 export class DdlService {
   constructor(
     private readonly pool: PoolManager,
-    private readonly driver: PgDriver,
     private readonly metadataService: MetadataService,
   ) {}
 
@@ -67,12 +65,13 @@ export class DdlService {
       };
     });
 
-    const frag = this.driver.buildCreateTable({ schema: req.schema, table: req.table, columns });
+    const driver = await this.pool.driverFor(connectionId);
+    const frag = driver.buildCreateTable({ schema: req.schema, table: req.table, columns });
 
     try {
       await this.pool.run(connectionId, frag);
     } catch (err: unknown) {
-      this.driver.mapError(err, { operation: 'createTable', detail: `Table "${req.schema}"."${req.table}" already exists` });
+      driver.mapError(err, { operation: 'createTable', detail: `Table "${req.schema}"."${req.table}" already exists` });
       throw err;
     }
 
@@ -184,12 +183,13 @@ export class DdlService {
         throw new UnprocessableEntityException('Unknown operation kind');
     }
 
-    const frag = this.driver.buildAlterTable({ namespace: req.schema, name: req.table }, normalizedOp);
+    const driver = await this.pool.driverFor(connectionId);
+    const frag = driver.buildAlterTable({ namespace: req.schema, name: req.table }, normalizedOp);
 
     try {
       await this.pool.run(connectionId, frag);
     } catch (err: unknown) {
-      this.driver.mapError(err, { operation: 'alterTable' });
+      driver.mapError(err, { operation: 'alterTable' });
       throw err;
     }
 
@@ -221,7 +221,8 @@ export class DdlService {
       name = raw.length > 63 ? raw.slice(0, 59) + '_idx' : raw;
     }
 
-    const frag = this.driver.buildCreateIndex(
+    const driver = await this.pool.driverFor(connectionId);
+    const frag = driver.buildCreateIndex(
       { schema: req.schema, table: req.table, columns: req.columns, unique: req.unique, name: req.name, method: req.method },
       name,
       method,
@@ -230,7 +231,7 @@ export class DdlService {
     try {
       await this.pool.run(connectionId, frag);
     } catch (err: unknown) {
-      this.driver.mapError(err, { operation: 'createIndex' });
+      driver.mapError(err, { operation: 'createIndex' });
       throw err;
     }
 
@@ -244,12 +245,13 @@ export class DdlService {
       throw new UnprocessableEntityException(`Index "${req.index}" does not exist on "${req.schema}"."${req.table}"`);
     }
 
-    const frag = this.driver.buildDropIndex({ namespace: req.schema, name: req.index }, req.index);
+    const driver = await this.pool.driverFor(connectionId);
+    const frag = driver.buildDropIndex({ namespace: req.schema, name: req.index }, req.index);
 
     try {
       await this.pool.run(connectionId, frag);
     } catch (err: unknown) {
-      this.driver.mapError(err, { operation: 'dropIndex' });
+      driver.mapError(err, { operation: 'dropIndex' });
       throw err;
     }
 

@@ -9,12 +9,17 @@ export interface PagedQuery {
  * Wraps a single `SELECT` statement in a bound `LIMIT`/`OFFSET` window (architecture
  * principle §7). Requests one row more than `limit` so the caller can detect truncation
  * without a separate `COUNT(*)` — exact counts on arbitrary queries are never the default
- * path (principle §7).
+ * path (principle §7). `placeholder` is the driver's positional placeholder (PG `$n`, SQLite `?`).
  */
-export function buildPagedQuery(sql: string, limit = QUERY_PAGE_SIZE, offset = 0): PagedQuery {
+export function buildPagedQuery(
+  sql: string,
+  placeholder: (index: number) => string = (i) => `$${i}`,
+  limit = QUERY_PAGE_SIZE,
+  offset = 0,
+): PagedQuery {
   const trimmed = sql.trim().replace(/;\s*$/, '');
   return {
-    sql: `SELECT * FROM (${trimmed}) AS __prost_query LIMIT $1 OFFSET $2`,
+    sql: `SELECT * FROM (${trimmed}) AS __prost_query LIMIT ${placeholder(1)} OFFSET ${placeholder(2)}`,
     params: [limit + 1, offset],
   };
 }

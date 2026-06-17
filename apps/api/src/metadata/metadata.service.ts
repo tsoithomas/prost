@@ -1,7 +1,20 @@
 import { Injectable } from '@nestjs/common';
 import type { ColumnMetadata, IndexMetadata, SchemaMetadata, TableMetadata, TableStructure } from '@prost/shared-types';
 import { PoolManager } from '../database/pool-manager.service';
-import { PgDriver } from '../database/drivers/pg/pg-driver';
+
+/** Index `columns` arrive as a real array (PG) or a JSON-encoded array string (SQLite). */
+function toColumnArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value as string[];
+  if (typeof value === 'string' && value.length > 0) {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? (parsed as string[]) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 interface TableRow {
   table_schema: string;
@@ -31,22 +44,20 @@ interface IndexRow {
 
 @Injectable()
 export class MetadataService {
-  constructor(
-    private readonly pool: PoolManager,
-    private readonly driver: PgDriver,
-  ) {}
+  constructor(private readonly pool: PoolManager) {}
 
   async getSchemas(connectionId: string): Promise<SchemaMetadata[]> {
+    const driver = await this.pool.driverFor(connectionId);
     const [{ rows: tableRows }, { rows: colRows }] = await Promise.all([
-      this.pool.run(connectionId, this.driver.buildListTables()) as unknown as Promise<{ rows: TableRow[] }>,
-      this.pool.run(connectionId, this.driver.buildListAllColumns()) as unknown as Promise<{ rows: AllColumnsRow[] }>,
+      this.pool.run(connectionId, driver.buildListTables()) as unknown as Promise<{ rows: TableRow[] }>,
+      this.pool.run(connectionId, driver.buildListAllColumns()) as unknown as Promise<{ rows: AllColumnsRow[] }>,
     ]);
 
     const colMap = new Map<string, ColumnMetadata[]>();
     for (const col of colRows) {
       const key = `${col.table_schema}.${col.table_name}`;
       const list = colMap.get(key) ?? [];
-      list.push({ name: col.column_name, dataType: col.data_type, nullable: col.is_nullable === 'YES', isPrimaryKey: col.is_primary_key });
+      list.push({ name: col.column_name, dataType: col.data_type, nullable: col.is_nullable === 'YES', isPrimaryKey: Boolean(col.is_primary_key) });
       colMap.set(key, list);
     }
 
@@ -61,7 +72,8 @@ export class MetadataService {
   }
 
   async getTableColumns(connectionId: string, schema: string, table: string): Promise<ColumnMetadata[]> {
-    const { rows } = (await this.pool.run(connectionId, this.driver.buildListColumns({ namespace: schema, name: table }))) as unknown as {
+    const driver = await this.pool.driverFor(connectionId);
+    const { rows } = (await this.pool.run(connectionId, driver.buildListColumns({ namespace: schema, name: table }))) as unknown as {
       rows: ColumnRow[];
     };
 
@@ -69,20 +81,21 @@ export class MetadataService {
       name: row.column_name,
       dataType: row.data_type,
       nullable: row.is_nullable === 'YES',
-      isPrimaryKey: row.is_primary_key,
+      isPrimaryKey: Boolean(row.is_primary_key),
     }));
   }
 
   async getTableIndexes(connectionId: string, schema: string, table: string): Promise<IndexMetadata[]> {
-    const { rows } = (await this.pool.run(connectionId, this.driver.buildListIndexes({ namespace: schema, name: table }))) as unknown as {
+    const driver = await this.pool.driverFor(connectionId);
+    const { rows } = (await this.pool.run(connectionId, driver.buildListIndexes({ namespace: schema, name: table }))) as unknown as {
       rows: IndexRow[];
     };
 
     return rows.map((row) => ({
       name: row.name,
-      columns: row.columns,
-      isUnique: row.is_unique,
-      isPrimary: row.is_primary,
+      columns: toColumnArray(row.columns),
+      isUnique: Boolean(row.is_unique),
+      isPrimary: Boolean(row.is_primary),
       method: row.method,
       definition: row.definition,
     }));

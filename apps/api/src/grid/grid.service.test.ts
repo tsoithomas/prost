@@ -26,10 +26,10 @@ function createService(run = vi.fn(), columns: ColumnMetadata[] = COLUMNS) {
     getTableColumns: vi.fn().mockResolvedValue(columns),
   } as unknown as MetadataService;
 
-  const pool = { run } as unknown as PoolManager;
   const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);
+  const pool = { run, driverFor: vi.fn().mockResolvedValue(driver) } as unknown as PoolManager;
 
-  return { service: new GridService(pool, driver, metadataService), run };
+  return { service: new GridService(pool, metadataService), run };
 }
 
 describe('GridService.getRows', () => {

@@ -1,6 +1,10 @@
+/** Supported target database engines. SQLite is file-based (the `database` field is a path). */
+export type DbEngine = 'postgres' | 'sqlite';
+
 export interface ConnectionDto {
   id: string;
   name: string;
+  engine: DbEngine;
   host: string;
   port: number;
   database: string;
@@ -14,6 +18,7 @@ export interface ConnectionDto {
 
 export interface CreateConnectionDto {
   name: string;
+  engine?: DbEngine;
   host: string;
   port: number;
   database: string;
@@ -26,6 +31,7 @@ export interface CreateConnectionDto {
 /** All fields optional; an empty/omitted `password` means "keep the stored credential". */
 export interface UpdateConnectionDto {
   name?: string;
+  engine?: DbEngine;
   host?: string;
   port?: number;
   database?: string;
@@ -41,6 +47,7 @@ export interface UpdateConnectionDto {
  */
 export interface TestConnectionDto {
   id?: string;
+  engine?: DbEngine;
   host?: string;
   port?: number;
   database?: string;

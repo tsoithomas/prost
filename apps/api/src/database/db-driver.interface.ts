@@ -13,6 +13,7 @@ import type {
   SqlFragment,
   TableRef,
   TestConnectionResult,
+  WhereDialect,
 } from './types';
 
 /** Nest multi-provider token: every registered driver is injected as an array. */
@@ -33,6 +34,8 @@ export interface DbDriver {
   quoteIdent(identifier: string): string;
   /** 1-based positional placeholder, e.g. PG `$1`, future MySQL `?`. */
   placeholder(index: number): string;
+  /** Dialect-specific WHERE-clause pieces consumed by the grid filter compiler. */
+  readonly whereDialect: WhereDialect;
 
   // --- metadata builders ---
   buildListTables(): SqlFragment;

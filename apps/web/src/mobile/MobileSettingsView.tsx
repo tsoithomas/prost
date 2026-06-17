@@ -1,6 +1,7 @@
 import { LogOut, Plug } from 'lucide-react';
 import { Button, Surface } from '@prost/ui';
 import { useConnections } from '../api/connections';
+import { connectionEndpoint } from '../connection/connectionDisplay';
 import { useQueryHistory } from '../api/history';
 import { QueryHistoryList } from '../explorer/QueryHistoryList';
 import { SnippetList } from '../explorer/SnippetList';
@@ -50,7 +51,7 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, 
                   <div className="flex min-w-0 flex-col">
                     <span className="truncate text-sm text-text">{connection.name}</span>
                     <span className="truncate font-mono text-xs text-text-faint">
-                      {connection.host}:{connection.port}
+                      {connectionEndpoint(connection)}
                     </span>
                   </div>
                 </div>

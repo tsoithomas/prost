@@ -33,7 +33,7 @@ function createService(run = vi.fn(), tableColumns: ColumnMetadata[] = USERS_COL
   const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);
 
   // `PoolManager.run(connectionId, frag)` — the run mock receives `(connectionId, { sql, params })`.
-  const pool = { run, withTransaction: vi.fn() } as unknown as PoolManager;
+  const pool = { run, withTransaction: vi.fn(), driverFor: vi.fn().mockResolvedValue(driver) } as unknown as PoolManager;
 
   // Mirrors `PoolManager.withTransaction`: runs `fn` against a `query` callback that proxies to
   // the same `run` mock, so transactional tests assert on the same call queue as autocommit tests.
@@ -48,7 +48,7 @@ function createService(run = vi.fn(), tableColumns: ColumnMetadata[] = USERS_COL
   const historyService = { record } as unknown as HistoryService;
 
   return {
-    service: new QueryService(pool, driver, metadataService, historyService),
+    service: new QueryService(pool, metadataService, historyService),
     run,
     withTransaction: pool.withTransaction as ReturnType<typeof vi.fn>,
     metadataService,

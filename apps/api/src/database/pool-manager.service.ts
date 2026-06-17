@@ -60,6 +60,21 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
     return this.registry.get(engine).testConnection(params);
   }
 
+  /**
+   * Resolves the driver for a connection by its `engine`, without forcing a pool to be created.
+   * Feature services use this to reach the right dialect's SQL builders.
+   */
+  async driverFor(connectionId: string): Promise<DbDriver> {
+    const cached = this.poolEngine.get(connectionId);
+    if (cached) return this.registry.get(cached);
+    const { engine } = await this.prisma.connection.findUniqueOrThrow({
+      where: { id: connectionId },
+      select: { engine: true },
+    });
+    this.poolEngine.set(connectionId, engine);
+    return this.registry.get(engine);
+  }
+
   async evictPool(connectionId: string): Promise<void> {
     const cached = this.pools.get(connectionId);
     if (!cached) return;

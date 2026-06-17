@@ -10,15 +10,21 @@ describe('buildPagedQuery', () => {
   });
 
   it('requests one row beyond the page size to detect truncation', () => {
-    const { params } = buildPagedQuery('SELECT * FROM users', 10);
+    const { params } = buildPagedQuery('SELECT * FROM users', undefined, 10);
 
     expect(params).toEqual([11, 0]);
   });
 
   it('binds a custom offset', () => {
-    const { params } = buildPagedQuery('SELECT * FROM users', 50, 100);
+    const { params } = buildPagedQuery('SELECT * FROM users', undefined, 50, 100);
 
     expect(params).toEqual([51, 100]);
+  });
+
+  it('uses the supplied placeholder for limit/offset (e.g. SQLite ?)', () => {
+    const { sql } = buildPagedQuery('SELECT * FROM users', () => '?');
+
+    expect(sql).toBe('SELECT * FROM (SELECT * FROM users) AS __prost_query LIMIT ? OFFSET ?');
   });
 
   it('strips a trailing semicolon before wrapping', () => {
@@ -28,7 +34,7 @@ describe('buildPagedQuery', () => {
   });
 
   it('never interpolates the limit/offset values into the SQL text', () => {
-    const { sql } = buildPagedQuery('SELECT * FROM users', 12345, 6789);
+    const { sql } = buildPagedQuery('SELECT * FROM users', undefined, 12345, 6789);
 
     expect(sql).not.toContain('12345');
     expect(sql).not.toContain('6789');

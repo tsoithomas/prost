@@ -1,6 +1,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { quoteIdent } from '@prost/utils';
 import type { ColumnFilter, ColumnMetadata, FilterOperator, RowFilter } from '@prost/shared-types';
+import type { WhereDialect } from '../database/types';
 
 type TypeFamily = 'text' | 'numeric' | 'datetime' | 'boolean' | 'other';
 
@@ -39,10 +40,16 @@ const OPERATORS_BY_FAMILY: Record<TypeFamily, Set<FilterOperator>> = {
   other: new Set(['eq', 'neq', 'isNull', 'isNotNull']),
 };
 
-interface WhereDialect {
-  placeholder: (index: number) => string;
-  quoteIdent: (identifier: string) => string;
-}
+/** Postgres dialect — the default when no driver dialect is supplied. */
+const PG_DIALECT: WhereDialect = {
+  placeholder: (i) => `$${i}`,
+  quoteIdent,
+  likeOperator: 'ILIKE',
+  inList: (column, values, negated, firstIndex) => ({
+    fragment: `${column} ${negated ? '<> ALL' : '= ANY'}($${firstIndex})`,
+    params: [values],
+  }),
+};
 
 /** Returns the SQL fragment and bound params for a single condition. */
 function compileSingleCondition(
@@ -52,6 +59,7 @@ function compileSingleCondition(
 ): { fragment: string; params: unknown[] } {
   const col = dialect.quoteIdent(condition.column);
   const ph = dialect.placeholder(paramIndex);
+  const like = dialect.likeOperator;
 
   switch (condition.operator) {
     case 'eq':
@@ -67,25 +75,25 @@ function compileSingleCondition(
     case 'gte':
       return { fragment: `${col} >= ${ph}`, params: [condition.value] };
     case 'contains':
-      return { fragment: `${col} ILIKE ${ph}`, params: [`%${String(condition.value)}%`] };
+      return { fragment: `${col} ${like} ${ph}`, params: [`%${String(condition.value)}%`] };
     case 'notContains':
-      return { fragment: `${col} NOT ILIKE ${ph}`, params: [`%${String(condition.value)}%`] };
+      return { fragment: `${col} NOT ${like} ${ph}`, params: [`%${String(condition.value)}%`] };
     case 'startsWith':
-      return { fragment: `${col} ILIKE ${ph}`, params: [`${String(condition.value)}%`] };
+      return { fragment: `${col} ${like} ${ph}`, params: [`${String(condition.value)}%`] };
     case 'notStartsWith':
-      return { fragment: `${col} NOT ILIKE ${ph}`, params: [`${String(condition.value)}%`] };
+      return { fragment: `${col} NOT ${like} ${ph}`, params: [`${String(condition.value)}%`] };
     case 'endsWith':
-      return { fragment: `${col} ILIKE ${ph}`, params: [`%${String(condition.value)}`] };
+      return { fragment: `${col} ${like} ${ph}`, params: [`%${String(condition.value)}`] };
     case 'notEndsWith':
-      return { fragment: `${col} NOT ILIKE ${ph}`, params: [`%${String(condition.value)}`] };
+      return { fragment: `${col} NOT ${like} ${ph}`, params: [`%${String(condition.value)}`] };
     case 'isNull':
       return { fragment: `${col} IS NULL`, params: [] };
     case 'isNotNull':
       return { fragment: `${col} IS NOT NULL`, params: [] };
     case 'in':
-      return { fragment: `${col} = ANY(${ph})`, params: [condition.values ?? []] };
+      return dialect.inList(col, condition.values ?? [], false, paramIndex);
     case 'notIn':
-      return { fragment: `${col} <> ALL(${ph})`, params: [condition.values ?? []] };
+      return dialect.inList(col, condition.values ?? [], true, paramIndex);
   }
 }
 
@@ -101,7 +109,7 @@ export function compileWhere(
   filter: RowFilter,
   columns: ColumnMetadata[],
   paramOffset: number,
-  dialect: WhereDialect = { placeholder: (i) => `$${i}`, quoteIdent },
+  dialect: WhereDialect = PG_DIALECT,
 ): { clause: string; params: unknown[] } {
   if (!filter.conditions.length) {
     return { clause: '', params: [] };

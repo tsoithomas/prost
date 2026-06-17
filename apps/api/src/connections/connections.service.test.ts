@@ -28,6 +28,7 @@ describe('toConnectionDto', () => {
     expect(dto).toEqual({
       id: 'conn-1',
       name: 'Demo',
+      engine: 'postgres',
       host: 'localhost',
       port: 5434,
       database: 'demo',

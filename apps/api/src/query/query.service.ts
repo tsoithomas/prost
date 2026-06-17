@@ -10,7 +10,7 @@ import type {
   StatementResult,
 } from '@prost/shared-types';
 import { PoolManager } from '../database/pool-manager.service';
-import { PgDriver } from '../database/drivers/pg/pg-driver';
+import type { DbDriver } from '../database/db-driver.interface';
 import type { DriverResult, SqlFragment } from '../database/types';
 import { HistoryService } from '../history/history.service';
 import { MetadataService } from '../metadata/metadata.service';
@@ -21,6 +21,7 @@ import { splitStatements } from './statement-splitter';
 interface FieldInfo {
   name: string;
   dataTypeID: number;
+  dataTypeName?: string;
 }
 
 type RunFn = (frag: SqlFragment) => Promise<DriverResult>;
@@ -47,7 +48,6 @@ export class QueryService {
 
   constructor(
     private readonly pool: PoolManager,
-    private readonly driver: PgDriver,
     private readonly metadataService: MetadataService,
     private readonly historyService: HistoryService,
   ) {}
@@ -64,9 +64,10 @@ export class QueryService {
       return { statements: [], transactional, statementCount: 0 };
     }
 
+    const driver = await this.pool.driverFor(connectionId);
     const statements = transactional
-      ? await this.executeTransactional(connectionId, statementTexts, correlationId)
-      : await this.executeAutocommit(connectionId, statementTexts, correlationId);
+      ? await this.executeTransactional(connectionId, driver, statementTexts, correlationId)
+      : await this.executeAutocommit(connectionId, driver, statementTexts, correlationId);
 
     await this.historyService.record({ userId, connectionId, sql });
 
@@ -74,14 +75,14 @@ export class QueryService {
   }
 
   /** Each statement runs (and commits) independently — a failure doesn't stop the rest (honest partial success, principle §8). */
-  private async executeAutocommit(connectionId: string, statementTexts: string[], correlationId: string): Promise<StatementResult[]> {
+  private async executeAutocommit(connectionId: string, driver: DbDriver, statementTexts: string[], correlationId: string): Promise<StatementResult[]> {
     const results: StatementResult[] = [];
     const isOnlyStatement = statementTexts.length === 1;
 
     for (const statementText of statementTexts) {
       try {
         results.push(
-          await this.executeOneStatement(connectionId, statementText, isOnlyStatement, (frag) => this.pool.run(connectionId, frag)),
+          await this.executeOneStatement(connectionId, driver, statementText, isOnlyStatement, (frag) => this.pool.run(connectionId, frag)),
         );
       } catch (error) {
         results.push(this.toErrorResult(statementText, error, correlationId));
@@ -92,14 +93,14 @@ export class QueryService {
   }
 
   /** All statements share one client/session under BEGIN; the first failure rolls back the whole batch and stops. */
-  private async executeTransactional(connectionId: string, statementTexts: string[], correlationId: string): Promise<StatementResult[]> {
+  private async executeTransactional(connectionId: string, driver: DbDriver, statementTexts: string[], correlationId: string): Promise<StatementResult[]> {
     return this.pool.withTransaction(connectionId, async (query) => {
       const results: StatementResult[] = [];
       await query({ sql: 'BEGIN', params: [] });
 
       for (const statementText of statementTexts) {
         try {
-          results.push(await this.executeOneStatement(connectionId, statementText, false, (frag) => query(frag)));
+          results.push(await this.executeOneStatement(connectionId, driver, statementText, false, (frag) => query(frag)));
         } catch (error) {
           results.push(this.toErrorResult(statementText, error, correlationId));
           await query({ sql: 'ROLLBACK', params: [] });
@@ -114,6 +115,7 @@ export class QueryService {
 
   private async executeOneStatement(
     connectionId: string,
+    driver: DbDriver,
     statementText: string,
     isOnlyStatement: boolean,
     run: RunFn,
@@ -121,20 +123,20 @@ export class QueryService {
     const explainMatch = EXPLAIN_RE.exec(statementText);
     if (explainMatch) return this.executePlan(statementText, explainMatch, run);
 
-    const ast = this.tryAstifyOne(statementText);
+    const ast = this.tryAstifyOne(driver, statementText);
     const isSelect = ast?.type === 'select';
     const isUnparsedSelect = ast === null && looksLikeSingleSelect(statementText);
 
     if (isSelect || isUnparsedSelect) {
-      return this.executeRows(connectionId, statementText, ast, isOnlyStatement, run);
+      return this.executeRows(connectionId, driver, statementText, ast, isOnlyStatement, run);
     }
     return this.executeCommand(statementText, run);
   }
 
   /** `node-sql-parser` throws on input it can't parse — return `null` and let the caller fall back. */
-  private tryAstifyOne(sql: string): ParsedStatement | null {
+  private tryAstifyOne(driver: DbDriver, sql: string): ParsedStatement | null {
     try {
-      const ast = this.parser.astify(sql, { database: this.driver.capabilities.parserDialect });
+      const ast = this.parser.astify(sql, { database: driver.capabilities.parserDialect });
       const [first] = Array.isArray(ast) ? ast : [ast];
       return (first as unknown as ParsedStatement) ?? null;
     } catch {
@@ -144,12 +146,13 @@ export class QueryService {
 
   private async executeRows(
     connectionId: string,
+    driver: DbDriver,
     statementText: string,
     ast: ParsedStatement | null,
     isOnlyStatement: boolean,
     run: RunFn,
   ): Promise<StatementResult> {
-    const { sql: pagedSql, params } = buildPagedQuery(statementText);
+    const { sql: pagedSql, params } = buildPagedQuery(statementText, driver.placeholder);
     const start = Date.now();
 
     let queryResult: DriverResult;
@@ -173,7 +176,7 @@ export class QueryService {
     const editability =
       isOnlyStatement && ast?.type === 'select' ? await this.resolveEditability(connectionId, [ast]) : { editable: false as const };
 
-    const columns = await this.mapColumns(connectionId, fields, editability.primaryKey);
+    const columns = await this.mapColumns(connectionId, driver, fields, editability.primaryKey);
 
     const result: RowsStatementResult = {
       kind: 'rows',
@@ -243,19 +246,28 @@ export class QueryService {
     return analyzeEditability(statements, table, primaryKey);
   }
 
-  /** Maps `pg` field metadata (OID-based types) to `ColumnMetadata` so results render in the shared grid. */
-  private async mapColumns(connectionId: string, fields: FieldInfo[], primaryKey: string[] = []): Promise<ColumnMetadata[]> {
+  /**
+   * Maps driver field metadata to `ColumnMetadata` so results render in the shared grid.
+   * Drivers that carry a `dataTypeName` (SQLite) skip the catalog round-trip; PG resolves
+   * its OID-based type ids via `buildResolveTypeNames`.
+   */
+  private async mapColumns(connectionId: string, driver: DbDriver, fields: FieldInfo[], primaryKey: string[] = []): Promise<ColumnMetadata[]> {
     if (fields.length === 0) return [];
 
-    const oids = [...new Set(fields.map((field) => field.dataTypeID))];
-    const { rows } = await this.pool.run(connectionId, this.driver.buildResolveTypeNames(oids));
-    const typeRows = rows as unknown as { oid: number; typname: string }[];
-    const typeNames = new Map(typeRows.map((row) => [Number(row.oid), row.typname]));
     const primaryKeySet = new Set(primaryKey);
+    const needsResolution = fields.some((field) => field.dataTypeName === undefined);
+
+    let typeNames = new Map<number, string>();
+    if (needsResolution) {
+      const oids = [...new Set(fields.map((field) => field.dataTypeID))];
+      const { rows } = await this.pool.run(connectionId, driver.buildResolveTypeNames(oids));
+      const typeRows = rows as unknown as { oid: number; typname: string }[];
+      typeNames = new Map(typeRows.map((row) => [Number(row.oid), row.typname]));
+    }
 
     return fields.map((field) => ({
       name: field.name,
-      dataType: typeNames.get(field.dataTypeID) ?? 'unknown',
+      dataType: field.dataTypeName ?? typeNames.get(field.dataTypeID) ?? 'unknown',
       nullable: true,
       isPrimaryKey: primaryKeySet.has(field.name),
     }));

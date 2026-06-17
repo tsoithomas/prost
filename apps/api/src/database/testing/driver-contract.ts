@@ -2,17 +2,28 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DbDriver } from '../db-driver.interface';
 import type { ConnectionParams, NativePool } from '../types';
 
+/**
+ * Engine-neutral conformance suite. Engines without schema support (`supportsSchemas: false`,
+ * e.g. SQLite) skip the CREATE/DROP SCHEMA steps and use their default namespace.
+ */
 export function runDriverContractTests(makeDriver: () => DbDriver, params: ConnectionParams): void {
   describe('DbDriver contract', () => {
     let driver: DbDriver;
     let pool: NativePool;
-    const schema = `prost_contract_${Date.now()}`;
-    const ref = { namespace: schema, name: 'widgets' };
+    let supportsSchemas = true;
+    let schema = `prost_contract_${Date.now()}`;
+    let ref = { namespace: schema, name: 'widgets' };
 
     beforeAll(async () => {
       driver = makeDriver();
+      supportsSchemas = driver.capabilities.supportsSchemas;
+      schema = supportsSchemas ? `prost_contract_${Date.now()}` : 'main';
+      ref = { namespace: schema, name: 'widgets' };
+
       pool = await driver.createPool(params);
-      await driver.query(pool, { sql: `CREATE SCHEMA ${driver.quoteIdent(schema)}`, params: [] });
+      if (supportsSchemas) {
+        await driver.query(pool, { sql: `CREATE SCHEMA ${driver.quoteIdent(schema)}`, params: [] });
+      }
       await driver.query(pool, driver.buildCreateTable({
         schema, table: 'widgets',
         columns: [
@@ -20,10 +31,21 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
           { name: 'name', type: 'text', nullable: true, isPrimaryKey: false },
         ],
       } as never));
+      // An explicit index so `buildListIndexes` has a row on every engine (a single INTEGER
+      // PRIMARY KEY is a rowid alias on SQLite and creates no listable index).
+      await driver.query(pool, driver.buildCreateIndex(
+        { schema, table: 'widgets', columns: ['name'], unique: false, name: 'widgets_name_idx', method: 'btree' } as never,
+        'widgets_name_idx',
+        'btree',
+      ));
     });
 
     afterAll(async () => {
-      await driver.query(pool, { sql: `DROP SCHEMA IF EXISTS ${driver.quoteIdent(schema)} CASCADE`, params: [] }).catch(() => undefined);
+      if (supportsSchemas) {
+        await driver.query(pool, { sql: `DROP SCHEMA IF EXISTS ${driver.quoteIdent(schema)} CASCADE`, params: [] }).catch(() => undefined);
+      } else {
+        await driver.query(pool, { sql: `DROP TABLE IF EXISTS ${driver.quoteIdent(ref.name)}`, params: [] }).catch(() => undefined);
+      }
       await driver.closePool(pool);
     });
 
@@ -32,7 +54,7 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
     });
 
     it('binds params, never interpolates', async () => {
-      const r = await driver.query(pool, { sql: `SELECT ${driver.placeholder(1)}::int AS v`, params: [42] });
+      const r = await driver.query(pool, { sql: `SELECT ${driver.placeholder(1)} AS v`, params: [42] });
       expect(Number((r.rows[0] as Record<string, unknown>).v)).toBe(42);
     });
 
@@ -60,7 +82,10 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
 
     it('lists indexes with a columns array', async () => {
       const idx = await driver.query(pool, driver.buildListIndexes(ref));
-      expect(Array.isArray((idx.rows[0] as Record<string, unknown>).columns)).toBe(true);
+      const raw = (idx.rows[0] as Record<string, unknown> | undefined)?.columns;
+      // PG returns a real array; SQLite returns a JSON-encoded array string.
+      const columns = typeof raw === 'string' ? (JSON.parse(raw) as unknown) : raw;
+      expect(Array.isArray(columns)).toBe(true);
     });
   });
 }

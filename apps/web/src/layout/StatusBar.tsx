@@ -1,5 +1,6 @@
 import { StatusDot } from '@prost/ui';
 import { useActiveConnection } from '../api/connections';
+import { connectionLocation } from '../connection/connectionDisplay';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 
 export function StatusBar() {
@@ -24,9 +25,7 @@ export function StatusBar() {
       <div className="flex items-center gap-md">
         {activeConnection ? (
           <>
-            <span>
-              {activeConnection.database}@{activeConnection.host}:{activeConnection.port}
-            </span>
+            <span>{connectionLocation(activeConnection)}</span>
             <span className="flex items-center gap-xs">
               <StatusDot variant="success" />
               Connected

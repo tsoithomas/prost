@@ -1,5 +1,5 @@
 import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min, MinLength } from 'class-validator';
-import type { TestConnectionDto as TestConnectionDtoShape } from '@prost/shared-types';
+import type { TestConnectionDto as TestConnectionDtoShape, DbEngine } from '@prost/shared-types';
 
 /**
  * Tests either a saved connection (by `id`, falling back to its stored credentials when
@@ -44,6 +44,6 @@ export class TestConnectionDto implements TestConnectionDtoShape {
   sslRejectUnauthorized?: boolean;
 
   @IsOptional()
-  @IsIn(['postgres'])
-  engine?: string;
+  @IsIn(['postgres', 'sqlite'])
+  engine?: DbEngine;
 }

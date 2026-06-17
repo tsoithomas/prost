@@ -4,7 +4,7 @@ import { Client, Pool } from 'pg';
 import type { AlterTableOperation, CreateIndexRequest, CreateTableRequest } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
-  ConnectionParams, DbCapabilities, DriverQueryFn, DriverResult, NativePool, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult,
+  ConnectionParams, DbCapabilities, DriverQueryFn, DriverResult, NativePool, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
 } from '../../types';
 import * as sql from './pg-sql';
 
@@ -97,6 +97,17 @@ export class PgDriver implements DbDriver {
 
   quoteIdent = sql.pgQuoteIdent;
   placeholder = sql.pgPlaceholder;
+
+  readonly whereDialect: WhereDialect = {
+    placeholder: sql.pgPlaceholder,
+    quoteIdent: sql.pgQuoteIdent,
+    likeOperator: 'ILIKE',
+    inList: (column, values, negated, firstIndex) => ({
+      fragment: `${column} ${negated ? '<> ALL' : '= ANY'}(${sql.pgPlaceholder(firstIndex)})`,
+      params: [values],
+    }),
+  };
+
   buildListTables = sql.pgBuildListTables;
   buildListAllColumns = sql.pgBuildListAllColumns;
   buildListColumns = (ref: TableRef) => sql.pgBuildListColumns(ref);

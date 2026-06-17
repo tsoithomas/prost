@@ -27,6 +27,7 @@
     "@prost/shared-types": "workspace:*",
     "@prost/utils": "workspace:*",
     "bcrypt": "^5",
+    "better-sqlite3": "^12",
     "class-transformer": "^0.5",
     "class-validator": "^0.14",
     "node-sql-parser": "^5.4.0",
@@ -38,6 +39,7 @@
   "devDependencies": {
     "@nestjs/cli": "^11",
     "@types/bcrypt": "^5",
+    "@types/better-sqlite3": "^7",
     "@types/express": "^5",
     "@types/node": "^22",
     "@types/pg": "^8",

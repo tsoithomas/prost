@@ -26,13 +26,13 @@ function createService(
   run = vi.fn().mockResolvedValue({ rows: [], rowCount: 0, fields: [], command: 'CREATE' }),
   structure: TableStructure = mockStructure(),
 ) {
-  const pool = { run } as unknown as PoolManager;
   const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);
+  const pool = { run, driverFor: vi.fn().mockResolvedValue(driver) } as unknown as PoolManager;
   const metadataService = {
     getTableStructure: vi.fn().mockResolvedValue(structure),
     getTableColumns: vi.fn().mockResolvedValue(structure.columns),
   } as unknown as MetadataService;
-  return { service: new DdlService(pool, driver, metadataService), driver, runParameterized: run, metadataService };
+  return { service: new DdlService(pool, metadataService), driver, runParameterized: run, metadataService };
 }
 
 describe('DdlService buildCreateTable — identifier quoting', () => {

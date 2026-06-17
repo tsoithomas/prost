@@ -126,18 +126,29 @@ This is principle #1 in `docs/architecture-principles.md` and shapes `apps/api`:
   `PoolManager` (`apps/api/src/database/`), the single choke point that owns pool
   caching, idle-sweep, and LRU eviction, delegating all native connection work to a
   `DbDriver`. There is **one driver per engine**, resolved per `Connection.engine` via the
-  engine-keyed `DbDriverRegistry`; `PgDriver` (`apps/api/src/database/drivers/pg/`) is the
-  only driver today.
-- All dialect-specific SQL — quoting, placeholders, and the metadata/CRUD/DDL query
-  builders — lives in the driver. The builders in `pg-sql.ts` are pure functions returning
-  `{ sql, params }` fragments; feature services (`metadata`/`grid`/`ddl`/`query`) hold **no
-  raw target SQL** and reach builders only via the driver. Adding a new engine = implement
+  engine-keyed `DbDriverRegistry`: `PgDriver` (`drivers/pg/`, the `pg` Pool) and
+  `SqliteDriver` (`drivers/sqlite/`, a `better-sqlite3` handle — `database` holds the file
+  path or `:memory:`; capabilities `supportsSchemas: false`, parser dialect `sqlite`).
+- Feature services hold **no driver reference and no raw target SQL**: they resolve the right
+  driver per call via `PoolManager.driverFor(connectionId)`, then reach the dialect's pure
+  `{ sql, params }` builders (`pg-sql.ts` / `sqlite-sql.ts`) through it. The grid filter
+  compiler (`grid/filter.ts`) and query pager (`query/paging.ts`) take the driver's
+  `whereDialect`/`placeholder` so they stay engine-neutral. Adding a new engine = implement
   `DbDriver` + register it in `DatabaseModule`'s `DB_DRIVERS`, with the conformance suite
-  `runDriverContractTests` (`apps/api/src/database/testing/`) proving it conforms.
+  `runDriverContractTests` (`apps/api/src/database/testing/`, capability-aware — engines
+  without schemas skip `CREATE SCHEMA`) proving it conforms.
 - Prisma never touches a target DB; the driver layer never touches the app DB. No target
   credential, schema, or row data ever lands in an app-DB table. All target SQL is
   parameterized; identifiers go through the driver's `quoteIdent` (built on
   `quoteIdent` in `packages/utils`) — never raw string concatenation.
+- **SQLite is meant for inspecting Prost's own data**: set `APP_DB_SQLITE_PATH` and
+  `prisma:seed` idempotently provisions exactly one `engine = 'sqlite'` connection (owned by
+  the admin) pointing at that file. This is a sanctioned exception to the boundary
+  (principle #1) — it still flows through `PoolManager`/`SqliteDriver`, never the app's
+  Prisma client. Native note: `better-sqlite3` compiles/loads a native binary, allowlisted in
+  the root `package.json` `pnpm.onlyBuiltDependencies`. Rich DDL for SQLite is intentionally
+  out of scope (its `ALTER TABLE` is limited; `sqlite-sql.ts` throws for retype/NOT NULL/
+  default changes).
 
 ## Theming system
 

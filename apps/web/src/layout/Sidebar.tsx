@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import type { ConnectionDto } from '@prost/shared-types';
 import { Badge, Button, IconButton } from '@prost/ui';
 import { useActiveConnection, useConnections, useDeleteConnection } from '../api/connections';
+import { connectionEndpoint } from '../connection/connectionDisplay';
 import { useQueryHistory } from '../api/history';
 import { useMetadata } from '../api/metadata';
 import { CreateTableModal } from '../ddl/CreateTableModal';
@@ -105,7 +106,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
                 {activeConnection?.name ?? 'No connection'}
               </h2>
               <p className="truncate text-xs leading-tight text-text-muted">
-                {activeConnection ? `${activeConnection.host}:${activeConnection.port}` : 'Select a connection'}
+                {activeConnection ? connectionEndpoint(activeConnection) : 'Select a connection'}
               </p>
             </div>
             <IconButton aria-label="Collapse sidebar" title="Collapse sidebar" onClick={() => setCollapsed(true)}>
@@ -193,7 +194,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
                       <div className="flex min-w-0 flex-col">
                         <span className="truncate text-sm">{connection.name}</span>
                         <span className="truncate font-mono text-xs text-text-faint">
-                          {connection.host}:{connection.port}
+                          {connectionEndpoint(connection)}
                         </span>
                       </div>
                       {isActive ? (

@@ -9,10 +9,10 @@ function result<T>(rows: T[]) {
 }
 
 function createService(run = vi.fn()) {
-  const pool = { run } as unknown as PoolManager;
   const configStub = { get: () => undefined } as unknown as ConfigService;
   const driver = new PgDriver(configStub);
-  return { service: new MetadataService(pool, driver), run };
+  const pool = { run, driverFor: vi.fn().mockResolvedValue(driver) } as unknown as PoolManager;
+  return { service: new MetadataService(pool), run };
 }
 
 describe('MetadataService.getSchemas', () => {

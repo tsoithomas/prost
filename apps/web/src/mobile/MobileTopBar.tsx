@@ -1,6 +1,7 @@
 import { Database, Network } from 'lucide-react';
 import { IconButton } from '@prost/ui';
 import { useActiveConnection } from '../api/connections';
+import { connectionEndpoint } from '../connection/connectionDisplay';
 import type { MobileTab } from './MobileShell';
 
 export interface MobileTopBarProps {
@@ -20,8 +21,8 @@ export function MobileTopBar({ activeTab, onOpenConnections, onShowExplorer }: M
       <h1 className="flex-1 truncate text-sm font-bold text-text">
         {activeConnection ? (
           <>
-            {activeConnection.name} <span className="text-text-faint">/</span> {activeConnection.host}:
-            {activeConnection.port}
+            {activeConnection.name} <span className="text-text-faint">/</span>{' '}
+            {connectionEndpoint(activeConnection)}
           </>
         ) : (
           'No connection'

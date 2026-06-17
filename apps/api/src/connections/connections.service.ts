@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Connection, Prisma } from '@prisma/client';
-import type { ConnectionDto, TestConnectionResult } from '@prost/shared-types';
+import type { ConnectionDto, DbEngine, TestConnectionResult } from '@prost/shared-types';
 import { CryptoService, type EncryptedPayload } from '../common/crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PoolManager } from '../database/pool-manager.service';
@@ -120,6 +120,7 @@ export function toConnectionDto(connection: Connection): ConnectionDto {
   return {
     id: connection.id,
     name: connection.name,
+    engine: (connection.engine as DbEngine) ?? 'postgres',
     host: connection.host,
     port: connection.port,
     database: connection.database,

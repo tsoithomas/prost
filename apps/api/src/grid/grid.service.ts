@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, UnprocessableEntityException } from '@ne
 import type { ColumnMetadata, GridResponse, RowDeleteBody, RowFilter, RowInsertBody, RowUpdateBody } from '@prost/shared-types';
 import { MetadataService } from '../metadata/metadata.service';
 import { PoolManager } from '../database/pool-manager.service';
-import { PgDriver } from '../database/drivers/pg/pg-driver';
+import type { DbDriver } from '../database/db-driver.interface';
 import { compileWhere } from './filter';
 
 const DEFAULT_LIMIT = 100;
@@ -25,7 +25,6 @@ interface ResolvedTable {
 export class GridService {
   constructor(
     private readonly pool: PoolManager,
-    private readonly driver: PgDriver,
     private readonly metadataService: MetadataService,
   ) {}
 
@@ -35,11 +34,12 @@ export class GridService {
     table: string,
     options: GetRowsOptions,
   ): Promise<GridResponse> {
+    const driver = await this.pool.driverFor(connectionId);
     const { columns, columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
 
     const hasFilter = (options.filter?.conditions.length ?? 0) > 0;
     const { clause: whereClause, params: filterParams } = hasFilter
-      ? compileWhere(options.filter!, columns, 0)
+      ? compileWhere(options.filter!, columns, 0, driver.whereDialect)
       : { clause: '', params: [] };
 
     const orderColumn =
@@ -50,7 +50,7 @@ export class GridService {
     const offset = options.offset ?? 0;
 
     const ref = { namespace: schema, name: table };
-    const frag = this.driver.buildSelectRows(ref, {
+    const frag = driver.buildSelectRows(ref, {
       whereClause,
       whereParams: filterParams,
       orderColumn,
@@ -61,8 +61,8 @@ export class GridService {
     const { rows } = await this.pool.run(connectionId, frag);
 
     const totalRows = hasFilter
-      ? await this.getFilteredRowCount(connectionId, schema, table, whereClause, filterParams)
-      : await this.getApproximateRowCount(connectionId, schema, table);
+      ? await this.getFilteredRowCount(connectionId, driver, schema, table, whereClause, filterParams)
+      : await this.getApproximateRowCount(connectionId, driver, schema, table);
 
     return {
       rows,
@@ -85,6 +85,7 @@ export class GridService {
     table: string,
     req: RowUpdateBody,
   ): Promise<Record<string, unknown>> {
+    const driver = await this.pool.driverFor(connectionId);
     const { columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
     this.assertEditable(primaryKey, schema, table);
 
@@ -93,7 +94,7 @@ export class GridService {
     }
     this.assertPrimaryKeyMatches(req.primaryKey, primaryKey, schema, table);
 
-    const frag = this.driver.buildUpdateRow(
+    const frag = driver.buildUpdateRow(
       { namespace: schema, name: table },
       req.column,
       req.value,
@@ -119,23 +120,25 @@ export class GridService {
     table: string,
     req: RowInsertBody,
   ): Promise<Record<string, unknown>> {
+    const driver = await this.pool.driverFor(connectionId);
     const { columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
     this.assertEditable(primaryKey, schema, table);
 
     const entries = Object.entries(req.values).filter(([column]) => columnNames.has(column));
 
-    const frag = this.driver.buildInsertRow({ namespace: schema, name: table }, entries);
+    const frag = driver.buildInsertRow({ namespace: schema, name: table }, entries);
     const { rows } = await this.pool.run(connectionId, frag);
     return rows[0]!;
   }
 
   /** Deletes a row by primary key, re-validated against live metadata. */
   async deleteRow(connectionId: string, schema: string, table: string, req: RowDeleteBody): Promise<void> {
+    const driver = await this.pool.driverFor(connectionId);
     const { primaryKey } = await this.resolveTable(connectionId, schema, table);
     this.assertEditable(primaryKey, schema, table);
     this.assertPrimaryKeyMatches(req.primaryKey, primaryKey, schema, table);
 
-    const frag = this.driver.buildDeleteRow(
+    const frag = driver.buildDeleteRow(
       { namespace: schema, name: table },
       primaryKey,
       primaryKey.map((c) => req.primaryKey[c]),
@@ -182,6 +185,7 @@ export class GridService {
 
   private async getFilteredRowCount(
     connectionId: string,
+    driver: DbDriver,
     schema: string,
     table: string,
     whereClause: string,
@@ -189,15 +193,15 @@ export class GridService {
   ): Promise<number> {
     const { rows } = await this.pool.run(
       connectionId,
-      this.driver.buildFilteredRowCount({ namespace: schema, name: table }, whereClause, params),
+      driver.buildFilteredRowCount({ namespace: schema, name: table }, whereClause, params),
     );
-    return parseInt((rows[0] as { count?: string })?.count ?? '0', 10);
+    return parseInt(String((rows[0] as { count?: string | number })?.count ?? '0'), 10);
   }
 
-  private async getApproximateRowCount(connectionId: string, schema: string, table: string): Promise<number> {
+  private async getApproximateRowCount(connectionId: string, driver: DbDriver, schema: string, table: string): Promise<number> {
     const { rows } = await this.pool.run(
       connectionId,
-      this.driver.buildRowCountEstimate({ namespace: schema, name: table }),
+      driver.buildRowCountEstimate({ namespace: schema, name: table }),
     );
     const estimate = (rows[0] as { reltuples?: number | null })?.reltuples ?? 0;
     return Math.max(0, Math.round(Number(estimate)));
