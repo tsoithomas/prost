@@ -73,17 +73,17 @@ describe('pg-sql ddl builders', () => {
     const { sql } = pgBuildCreateTable({
       schema: 'public', table: 't',
       columns: [{ name: 'id', type: 'integer', nullable: false, isPrimaryKey: true }],
-    } as any);
+    });
     expect(sql).toContain('CREATE TABLE "public"."t"');
     expect(sql).toContain('PRIMARY KEY ("id")');
   });
   it('builds ADD COLUMN alter', () => {
     const { sql } = pgBuildAlterTable({ namespace: 'public', name: 't' },
-      { kind: 'addColumn', column: { name: 'c', type: 'text', nullable: true, isPrimaryKey: false } } as any);
+      { kind: 'addColumn', column: { name: 'c', type: 'text', nullable: true, isPrimaryKey: false } });
     expect(sql).toBe('ALTER TABLE "public"."t" ADD COLUMN "c" text');
   });
   it('builds CREATE INDEX', () => {
-    const { sql } = pgBuildCreateIndex({ schema: 'public', table: 't', columns: ['a'], unique: true } as any, 't_a_idx', 'btree');
+    const { sql } = pgBuildCreateIndex({ schema: 'public', table: 't', columns: ['a'], unique: true }, 't_a_idx', 'btree');
     expect(sql).toBe('CREATE UNIQUE INDEX "t_a_idx" ON "public"."t" USING btree ("a")');
   });
   it('builds DROP INDEX', () => {
