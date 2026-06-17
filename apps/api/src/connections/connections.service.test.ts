@@ -10,6 +10,7 @@ function buildConnection(overrides: Partial<Connection> = {}): Connection {
     host: 'localhost',
     port: 5434,
     database: 'demo',
+    engine: 'postgres',
     username: 'demo',
     encryptedCredentials: { iv: 'iv', tag: 'tag', data: 'data' },
     sslEnabled: false,
