@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client, Pool } from 'pg';
 import type { AlterTableOperation, CreateIndexRequest, CreateTableRequest } from '@prost/shared-types';
@@ -25,6 +25,7 @@ export class PgDriver implements DbDriver {
   readonly engine = 'postgres';
   readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: true, parserDialect: 'postgresql' };
 
+  private readonly logger = new Logger(PgDriver.name);
   private readonly statementTimeoutMs: number;
   private readonly poolSize: number;
 
@@ -34,12 +35,21 @@ export class PgDriver implements DbDriver {
   }
 
   async createPool(params: ConnectionParams): Promise<NativePool> {
-    return new Pool({
+    const pool = new Pool({
       host: params.host, port: params.port, database: params.database,
       user: params.username, password: params.password,
       ssl: params.sslEnabled ? { rejectUnauthorized: params.sslRejectUnauthorized } : undefined,
       connectionTimeoutMillis: CONNECT_TIMEOUT_MS, statement_timeout: this.statementTimeoutMs, max: this.poolSize,
     });
+
+    // An idle pooled client erroring out-of-band (server restart, network drop) emits an
+    // 'error' on the Pool; without a listener Node treats it as unhandled and crashes the
+    // process. Mirrors the handler the previous PgConnectionService attached.
+    pool.on('error', (error) => {
+      this.logger.error(`target pool error message=${error.message}`);
+    });
+
+    return pool;
   }
 
   async closePool(pool: NativePool): Promise<void> {
