@@ -1,6 +1,7 @@
+import { ConflictException } from '@nestjs/common';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
-import type { ColumnMetadata } from '@prost/shared-types';
+import type { ColumnMetadata, NewColumn } from '@prost/shared-types';
 import type { DbDriver } from '../db-driver.interface';
 import type { ConnectionParams, NativePool, RowUpdateGuard } from '../types';
 
@@ -8,6 +9,11 @@ import type { ConnectionParams, NativePool, RowUpdateGuard } from '../types';
 // `docker compose up`, or CI without a Postgres service). These skip the suite rather
 // than fail it; any other error still surfaces as a real failure.
 const UNREACHABLE_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'EHOSTUNREACH', 'ECONNRESET', 'EAI_AGAIN', 'EPERM']);
+
+// When set (CI), a live network engine that can't be reached fails the suite instead of
+// skipping — this is how CI guarantees both PostgreSQL and MySQL were actually exercised.
+// File-backed/in-process engines (SQLite) are never "unreachable", so the flag never affects them.
+const REQUIRE_LIVE = process.env.REQUIRE_LIVE_DRIVER_CONTRACTS === 'true';
 
 function isUnreachable(err: unknown): boolean {
   const e = err as { code?: string; errors?: Array<{ code?: string }> };
@@ -32,10 +38,19 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
     let schema = `prost_contract_${Date.now()}`;
     let ref = { namespace: schema, name: 'widgets' };
 
+    // A live network engine (PG/MySQL) has a host; SQLite runs in-process with an empty host.
+    // Only live engines can be "unreachable", so REQUIRE_LIVE only ever fails those.
+    const isLiveEngine = params.host !== '';
+
     beforeAll(async () => {
       driver = makeDriver();
       supportsSchemas = driver.capabilities.supportsSchemas;
-      schema = supportsSchemas ? `prost_contract_${Date.now()}` : 'main';
+      // Schema-aware engines (PG) get a throwaway schema. Schema-less engines reuse their
+      // default namespace — SQLite's attached `main`, or for MySQL the connected database
+      // (its `defaultNamespace` is unset; "schema" maps to the database).
+      schema = supportsSchemas
+        ? `prost_contract_${Date.now()}`
+        : (driver.descriptor.defaultNamespace ?? params.database);
       ref = { namespace: schema, name: 'widgets' };
 
       try {
@@ -45,6 +60,13 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
         await driver.query(pool, { sql: 'SELECT 1', params: [] });
       } catch (err) {
         if (isUnreachable(err)) {
+          // In required-live mode an unreachable live engine is a hard failure — CI must not
+          // silently skip a database it was supposed to validate.
+          if (REQUIRE_LIVE && isLiveEngine) {
+            throw new Error(
+              `REQUIRE_LIVE_DRIVER_CONTRACTS is set but the ${driver.engine} target at ${params.host}:${params.port} is unreachable`,
+            );
+          }
           unreachable = true;
           return;
         }
@@ -59,13 +81,16 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
         columns: [
           { name: 'id', type: 'integer', nullable: false, isPrimaryKey: true },
           { name: 'name', type: 'text', nullable: true, isPrimaryKey: false },
+          { name: 'rank', type: 'integer', nullable: true, isPrimaryKey: false },
         ],
       } as never));
       // An explicit index so `buildListIndexes` has a row on every engine (a single INTEGER
-      // PRIMARY KEY is a rowid alias on SQLite and creates no listable index).
+      // PRIMARY KEY is a rowid alias on SQLite and creates no listable index). It's on the
+      // integer `rank` column rather than `name`, since MySQL can't index a TEXT column
+      // without a prefix length.
       await driver.query(pool, driver.buildCreateIndex(
-        { schema, table: 'widgets', columns: ['name'], unique: false, name: 'widgets_name_idx', method: 'btree' } as never,
-        'widgets_name_idx',
+        { schema, table: 'widgets', columns: ['rank'], unique: false, name: 'widgets_rank_idx', method: 'btree' } as never,
+        'widgets_rank_idx',
         'btree',
       ));
     });
@@ -239,6 +264,132 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       // PG returns a real array; SQLite returns a JSON-encoded array string.
       const columns = typeof raw === 'string' ? (JSON.parse(raw) as unknown) : raw;
       expect(Array.isArray(columns)).toBe(true);
+    });
+
+    // Reusable column metadata for the `widgets` table (id PK, nullable name).
+    const widgetCols: ColumnMetadata[] = [
+      { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+      { name: 'name', dataType: 'text', nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+    ];
+
+    it('filters rows through the dialect WHERE compiler', async (ctx) => {
+      skipIfUnreachable(ctx);
+      await driver.withTransaction(pool!, (q) => driver.insertRow(q, ref, [['id', 30], ['name', 'filter-a']], widgetCols));
+      await driver.withTransaction(pool!, (q) => driver.insertRow(q, ref, [['id', 31], ['name', 'unrelated']], widgetCols));
+      try {
+        const { quoteIdent, placeholder, likeOperator } = driver.whereDialect;
+        const sel = await driver.query(
+          pool!,
+          driver.buildSelectRows(ref, {
+            whereClause: `WHERE ${quoteIdent('name')} ${likeOperator} ${placeholder(1)}`,
+            whereParams: ['filter-%'],
+            orderColumn: 'id',
+            sortDir: 'ASC',
+            limit: 10,
+            offset: 0,
+          }),
+        );
+        expect(sel.rows).toHaveLength(1);
+        expect((sel.rows[0] as Record<string, unknown>).name).toBe('filter-a');
+      } finally {
+        await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [30])).catch(() => undefined);
+        await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [31])).catch(() => undefined);
+      }
+    });
+
+    it('updateRow changes a primary-key column and returns the new key', async (ctx) => {
+      skipIfUnreachable(ctx);
+      await driver.withTransaction(pool!, (q) => driver.insertRow(q, ref, [['id', 60], ['name', 'pk-change']], widgetCols));
+      try {
+        const updated = await driver.withTransaction(pool!, (q) => driver.updateRow(q, ref, 'id', 61, ['id'], [60]));
+        expect(Number(updated.id)).toBe(61);
+      } finally {
+        await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [60])).catch(() => undefined);
+        await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [61])).catch(() => undefined);
+      }
+    });
+
+    it('describeResultColumns resolves result-column type metadata', async (ctx) => {
+      skipIfUnreachable(ctx);
+      const result = await driver.query(
+        pool!,
+        driver.buildSelectRows(ref, { whereClause: '', whereParams: [], orderColumn: 'id', sortDir: 'ASC', limit: 1, offset: 0 }),
+      );
+      const meta = await driver.describeResultColumns((frag) => driver.query(pool!, frag), result.fields, ['id']);
+      const idMeta = meta.find((column) => column.name === 'id');
+      expect(idMeta).toBeDefined();
+      expect(typeof idMeta!.dataType).toBe('string');
+      expect(idMeta!.dataType.length).toBeGreaterThan(0);
+      expect(idMeta!.isPrimaryKey).toBe(true);
+    });
+
+    it('formats an EXPLAIN plan into non-empty text', async (ctx) => {
+      skipIfUnreachable(ctx);
+      const select = driver.buildSelectRows(ref, { whereClause: '', whereParams: [], orderColumn: 'id', sortDir: 'ASC', limit: 10, offset: 0 });
+      // SQLite's bare `EXPLAIN` emits VM bytecode; `EXPLAIN QUERY PLAN` is its human-readable plan.
+      const prefix = driver.capabilities.parserDialect === 'sqlite' ? 'EXPLAIN QUERY PLAN ' : 'EXPLAIN ';
+      const plan = await driver.query(pool!, { sql: prefix + select.sql, params: select.params });
+      const text = driver.formatExplain(plan.rows as Record<string, unknown>[]);
+      expect(text.length).toBeGreaterThan(0);
+    });
+
+    it('maps a duplicate-table DDL error to a typed exception', async (ctx) => {
+      skipIfUnreachable(ctx);
+      let mapped: unknown;
+      try {
+        // `widgets` already exists (created in beforeAll) — recreating it must raise the
+        // engine's "already exists" error, which mapError normalizes to a ConflictException.
+        await driver.query(
+          pool!,
+          driver.buildCreateTable({
+            schema,
+            table: 'widgets',
+            columns: [{ name: 'id', type: 'integer', nullable: false, isPrimaryKey: true }],
+          } as never),
+        );
+      } catch (err) {
+        try {
+          driver.mapError(err, { operation: 'createTable', ref });
+        } catch (typed) {
+          mapped = typed;
+        }
+      }
+      expect(mapped).toBeInstanceOf(ConflictException);
+    });
+
+    it('inserts into an auto-increment primary key', async (ctx) => {
+      skipIfUnreachable(ctx);
+      if (!driver.descriptor.ddl.supportsAutoIncrement) {
+        (ctx as TestContext & { skip: (note?: string) => void }).skip('engine does not support auto-increment keys');
+        return;
+      }
+      const autoTable = 'widgets_auto';
+      const autoRef = { namespace: schema, name: autoTable };
+      // PG auto-increments via the `serial` pseudo-type; MySQL via the AUTO_INCREMENT flag.
+      const idColumn: NewColumn =
+        driver.capabilities.parserDialect === 'postgresql'
+          ? { name: 'id', type: 'serial', nullable: false, isPrimaryKey: true }
+          : { name: 'id', type: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: true };
+      await driver.query(
+        pool!,
+        driver.buildCreateTable({
+          schema,
+          table: autoTable,
+          columns: [idColumn, { name: 'name', type: 'text', nullable: true, isPrimaryKey: false }],
+        } as never),
+      );
+      try {
+        const autoCols: ColumnMetadata[] = [
+          { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: true, defaultValue: null },
+          { name: 'name', dataType: 'text', nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+        ];
+        const inserted = await driver.withTransaction(pool!, (q) => driver.insertRow(q, autoRef, [['name', 'auto']], autoCols));
+        expect(Number(inserted.id)).toBeGreaterThan(0);
+        expect(inserted.name).toBe('auto');
+      } finally {
+        const qualified = supportsSchemas ? `${driver.quoteIdent(schema)}.${driver.quoteIdent(autoTable)}` : driver.quoteIdent(autoTable);
+        await driver.query(pool!, { sql: `DROP TABLE IF EXISTS ${qualified}`, params: [] }).catch(() => undefined);
+      }
     });
   });
 }

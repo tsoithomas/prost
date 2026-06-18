@@ -394,7 +394,7 @@ export class MysqlDriver implements DbDriver {
     return sql.mysqlFormatExplain(rows);
   }
 
-  mapError(error: unknown, _context: DriverErrorContext): void {
+  mapError(error: unknown, context: DriverErrorContext): void {
     const mysqlError = error as
       | {
           code?: string;
@@ -403,6 +403,10 @@ export class MysqlDriver implements DbDriver {
       | undefined;
     const code = mysqlError?.code;
     const errno = mysqlError?.errno;
+
+    if (context.operation === 'createTable' && (code === 'ER_TABLE_EXISTS_ERROR' || errno === 1050)) {
+      throw new ConflictException(context.detail ?? 'Table already exists');
+    }
 
     if (code === 'ER_DUP_ENTRY' || code === 'ER_DUP_KEYNAME' || errno === 1062 || errno === 1061) {
       throw new ConflictException('A row or key with that value already exists');
