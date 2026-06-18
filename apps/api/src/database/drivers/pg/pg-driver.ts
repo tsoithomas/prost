@@ -1,7 +1,12 @@
 import { ConflictException, Injectable, Logger, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client, Pool } from 'pg';
-import type { AlterTableOperation, CreateIndexRequest, CreateTableRequest } from '@prost/shared-types';
+import type {
+  AlterTableOperation,
+  CreateIndexRequest,
+  CreateTableRequest,
+  DbEngineDescriptor,
+} from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
   ConnectionParams, DbCapabilities, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
@@ -23,6 +28,32 @@ function describeConnectionError(error: unknown): string {
 @Injectable()
 export class PgDriver implements DbDriver {
   readonly engine = 'postgres';
+  readonly descriptor: DbEngineDescriptor = {
+    engine: 'postgres',
+    label: 'PostgreSQL',
+    connectionMode: 'network',
+    defaultPort: 5432,
+    uriSchemes: ['postgres', 'postgresql'],
+    parserDialect: 'postgresql',
+    formatterDialect: 'postgresql',
+    namespaceLabel: 'Schema',
+    defaultNamespace: 'public',
+    supportsSsl: true,
+    sslEnabledByDefault: false,
+    ddl: {
+      columnTypes: [
+        'integer', 'bigint', 'smallint', 'serial', 'bigserial',
+        'boolean', 'text', 'varchar', 'varchar(255)', 'varchar(64)',
+        'char(1)', 'real', 'double precision', 'numeric', 'numeric(10,2)',
+        'date', 'time', 'timestamp', 'timestamptz', 'uuid',
+        'json', 'jsonb', 'bytea',
+      ],
+      defaultExamples: ['now()', 'gen_random_uuid()', 'true', 'false', 'null'],
+      indexMethods: ['btree', 'hash', 'gin', 'gist', 'brin'],
+      supportsAutoIncrement: true,
+      supportsUsingExpression: true,
+    },
+  };
   readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: true, parserDialect: 'postgresql', concurrency: 'token' };
 
   private readonly logger = new Logger(PgDriver.name);

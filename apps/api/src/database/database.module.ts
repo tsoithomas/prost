@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { DatabaseEnginesController } from './database-engines.controller';
 import { DB_DRIVERS } from './db-driver.interface';
 import { DbDriverRegistry } from './db-driver.registry';
 import { PoolManager } from './pool-manager.service';
@@ -7,6 +8,7 @@ import { SqliteDriver } from './drivers/sqlite/sqlite-driver';
 
 @Global()
 @Module({
+  controllers: [DatabaseEnginesController],
   providers: [
     PgDriver,
     SqliteDriver,

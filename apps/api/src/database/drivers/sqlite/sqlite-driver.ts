@@ -1,7 +1,12 @@
 import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Database from 'better-sqlite3';
-import type { AlterTableOperation, CreateIndexRequest, CreateTableRequest } from '@prost/shared-types';
+import type {
+  AlterTableOperation,
+  CreateIndexRequest,
+  CreateTableRequest,
+  DbEngineDescriptor,
+} from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
   ConnectionParams, DbCapabilities, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
@@ -26,6 +31,24 @@ function leadingKeyword(text: string): string {
 @Injectable()
 export class SqliteDriver implements DbDriver {
   readonly engine = 'sqlite';
+  readonly descriptor: DbEngineDescriptor = {
+    engine: 'sqlite',
+    label: 'SQLite',
+    connectionMode: 'file',
+    uriSchemes: [],
+    parserDialect: 'sqlite',
+    formatterDialect: 'sqlite',
+    namespaceLabel: 'Database',
+    supportsSsl: false,
+    sslEnabledByDefault: false,
+    ddl: {
+      columnTypes: ['INTEGER', 'TEXT', 'REAL', 'BLOB', 'NUMERIC'],
+      defaultExamples: ['0', "''", 'CURRENT_TIMESTAMP', 'null'],
+      indexMethods: [],
+      supportsAutoIncrement: false,
+      supportsUsingExpression: false,
+    },
+  };
   readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: false, parserDialect: 'sqlite', concurrency: 'preimage' };
 
   private readonly busyTimeoutMs: number;

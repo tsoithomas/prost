@@ -2,6 +2,7 @@ import type {
   AlterTableOperation,
   CreateIndexRequest,
   CreateTableRequest,
+  DbEngineDescriptor,
 } from '@prost/shared-types';
 import type {
   ConnectionParams,
@@ -22,6 +23,7 @@ export const DB_DRIVERS = Symbol('DB_DRIVERS');
 
 export interface DbDriver {
   readonly engine: string;
+  readonly descriptor: DbEngineDescriptor;
   readonly capabilities: DbCapabilities;
 
   // --- connection lifecycle (called by PoolManager) ---
