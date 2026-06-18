@@ -11,6 +11,7 @@ import {
   sqliteBuildRowCountEstimate,
   sqliteBuildSelectRows,
   sqliteBuildUpdateRow,
+  sqliteBuildUpdateRowGuarded,
   sqlitePlaceholder,
   sqliteQuoteIdent,
 } from './sqlite-sql';
@@ -88,6 +89,30 @@ describe('sqlite grid builders', () => {
     const frag = sqliteBuildDeleteRow({ namespace: 'main', name: 'users' }, ['id'], [3]);
     expect(frag.sql).toBe('DELETE FROM "main"."users" WHERE "id" = ?');
     expect(frag.params).toEqual([3]);
+  });
+
+  it('guarded update appends a preimage predicate (IS) for each edited column', () => {
+    const frag = sqliteBuildUpdateRowGuarded(
+      { namespace: 'main', name: 'users' },
+      [['name', 'B']],
+      ['id'],
+      [7],
+      { kind: 'preimage', columns: ['name'], values: ['A'] },
+    );
+    expect(frag.sql).toBe('UPDATE "main"."users" SET "name" = ? WHERE "id" = ? AND "name" IS ? RETURNING *');
+    expect(frag.params).toEqual(['B', 7, 'A']);
+  });
+
+  it('guarded update rejects a version-token guard (SQLite has no row version)', () => {
+    expect(() =>
+      sqliteBuildUpdateRowGuarded(
+        { namespace: 'main', name: 'users' },
+        [['name', 'B']],
+        ['id'],
+        [7],
+        { kind: 'version', value: '1' },
+      ),
+    ).toThrow(/does not support version-token/i);
   });
 });
 

@@ -6,6 +6,31 @@ import type { ColumnMetadata } from '@prost/shared-types';
 const INTEGER_TYPES = new Set(['int2', 'int4', 'int8', 'smallint', 'integer', 'bigint', 'serial', 'bigserial']);
 const DECIMAL_TYPES = new Set(['numeric', 'decimal', 'real', 'double precision', 'float4', 'float8']);
 const TEMPORAL_TYPES = new Set(['timestamp', 'timestamptz', 'date', 'time', 'timetz']);
+const BOOLEAN_TYPES = new Set(['bool', 'boolean']);
+const DATE_ONLY_TYPES = new Set(['date']);
+
+/**
+ * Picks an AG Grid Community cell editor from the column's data type. The server still
+ * validates/coerces every value on write (architecture principle #4) — the editor is only a
+ * convenience. Returns the editor name plus any params; `undefined` falls back to the default
+ * text editor.
+ */
+function editorForType(dataType: string): Pick<ColDef, 'cellEditor' | 'cellEditorParams'> {
+  const normalized = dataType.toLowerCase();
+  if (BOOLEAN_TYPES.has(normalized)) {
+    // Tri-state: a nullable boolean can be true / false / null.
+    return { cellEditor: 'agSelectCellEditor', cellEditorParams: { values: [true, false, null] } };
+  }
+  if (INTEGER_TYPES.has(normalized) || DECIMAL_TYPES.has(normalized)) {
+    return { cellEditor: 'agNumberCellEditor' };
+  }
+  if (DATE_ONLY_TYPES.has(normalized)) {
+    return { cellEditor: 'agDateStringCellEditor' };
+  }
+  // timestamp/timestamptz/time keep the text editor — their string form round-trips losslessly,
+  // unlike agDateCellEditor which is date-only. Enums lack value metadata today, so also text.
+  return {};
+}
 
 function dataTypeColorVar(dataType: string): string {
   const normalized = dataType.toLowerCase();
@@ -59,5 +84,8 @@ export function buildColumnDefs(columns: ColumnMetadata[], editable = false): Co
     resizable: true,
     sortable: true,
     editable,
+    // Pin-left/right from the Community column menu; presentation only (principle #5).
+    lockPinned: false,
+    ...(editable ? editorForType(column.dataType) : {}),
   }));
 }

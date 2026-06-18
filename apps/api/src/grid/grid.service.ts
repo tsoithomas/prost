@@ -1,8 +1,26 @@
-import { ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
-import type { ColumnMetadata, GridResponse, RowDeleteBody, RowFilter, RowInsertBody, RowUpdateBody } from '@prost/shared-types';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
+import type {
+  BulkRowEdit,
+  BulkRowUpdateBody,
+  BulkRowUpdateResult,
+  ColumnMetadata,
+  GridResponse,
+  RowDeleteBody,
+  RowFilter,
+  RowInsertBody,
+  RowUpdateBody,
+} from '@prost/shared-types';
 import { MetadataService } from '../metadata/metadata.service';
 import { PoolManager } from '../database/pool-manager.service';
 import type { DbDriver } from '../database/db-driver.interface';
+import type { RowUpdateGuard } from '../database/types';
 import { isSystemConnectionId } from '../connections/system-connection';
 import { compileWhere } from './filter';
 
@@ -57,6 +75,7 @@ export class GridService {
     const limit = options.limit ?? DEFAULT_LIMIT;
     const offset = options.offset ?? 0;
 
+    const editable = primaryKey.length > 0;
     const ref = { namespace: schema, name: table };
     const frag = driver.buildSelectRows(ref, {
       whereClause,
@@ -65,6 +84,8 @@ export class GridService {
       sortDir,
       limit,
       offset,
+      // Token-concurrency engines (PG) project a per-row version we hand back to the client.
+      includeVersion: editable && driver.capabilities.concurrency === 'token',
     });
     const { rows } = await this.pool.run(connectionId, frag);
 
@@ -76,9 +97,10 @@ export class GridService {
       rows,
       columns,
       totalRows,
-      editable: primaryKey.length > 0,
+      editable,
       sourceTable: `${schema}.${table}`,
       primaryKey,
+      concurrency: editable ? driver.capabilities.concurrency : undefined,
     };
   }
 
@@ -117,6 +139,99 @@ export class GridService {
       );
     }
     return rows[0]!;
+  }
+
+  /**
+   * Applies a batch of per-row edits in a single transaction (all-or-nothing). Each row update is
+   * guarded by an optimistic-concurrency predicate (PG `xmin` token, or the edited columns'
+   * pre-image elsewhere); a stale row matches zero rows and aborts the whole batch with a 409
+   * conflict naming it. PK and columns are re-validated against live metadata (principle #4).
+   */
+  async bulkUpdate(
+    connectionId: string,
+    schema: string,
+    table: string,
+    body: BulkRowUpdateBody,
+  ): Promise<BulkRowUpdateResult> {
+    assertWritable(connectionId);
+    const driver = await this.pool.driverFor(connectionId);
+    const { columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
+    this.assertEditable(primaryKey, schema, table);
+
+    if (body.rows.length === 0) {
+      throw new BadRequestException('No row edits supplied');
+    }
+
+    const ref = { namespace: schema, name: table };
+    const prepared = body.rows.map((row) => ({
+      pkValues: this.validateBulkRow(row, columnNames, primaryKey, schema, table),
+      edits: row.edits.map((e) => [e.column, e.value] as [string, unknown]),
+      guard: this.resolveGuard(row, columnNames, schema, table),
+    }));
+
+    const rows = await this.pool.withTransaction(connectionId, async (q) => {
+      const updated: Record<string, unknown>[] = [];
+      for (const { pkValues, edits, guard } of prepared) {
+        const frag = driver.buildUpdateRowGuarded(ref, edits, primaryKey, pkValues, guard);
+        const { rows: out, rowCount } = await q(frag);
+        if (rowCount !== 1) {
+          throw new ConflictException(
+            `Row in "${schema}.${table}" changed since you loaded it — nothing was saved. Refresh and retry.`,
+          );
+        }
+        updated.push(out[0]!);
+      }
+      return updated;
+    });
+
+    return { rows };
+  }
+
+  /** Validates a single bulk edit's PK + columns; returns the PK values in PK-column order. */
+  private validateBulkRow(
+    row: BulkRowEdit,
+    columnNames: Set<string>,
+    primaryKey: string[],
+    schema: string,
+    table: string,
+  ): unknown[] {
+    this.assertPrimaryKeyMatches(row.primaryKey, primaryKey, schema, table);
+    if (row.edits.length === 0) {
+      throw new BadRequestException(`No column edits supplied for a row in "${schema}.${table}"`);
+    }
+    for (const { column } of row.edits) {
+      if (!columnNames.has(column)) {
+        throw new UnprocessableEntityException(`Column "${column}" does not exist on "${schema}.${table}"`);
+      }
+    }
+    return primaryKey.map((c) => row.primaryKey[c]);
+  }
+
+  /** Builds the concurrency guard from the client's `version`/`expected`, re-validating columns. */
+  private resolveGuard(
+    row: BulkRowEdit,
+    columnNames: Set<string>,
+    schema: string,
+    table: string,
+  ): RowUpdateGuard {
+    if (row.version !== undefined) {
+      return { kind: 'version', value: row.version };
+    }
+    if (row.expected !== undefined) {
+      const entries = Object.entries(row.expected);
+      if (entries.length === 0) {
+        throw new BadRequestException(`Concurrency guard for "${schema}.${table}" is empty`);
+      }
+      for (const [column] of entries) {
+        if (!columnNames.has(column)) {
+          throw new UnprocessableEntityException(`Column "${column}" does not exist on "${schema}.${table}"`);
+        }
+      }
+      return { kind: 'preimage', columns: entries.map(([c]) => c), values: entries.map(([, v]) => v) };
+    }
+    throw new BadRequestException(
+      `Row edit for "${schema}.${table}" is missing a concurrency guard (version or expected)`,
+    );
   }
 
   /**

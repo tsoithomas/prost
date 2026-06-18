@@ -1,5 +1,5 @@
 import type { QueryResultRow } from 'pg';
-import type { TestConnectionResult } from '@prost/shared-types';
+import type { RowConcurrency, TestConnectionResult } from '@prost/shared-types';
 
 /** Neutral table reference. PG maps `namespace` → schema. */
 export interface TableRef {
@@ -31,6 +31,11 @@ export interface DbCapabilities {
   supportsReturning: boolean;
   supportsSchemas: boolean;
   parserDialect: 'postgresql' | 'sqlite';
+  /**
+   * Optimistic-concurrency basis for row writes: `token` engines expose a per-row version
+   * (PG `xmin`); `preimage` engines have none, so writes guard on the edited columns' old values.
+   */
+  concurrency: RowConcurrency;
 }
 
 /**
@@ -73,7 +78,21 @@ export interface SelectRowsOptions {
   sortDir: 'ASC' | 'DESC';
   limit: number;
   offset: number;
+  /**
+   * Include the engine's per-row version token (aliased `__version`) in the projection. Only
+   * meaningful on `token`-concurrency engines (PG `xmin`); ignored elsewhere.
+   */
+  includeVersion?: boolean;
 }
+
+/**
+ * The optimistic-concurrency predicate a guarded row update appends to its WHERE clause:
+ * - `version`: match the engine's row version token (PG `xmin`).
+ * - `preimage`: match the pre-edit values of `columns` (engines without a row version).
+ */
+export type RowUpdateGuard =
+  | { kind: 'version'; value: string }
+  | { kind: 'preimage'; columns: string[]; values: unknown[] };
 
 /** Opaque to callers; only the owning driver knows the concrete type. */
 export type NativePool = unknown;

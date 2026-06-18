@@ -2,6 +2,7 @@ export type ErrorCode =
   | 'VALIDATION_ERROR'
   | 'AUTH_ERROR'
   | 'NOT_FOUND'
+  | 'CONFLICT'
   | 'CONNECTION_ERROR'
   | 'SQL_ERROR'
   | 'TIMEOUT_ERROR'

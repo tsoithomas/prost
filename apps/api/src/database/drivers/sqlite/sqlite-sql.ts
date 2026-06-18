@@ -1,6 +1,6 @@
 import { quoteIdent } from '@prost/utils';
 import type { AlterTableOperation, CreateIndexRequest, CreateTableRequest } from '@prost/shared-types';
-import type { SelectRowsOptions, SqlFragment, TableRef } from '../../types';
+import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
 
 /** SQLite accepts double-quoted identifiers, with embedded quotes doubled — same as PG. */
 export const sqliteQuoteIdent = quoteIdent;
@@ -94,6 +94,29 @@ export function sqliteBuildUpdateRow(ref: TableRef, column: string, value: unkno
   const setClause = `${sqliteQuoteIdent(column)} = ?`;
   const whereClause = pkColumns.map((c) => `${sqliteQuoteIdent(c)} = ?`).join(' AND ');
   return { sql: `UPDATE ${qualify(ref)} SET ${setClause} WHERE ${whereClause} RETURNING *`, params: [value, ...pkValues] };
+}
+
+export function sqliteBuildUpdateRowGuarded(
+  ref: TableRef,
+  edits: [string, unknown][],
+  pkColumns: string[],
+  pkValues: unknown[],
+  guard: RowUpdateGuard,
+): SqlFragment {
+  // SQLite has no row-version token; it only ever uses the column pre-image basis.
+  if (guard.kind === 'version') {
+    throw new Error('SQLite does not support version-token concurrency');
+  }
+  const setClause = edits.map(([c]) => `${sqliteQuoteIdent(c)} = ?`).join(', ');
+  // `IS` (not `=`) so a NULL pre-image matches a NULL current value.
+  const where = [
+    ...pkColumns.map((c) => `${sqliteQuoteIdent(c)} = ?`),
+    ...guard.columns.map((c) => `${sqliteQuoteIdent(c)} IS ?`),
+  ].join(' AND ');
+  return {
+    sql: `UPDATE ${qualify(ref)} SET ${setClause} WHERE ${where} RETURNING *`,
+    params: [...edits.map(([, v]) => v), ...pkValues, ...guard.values],
+  };
 }
 
 export function sqliteBuildDeleteRow(ref: TableRef, pkColumns: string[], pkValues: unknown[]): SqlFragment {

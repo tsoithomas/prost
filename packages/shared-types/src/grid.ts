@@ -1,5 +1,17 @@
 import type { ColumnMetadata } from './metadata.js';
 
+/**
+ * How the client must build the optimistic-concurrency guard when writing an edited row back:
+ * - `token`: the read carried a server-issued version token (Postgres `xmin`) on each row under
+ *   the reserved `__version` key; send it back as `BulkRowEdit.version`.
+ * - `preimage`: no row version exists (SQLite); send the original (pre-edit) values of exactly the
+ *   edited columns as `BulkRowEdit.expected`.
+ */
+export type RowConcurrency = 'token' | 'preimage';
+
+/** Reserved key carrying the per-row version token in `token` concurrency mode. Never a real column. */
+export const ROW_VERSION_KEY = '__version';
+
 export interface GridResponse {
   rows: Record<string, unknown>[];
   columns: ColumnMetadata[];
@@ -7,6 +19,42 @@ export interface GridResponse {
   editable: boolean;
   sourceTable?: string;
   primaryKey?: string[];
+  /** How the client must guard writes for this result set (set on editable table reads). */
+  concurrency?: RowConcurrency;
+}
+
+/** One column's new value within a staged row edit. */
+export interface CellEdit {
+  column: string;
+  value: unknown;
+}
+
+/**
+ * A single row's worth of staged edits plus the concurrency guard. Exactly one of `version` /
+ * `expected` must be present, matching the `GridResponse.concurrency` the rows were read with.
+ */
+export interface BulkRowEdit {
+  primaryKey: Record<string, unknown>;
+  edits: CellEdit[];
+  /** `token` mode: the `__version` value read with this row. */
+  version?: string;
+  /** `preimage` mode: original values of exactly the columns in `edits`. */
+  expected?: Record<string, unknown>;
+}
+
+export interface BulkRowUpdateRequest {
+  connectionId: string;
+  schema: string;
+  table: string;
+  rows: BulkRowEdit[];
+}
+
+/** Body for `POST /connections/:id/tables/:schema/:table/rows/bulk` (connection/schema/table from the URL). */
+export type BulkRowUpdateBody = Omit<BulkRowUpdateRequest, 'connectionId' | 'schema' | 'table'>;
+
+export interface BulkRowUpdateResult {
+  /** Fresh server rows in request order (refreshed `__version` in `token` mode). */
+  rows: Record<string, unknown>[];
 }
 
 interface StatementResultBase {

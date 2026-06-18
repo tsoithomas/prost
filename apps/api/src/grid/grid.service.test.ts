@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import type { ColumnMetadata } from '@prost/shared-types';
 import { GridService } from './grid.service';
@@ -21,15 +26,20 @@ function result<T extends Record<string, unknown>>(rows: T[]): DriverResult {
   return { rows: rows as never, fields: [], rowCount: rows.length, command: 'SELECT' };
 }
 
-function createService(run = vi.fn(), columns: ColumnMetadata[] = COLUMNS) {
+function createService(run = vi.fn(), columns: ColumnMetadata[] = COLUMNS, q = vi.fn()) {
   const metadataService = {
     getTableColumns: vi.fn().mockResolvedValue(columns),
   } as unknown as MetadataService;
 
   const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);
-  const pool = { run, driverFor: vi.fn().mockResolvedValue(driver) } as unknown as PoolManager;
+  const pool = {
+    run,
+    driverFor: vi.fn().mockResolvedValue(driver),
+    // Mirror the driver contract: invoke fn with a query fn, propagating throws (rollback).
+    withTransaction: vi.fn((_id: string, fn: (qf: typeof q) => unknown) => fn(q)),
+  } as unknown as PoolManager;
 
-  return { service: new GridService(pool, metadataService), run };
+  return { service: new GridService(pool, metadataService), run, q };
 }
 
 describe('GridService.getRows', () => {
@@ -44,7 +54,9 @@ describe('GridService.getRows', () => {
 
     const [connectionId, frag] = run.mock.calls[0]!;
     expect(connectionId).toBe('conn-1');
-    expect(frag.sql).toBe('SELECT * FROM "public"."users" ORDER BY "id" ASC LIMIT $1 OFFSET $2');
+    expect(frag.sql).toBe(
+      'SELECT *, xmin::text AS "__version" FROM "public"."users" ORDER BY "id" ASC LIMIT $1 OFFSET $2',
+    );
     expect(frag.params).toEqual([50, 10]);
   });
 
@@ -58,7 +70,9 @@ describe('GridService.getRows', () => {
     await service.getRows('conn-1', 'public', 'users', { sortBy: 'email', sortDir: 'desc' });
 
     const [, frag] = run.mock.calls[0]!;
-    expect(frag.sql).toBe('SELECT * FROM "public"."users" ORDER BY "email" DESC LIMIT $1 OFFSET $2');
+    expect(frag.sql).toBe(
+      'SELECT *, xmin::text AS "__version" FROM "public"."users" ORDER BY "email" DESC LIMIT $1 OFFSET $2',
+    );
   });
 
   it('falls back to the primary key when sortBy is not a real column (no interpolation of unknown input)', async () => {
@@ -71,7 +85,9 @@ describe('GridService.getRows', () => {
     await service.getRows('conn-1', 'public', 'users', { sortBy: 'email; DROP TABLE users' });
 
     const [, frag] = run.mock.calls[0]!;
-    expect(frag.sql).toBe('SELECT * FROM "public"."users" ORDER BY "id" ASC LIMIT $1 OFFSET $2');
+    expect(frag.sql).toBe(
+      'SELECT *, xmin::text AS "__version" FROM "public"."users" ORDER BY "id" ASC LIMIT $1 OFFSET $2',
+    );
     expect(frag.sql).not.toContain('DROP TABLE');
   });
 
@@ -103,6 +119,22 @@ describe('GridService.getRows', () => {
     expect(response.editable).toBe(true);
     expect(response.primaryKey).toEqual(['id']);
     expect(response.sourceTable).toBe('public.users');
+    expect(response.concurrency).toBe('token');
+  });
+
+  it('omits the version projection and concurrency for a table with no primary key', async () => {
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce(result([]))
+      .mockResolvedValueOnce(result([{ reltuples: 0 }]));
+    const { service } = createService(run, NO_PK_COLUMNS);
+
+    const response = await service.getRows('conn-1', 'public', 'logs', {});
+
+    const [, frag] = run.mock.calls[0]!;
+    expect(frag.sql).not.toContain('__version');
+    expect(response.editable).toBe(false);
+    expect(response.concurrency).toBeUndefined();
   });
 
   it('throws NotFoundException when the table has no columns', async () => {
@@ -161,6 +193,97 @@ describe('GridService.updateCell', () => {
     await expect(
       service.updateCell('conn-1', 'public', 'users', { primaryKey: { id: 1 }, column: 'email', value: 'x' }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('GridService.bulkUpdate', () => {
+  it('runs each row update inside one transaction with a version guard and refreshed __version', async () => {
+    const q = vi.fn().mockResolvedValue(result([{ id: 1, email: 'a@x.com', __version: '99' }]));
+    const { service, q: qf } = createService(vi.fn(), COLUMNS, q);
+
+    const out = await service.bulkUpdate('conn-1', 'public', 'users', {
+      rows: [{ primaryKey: { id: 1 }, edits: [{ column: 'email', value: 'a@x.com' }], version: '42' }],
+    });
+
+    const [frag] = qf.mock.calls[0]!;
+    expect(frag.sql).toBe(
+      'UPDATE "public"."users" SET "email" = $1 WHERE "id" = $2 AND xmin = $3::xid RETURNING *, xmin::text AS "__version"',
+    );
+    expect(frag.params).toEqual(['a@x.com', 1, '42']);
+    expect(out.rows).toEqual([{ id: 1, email: 'a@x.com', __version: '99' }]);
+  });
+
+  it('builds a preimage guard from `expected` (one IS NOT DISTINCT FROM per column)', async () => {
+    const q = vi.fn().mockResolvedValue(result([{ id: 1, email: 'b@x.com' }]));
+    const { service, q: qf } = createService(vi.fn(), COLUMNS, q);
+
+    await service.bulkUpdate('conn-1', 'public', 'users', {
+      rows: [{ primaryKey: { id: 1 }, edits: [{ column: 'email', value: 'b@x.com' }], expected: { email: 'a@x.com' } }],
+    });
+
+    const [frag] = qf.mock.calls[0]!;
+    expect(frag.sql).toBe(
+      'UPDATE "public"."users" SET "email" = $1 WHERE "id" = $2 AND "email" IS NOT DISTINCT FROM $3 RETURNING *, xmin::text AS "__version"',
+    );
+    expect(frag.params).toEqual(['b@x.com', 1, 'a@x.com']);
+  });
+
+  it('throws ConflictException and commits nothing when a guarded update matches zero rows', async () => {
+    // First row updates fine; second is stale (rowCount 0) → whole batch must abort.
+    const q = vi
+      .fn()
+      .mockResolvedValueOnce(result([{ id: 1, email: 'x' }]))
+      .mockResolvedValueOnce({ rows: [], fields: [], rowCount: 0, command: 'UPDATE' });
+    const { service } = createService(vi.fn(), COLUMNS, q);
+
+    await expect(
+      service.bulkUpdate('conn-1', 'public', 'users', {
+        rows: [
+          { primaryKey: { id: 1 }, edits: [{ column: 'email', value: 'x' }], version: '1' },
+          { primaryKey: { id: 2 }, edits: [{ column: 'email', value: 'y' }], version: '2' },
+        ],
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('rejects a row with no concurrency guard (400)', async () => {
+    const { service } = createService();
+
+    await expect(
+      service.bulkUpdate('conn-1', 'public', 'users', {
+        rows: [{ primaryKey: { id: 1 }, edits: [{ column: 'email', value: 'x' }] }],
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('rejects an edit to an unknown column (422)', async () => {
+    const { service } = createService();
+
+    await expect(
+      service.bulkUpdate('conn-1', 'public', 'users', {
+        rows: [{ primaryKey: { id: 1 }, edits: [{ column: 'nope', value: 'x' }], version: '1' }],
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
+  it('rejects a primary key that does not match the live PK set (422)', async () => {
+    const { service } = createService();
+
+    await expect(
+      service.bulkUpdate('conn-1', 'public', 'users', {
+        rows: [{ primaryKey: { email: 'x' }, edits: [{ column: 'email', value: 'y' }], version: '1' }],
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+
+  it('rejects bulk writes to a table with no primary key (422)', async () => {
+    const { service } = createService(vi.fn(), NO_PK_COLUMNS);
+
+    await expect(
+      service.bulkUpdate('conn-1', 'public', 'logs', {
+        rows: [{ primaryKey: {}, edits: [{ column: 'email', value: 'y' }], version: '1' }],
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
   });
 });
 

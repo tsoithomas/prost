@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 import type { AlterTableOperation, CreateIndexRequest, CreateTableRequest } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
-  ConnectionParams, DbCapabilities, DriverQueryFn, DriverResult, NativePool, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
+  ConnectionParams, DbCapabilities, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
 } from '../../types';
 import * as sql from './sqlite-sql';
 
@@ -26,7 +26,7 @@ function leadingKeyword(text: string): string {
 @Injectable()
 export class SqliteDriver implements DbDriver {
   readonly engine = 'sqlite';
-  readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: false, parserDialect: 'sqlite' };
+  readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: false, parserDialect: 'sqlite', concurrency: 'preimage' };
 
   private readonly busyTimeoutMs: number;
 
@@ -69,10 +69,12 @@ export class SqliteDriver implements DbDriver {
   async withTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
     const db = pool as Db;
     const query: DriverQueryFn = (frag) => this.query(db, frag);
+    db.prepare('BEGIN').run();
     try {
-      return await fn(query);
+      const result = await fn(query);
+      db.prepare('COMMIT').run();
+      return result;
     } catch (error) {
-      // Safety net — the caller normally issues its own ROLLBACK; ignore "no transaction" here.
       try {
         db.prepare('ROLLBACK').run();
       } catch {
@@ -118,6 +120,8 @@ export class SqliteDriver implements DbDriver {
   buildRowCountEstimate = (ref: TableRef) => sql.sqliteBuildRowCountEstimate(ref);
   buildInsertRow = (ref: TableRef, e: [string, unknown][]) => sql.sqliteBuildInsertRow(ref, e);
   buildUpdateRow = (ref: TableRef, c: string, v: unknown, pk: string[], pv: unknown[]) => sql.sqliteBuildUpdateRow(ref, c, v, pk, pv);
+  buildUpdateRowGuarded = (ref: TableRef, e: [string, unknown][], pk: string[], pv: unknown[], g: RowUpdateGuard) =>
+    sql.sqliteBuildUpdateRowGuarded(ref, e, pk, pv, g);
   buildDeleteRow = (ref: TableRef, pk: string[], pv: unknown[]) => sql.sqliteBuildDeleteRow(ref, pk, pv);
   buildCreateTable = (req: CreateTableRequest) => sql.sqliteBuildCreateTable(req);
   buildAlterTable = (ref: TableRef, op: AlterTableOperation) => sql.sqliteBuildAlterTable(ref, op);

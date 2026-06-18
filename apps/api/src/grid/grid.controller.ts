@@ -1,7 +1,8 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
-import type { GridResponse } from '@prost/shared-types';
+import type { BulkRowUpdateResult, GridResponse } from '@prost/shared-types';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import { ConnectionsService } from '../connections/connections.service';
+import { BulkRowUpdateDto } from './dto/bulk-row-update.dto';
 import { GetRowsQueryDto } from './dto/get-rows-query.dto';
 import { RowDeleteDto } from './dto/row-delete.dto';
 import { RowInsertDto } from './dto/row-insert.dto';
@@ -43,6 +44,18 @@ export class GridController {
   ): Promise<Record<string, unknown>> {
     await this.connectionsService.assertOwnership(user.userId, id);
     return this.gridService.updateCell(id, schema, table, dto);
+  }
+
+  @Post(':id/tables/:schema/:table/rows/bulk')
+  async bulkUpdate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('schema') schema: string,
+    @Param('table') table: string,
+    @Body() dto: BulkRowUpdateDto,
+  ): Promise<BulkRowUpdateResult> {
+    await this.connectionsService.assertOwnership(user.userId, id);
+    return this.gridService.bulkUpdate(id, schema, table, dto);
   }
 
   @Post(':id/tables/:schema/:table/rows')

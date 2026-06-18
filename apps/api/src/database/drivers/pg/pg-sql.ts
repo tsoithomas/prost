@@ -1,6 +1,7 @@
 import { quoteIdent } from '@prost/utils';
+import { ROW_VERSION_KEY } from '@prost/shared-types';
 import type { AlterTableOperation, CreateIndexRequest, CreateTableRequest } from '@prost/shared-types';
-import type { SelectRowsOptions, SqlFragment, TableRef } from '../../types';
+import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
 
 export const pgQuoteIdent = quoteIdent;
 export const pgPlaceholder = (index: number): string => `$${index}`;
@@ -96,10 +97,13 @@ export function pgBuildListIndexes(ref: TableRef): SqlFragment {
   };
 }
 
+/** Re-projects the row's `xmin` transaction id as the reserved `__version` token (text-cast for JSON safety). */
+const PG_VERSION_PROJECTION = `, xmin::text AS ${pgQuoteIdent(ROW_VERSION_KEY)}`;
+
 export function pgBuildSelectRows(ref: TableRef, opts: SelectRowsOptions): SqlFragment {
   const limitParam = opts.whereParams.length + 1;
   const offsetParam = opts.whereParams.length + 2;
-  let sql = `SELECT * FROM ${qualify(ref)}`;
+  let sql = `SELECT *${opts.includeVersion ? PG_VERSION_PROJECTION : ''} FROM ${qualify(ref)}`;
   if (opts.whereClause) sql += ` ${opts.whereClause}`;
   if (opts.orderColumn) sql += ` ORDER BY ${pgQuoteIdent(opts.orderColumn)} ${opts.sortDir}`;
   sql += ` LIMIT ${pgPlaceholder(limitParam)} OFFSET ${pgPlaceholder(offsetParam)}`;
@@ -130,6 +134,33 @@ export function pgBuildUpdateRow(ref: TableRef, column: string, value: unknown, 
   const setClause = `${pgQuoteIdent(column)} = ${pgPlaceholder(1)}`;
   const whereClause = pkColumns.map((c, i) => `${pgQuoteIdent(c)} = ${pgPlaceholder(i + 2)}`).join(' AND ');
   return { sql: `UPDATE ${qualify(ref)} SET ${setClause} WHERE ${whereClause} RETURNING *`, params: [value, ...pkValues] };
+}
+
+export function pgBuildUpdateRowGuarded(
+  ref: TableRef,
+  edits: [string, unknown][],
+  pkColumns: string[],
+  pkValues: unknown[],
+  guard: RowUpdateGuard,
+): SqlFragment {
+  const params: unknown[] = [];
+  const next = (value: unknown): string => {
+    params.push(value);
+    return pgPlaceholder(params.length);
+  };
+
+  const setClause = edits.map(([c, v]) => `${pgQuoteIdent(c)} = ${next(v)}`).join(', ');
+  const where = pkColumns.map((c, i) => `${pgQuoteIdent(c)} = ${next(pkValues[i])}`);
+  if (guard.kind === 'version') {
+    where.push(`xmin = ${next(guard.value)}::xid`);
+  } else {
+    guard.columns.forEach((c, i) => where.push(`${pgQuoteIdent(c)} IS NOT DISTINCT FROM ${next(guard.values[i])}`));
+  }
+
+  return {
+    sql: `UPDATE ${qualify(ref)} SET ${setClause} WHERE ${where.join(' AND ')} RETURNING *${PG_VERSION_PROJECTION}`,
+    params,
+  };
 }
 
 export function pgBuildDeleteRow(ref: TableRef, pkColumns: string[], pkValues: unknown[]): SqlFragment {

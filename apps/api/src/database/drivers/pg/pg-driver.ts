@@ -4,7 +4,7 @@ import { Client, Pool } from 'pg';
 import type { AlterTableOperation, CreateIndexRequest, CreateTableRequest } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
-  ConnectionParams, DbCapabilities, DriverQueryFn, DriverResult, NativePool, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
+  ConnectionParams, DbCapabilities, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
 } from '../../types';
 import * as sql from './pg-sql';
 
@@ -23,7 +23,7 @@ function describeConnectionError(error: unknown): string {
 @Injectable()
 export class PgDriver implements DbDriver {
   readonly engine = 'postgres';
-  readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: true, parserDialect: 'postgresql' };
+  readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: true, parserDialect: 'postgresql', concurrency: 'token' };
 
   private readonly logger = new Logger(PgDriver.name);
   private readonly statementTimeoutMs: number;
@@ -68,7 +68,10 @@ export class PgDriver implements DbDriver {
       return { rows: r.rows, fields: r.fields, rowCount: r.rowCount, command: r.command };
     };
     try {
-      return await fn(query);
+      await client.query('BEGIN');
+      const result = await fn(query);
+      await client.query('COMMIT');
+      return result;
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
       throw error;
@@ -117,6 +120,8 @@ export class PgDriver implements DbDriver {
   buildRowCountEstimate = (ref: TableRef) => sql.pgBuildRowCountEstimate(ref);
   buildInsertRow = (ref: TableRef, e: [string, unknown][]) => sql.pgBuildInsertRow(ref, e);
   buildUpdateRow = (ref: TableRef, c: string, v: unknown, pk: string[], pv: unknown[]) => sql.pgBuildUpdateRow(ref, c, v, pk, pv);
+  buildUpdateRowGuarded = (ref: TableRef, e: [string, unknown][], pk: string[], pv: unknown[], g: RowUpdateGuard) =>
+    sql.pgBuildUpdateRowGuarded(ref, e, pk, pv, g);
   buildDeleteRow = (ref: TableRef, pk: string[], pv: unknown[]) => sql.pgBuildDeleteRow(ref, pk, pv);
   buildCreateTable = (req: CreateTableRequest) => sql.pgBuildCreateTable(req);
   buildAlterTable = (ref: TableRef, op: AlterTableOperation) => sql.pgBuildAlterTable(ref, op);

@@ -10,17 +10,28 @@ import type {
   IGetRowsParams,
   SelectionChangedEvent,
 } from 'ag-grid-community';
-import { Filter, Plus, Save, Trash2, X } from 'lucide-react';
-import type { GridResponse, RowFilter } from '@prost/shared-types';
+import { CopyPlus, Filter, Plus, Redo2, Save, Trash2, Undo2, X } from 'lucide-react';
+import type { BulkRowEdit, GridResponse, RowConcurrency, RowFilter } from '@prost/shared-types';
+import { ROW_VERSION_KEY } from '@prost/shared-types';
 import { Badge, Button, IconButton, prostGridTheme, Toast } from '@prost/ui';
 import { FilterPanel } from './FilterPanel';
 import { TableStructurePanel } from './TableStructurePanel';
 import { useActiveConnection } from '../api/connections';
-import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
+import { useBulkUpdate, useDeleteRow, useInsertRow } from '../api/grid';
 import { buildColumnDefs } from '../grid/columnDefs';
+import { useEditBuffer } from '../grid/useEditBuffer';
 import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
-import { apiErrorDetail, apiFetch } from '../lib/apiClient';
+import { ApiError, apiErrorDetail, apiFetch } from '../lib/apiClient';
+
+/** A committed batch we can reverse: each row's pre-edit (`before`) and edited (`after`) values, plus its live version. */
+interface UndoRow {
+  rowKey: string;
+  primaryKey: Record<string, unknown>;
+  before: Record<string, unknown>;
+  after: Record<string, unknown>;
+  version?: string;
+}
 
 export interface TableViewProps {
   connectionId: string;
@@ -42,8 +53,12 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<RowFilter | null>(null);
+  const [lastEdit, setLastEdit] = useState<{ column: string; value: unknown } | null>(null);
+  const [undoStack, setUndoStack] = useState<UndoRow[][]>([]);
+  const [redoStack, setRedoStack] = useState<UndoRow[][]>([]);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const { confirm, dialog: confirmDialog } = useConfirm();
+  const editBuffer = useEditBuffer();
 
   const filterKey = activeFilter?.conditions.length ? JSON.stringify(activeFilter) : null;
 
@@ -70,10 +85,23 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const writable = !activeConnection?.capabilities.readOnly;
   const editable = (columnsQuery.data?.editable ?? false) && writable;
   const primaryKey = columnsQuery.data?.primaryKey ?? [];
+  const concurrency: RowConcurrency = columnsQuery.data?.concurrency ?? 'preimage';
 
-  const updateCell = useUpdateCell(connectionId, schema, table);
   const insertRow = useInsertRow(connectionId, schema, table);
   const deleteRow = useDeleteRow(connectionId, schema, table);
+  const bulkUpdate = useBulkUpdate(connectionId, schema, table);
+
+  const rowKeyOf = useCallback(
+    (row: Record<string, unknown>) => primaryKey.map((c) => String(row[c])).join('::'),
+    [primaryKey],
+  );
+  const identityOf = useCallback(
+    (row: Record<string, unknown>) => ({
+      primaryKey: Object.fromEntries(primaryKey.map((c) => [c, row[c]])),
+      version: row[ROW_VERSION_KEY] as string | undefined,
+    }),
+    [primaryKey],
+  );
 
   const columnDefs = useMemo(
     () => (columnsQuery.data ? buildColumnDefs(columnsQuery.data.columns, editable) : []),
@@ -129,23 +157,140 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         return;
       }
 
-      if (primaryKey.length === 0 || event.newValue === event.oldValue) return;
+      if (primaryKey.length === 0) return;
 
-      const primaryKeyValues: Record<string, unknown> = {};
-      for (const pkColumn of primaryKey) primaryKeyValues[pkColumn] = event.data[pkColumn];
+      const data = event.data as Record<string, unknown>;
+      editBuffer.stage(rowKeyOf(data), identityOf(data), column, event.oldValue, event.newValue);
+      setLastEdit({ column, value: event.newValue });
+    },
+    [primaryKey, editBuffer, rowKeyOf, identityOf],
+  );
 
-      updateCell.mutate(
-        { primaryKey: primaryKeyValues, column, value: event.newValue },
+  /** Fan the most recent edit's value into the same column across every selected row (all staged). */
+  const handleApplyToSelected = useCallback(() => {
+    if (!lastEdit) return;
+    for (const row of selectedRows) {
+      editBuffer.stage(rowKeyOf(row), identityOf(row), lastEdit.column, row[lastEdit.column], lastEdit.value);
+      gridApiRef.current?.getRowNode(rowKeyOf(row))?.setDataValue(lastEdit.column, lastEdit.value);
+    }
+  }, [lastEdit, selectedRows, editBuffer, rowKeyOf, identityOf]);
+
+  /** Pushes the returned rows back into the grid and returns their refreshed version tokens by rowKey. */
+  const applyResultRows = useCallback(
+    (rows: Record<string, unknown>[]) => {
+      const versions: Record<string, string | undefined> = {};
+      for (const row of rows) {
+        const key = rowKeyOf(row);
+        versions[key] = row[ROW_VERSION_KEY] as string | undefined;
+        gridApiRef.current?.getRowNode(key)?.setData(row);
+      }
+      return versions;
+    },
+    [rowKeyOf],
+  );
+
+  const handleDiscard = useCallback(() => {
+    editBuffer.clear();
+    setLastEdit(null);
+    gridApiRef.current?.refreshInfiniteCache();
+  }, [editBuffer]);
+
+  const handleSave = useCallback(() => {
+    const entries = Object.entries(editBuffer.buffer);
+    if (entries.length === 0) return;
+    const body = editBuffer.buildBody(concurrency);
+
+    bulkUpdate.mutate(body, {
+      onSuccess: (result) => {
+        const versions = applyResultRows(result.rows);
+        // Record the committed batch for undo (before = original values, after = edited values).
+        const batch: UndoRow[] = entries.map(([rowKey, entry]) => ({
+          rowKey,
+          primaryKey: entry.primaryKey,
+          before: entry.original,
+          after: entry.edits,
+          version: versions[rowKey],
+        }));
+        setUndoStack((prev) => [...prev, batch]);
+        setRedoStack([]);
+        editBuffer.clear();
+        setLastEdit(null);
+      },
+      onError: (error) => {
+        const conflict = error instanceof ApiError && error.code === 'CONFLICT';
+        pushToast(
+          'danger',
+          apiErrorDetail(error, conflict ? 'A row changed since you loaded it — nothing was saved.' : 'Failed to save edits.'),
+        );
+        // Keep the buffer intact on conflict (no silent overwrite); offer a refresh.
+        if (conflict) gridApiRef.current?.refreshInfiniteCache();
+      },
+    });
+  }, [editBuffer, concurrency, bulkUpdate, applyResultRows, pushToast]);
+
+  /**
+   * Issues a concurrency-checked compensating write to drive each row to `target` (its `before`
+   * values for undo, `after` for redo). The guard uses the row's *current* known state, so an undo
+   * can itself conflict and is surfaced honestly. Returns the next entries with refreshed versions.
+   */
+  const runCompensating = useCallback(
+    (batch: UndoRow[], direction: 'undo' | 'redo', onDone: (next: UndoRow[]) => void) => {
+      const rows: BulkRowEdit[] = batch.map((row) => {
+        const target = direction === 'undo' ? row.before : row.after;
+        const current = direction === 'undo' ? row.after : row.before;
+        const edits = Object.entries(target).map(([column, value]) => ({ column, value }));
+        return concurrency === 'token'
+          ? { primaryKey: row.primaryKey, edits, version: row.version }
+          : { primaryKey: row.primaryKey, edits, expected: current };
+      });
+
+      bulkUpdate.mutate(
+        { rows },
         {
-          onSuccess: (row) => event.node.setData(row),
+          onSuccess: (result) => {
+            const versions = applyResultRows(result.rows);
+            onDone(batch.map((row) => ({ ...row, version: versions[row.rowKey] })));
+          },
           onError: (error) => {
-            event.node.setData({ ...event.data, [column]: event.oldValue });
-            pushToast('danger', apiErrorDetail(error, `Failed to update "${column}".`));
+            const conflict = error instanceof ApiError && error.code === 'CONFLICT';
+            pushToast(
+              'danger',
+              apiErrorDetail(error, conflict ? 'A row changed since you loaded it — could not undo.' : 'Failed to undo.'),
+            );
+            if (conflict) gridApiRef.current?.refreshInfiniteCache();
           },
         },
       );
     },
-    [primaryKey, updateCell, pushToast],
+    [concurrency, bulkUpdate, applyResultRows, pushToast],
+  );
+
+  const handleUndo = useCallback(() => {
+    const batch = undoStack[undoStack.length - 1];
+    if (!batch) return;
+    runCompensating(batch, 'undo', (next) => {
+      setUndoStack((prev) => prev.slice(0, -1));
+      setRedoStack((prev) => [...prev, next]);
+    });
+  }, [undoStack, runCompensating]);
+
+  const handleRedo = useCallback(() => {
+    const batch = redoStack[redoStack.length - 1];
+    if (!batch) return;
+    runCompensating(batch, 'redo', (next) => {
+      setRedoStack((prev) => prev.slice(0, -1));
+      setUndoStack((prev) => [...prev, next]);
+    });
+  }, [redoStack, runCompensating]);
+
+  const onGridKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      if (!editable || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
+      event.preventDefault();
+      if (event.shiftKey) handleRedo();
+      else handleUndo();
+    },
+    [editable, handleRedo, handleUndo],
   );
 
   function handleAddRow() {
@@ -245,6 +390,31 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
                 <X size={14} />
               </IconButton>
             ) : null}
+            <div className="mx-1 h-4 w-px bg-border" />
+            <IconButton
+              aria-label="Apply last edit to selected rows"
+              title="Apply last edit to selected rows"
+              onClick={handleApplyToSelected}
+              disabled={!editable || lastEdit === null || selectedRows.length === 0}
+            >
+              <CopyPlus size={14} />
+            </IconButton>
+            <IconButton aria-label="Undo" title="Undo (⌘Z)" onClick={handleUndo} disabled={undoStack.length === 0}>
+              <Undo2 size={14} />
+            </IconButton>
+            <IconButton aria-label="Redo" title="Redo (⇧⌘Z)" onClick={handleRedo} disabled={redoStack.length === 0}>
+              <Redo2 size={14} />
+            </IconButton>
+            {editBuffer.dirtyCells > 0 ? (
+              <div className="ml-1 flex items-center gap-1">
+                <Button type="button" variant="primary" size="sm" onClick={handleSave} disabled={bulkUpdate.isPending}>
+                  Save {editBuffer.dirtyCells} {editBuffer.dirtyCells === 1 ? 'edit' : 'edits'}
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={handleDiscard} disabled={bulkUpdate.isPending}>
+                  Discard
+                </Button>
+              </div>
+            ) : null}
           </>
         ) : null}
         <div className="ml-auto flex items-center gap-sm">
@@ -291,21 +461,23 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         ) : columnsQuery.isError ? (
           <div className="flex h-full items-center justify-center text-sm text-danger">Failed to load table.</div>
         ) : (
-          <AgGridReact
-            key={`${connectionId}.${schema}.${table}`}
-            theme={prostGridTheme}
-            columnDefs={columnDefs}
-            rowModelType="infinite"
-            datasource={datasource}
-            cacheBlockSize={PAGE_SIZE}
-            maxBlocksInCache={10}
-            getRowId={getRowId}
-            pinnedTopRowData={pinnedTopRowData}
-            rowSelection={editable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: false } : undefined}
-            onGridReady={onGridReady}
-            onSelectionChanged={onSelectionChanged}
-            onCellValueChanged={onCellValueChanged}
-          />
+          <div className="h-full" onKeyDown={onGridKeyDown}>
+            <AgGridReact
+              key={`${connectionId}.${schema}.${table}`}
+              theme={prostGridTheme}
+              columnDefs={columnDefs}
+              rowModelType="infinite"
+              datasource={datasource}
+              cacheBlockSize={PAGE_SIZE}
+              maxBlocksInCache={10}
+              getRowId={getRowId}
+              pinnedTopRowData={pinnedTopRowData}
+              rowSelection={editable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: false } : undefined}
+              onGridReady={onGridReady}
+              onSelectionChanged={onSelectionChanged}
+              onCellValueChanged={onCellValueChanged}
+            />
+          </div>
         )}
       </div>
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-sm p-md sm:items-end">

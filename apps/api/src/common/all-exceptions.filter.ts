@@ -104,6 +104,8 @@ function errorCodeForStatus(status: number): ErrorCode {
       return 'AUTH_ERROR';
     case HttpStatus.NOT_FOUND:
       return 'NOT_FOUND';
+    case HttpStatus.CONFLICT:
+      return 'CONFLICT';
     case HttpStatus.BAD_REQUEST:
     case HttpStatus.UNPROCESSABLE_ENTITY:
       return 'VALIDATION_ERROR';

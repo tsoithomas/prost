@@ -1,5 +1,11 @@
 import { useMutation } from '@tanstack/react-query';
-import type { RowDeleteBody, RowInsertBody, RowUpdateBody } from '@prost/shared-types';
+import type {
+  BulkRowUpdateBody,
+  BulkRowUpdateResult,
+  RowDeleteBody,
+  RowInsertBody,
+  RowUpdateBody,
+} from '@prost/shared-types';
 import { apiFetch } from '../lib/apiClient';
 
 function rowsUrl(connectionId: string, schema: string, table: string): string {
@@ -23,5 +29,12 @@ export function useInsertRow(connectionId: string, schema: string, table: string
 export function useDeleteRow(connectionId: string, schema: string, table: string) {
   return useMutation({
     mutationFn: (body: RowDeleteBody) => apiFetch<void>(rowsUrl(connectionId, schema, table), { method: 'DELETE', body }),
+  });
+}
+
+export function useBulkUpdate(connectionId: string, schema: string, table: string) {
+  return useMutation({
+    mutationFn: (body: BulkRowUpdateBody) =>
+      apiFetch<BulkRowUpdateResult>(`${rowsUrl(connectionId, schema, table)}/bulk`, { method: 'POST', body }),
   });
 }

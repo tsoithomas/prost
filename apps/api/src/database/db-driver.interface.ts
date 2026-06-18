@@ -9,6 +9,7 @@ import type {
   DriverQueryFn,
   DriverResult,
   NativePool,
+  RowUpdateGuard,
   SelectRowsOptions,
   SqlFragment,
   TableRef,
@@ -27,6 +28,11 @@ export interface DbDriver {
   createPool(params: ConnectionParams): Promise<NativePool>;
   closePool(pool: NativePool): Promise<void>;
   query(pool: NativePool, frag: SqlFragment): Promise<DriverResult>;
+  /**
+   * Runs `fn` inside a single transaction: the driver issues `BEGIN` before `fn`, `COMMIT` on
+   * success, and `ROLLBACK` if `fn` throws (the error then propagates). All statements `fn` runs
+   * via the provided `q` share one connection/transaction, so the batch is atomic — all-or-nothing.
+   */
   withTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T>;
   testConnection(params: ConnectionParams): Promise<TestConnectionResult>;
 
@@ -49,6 +55,18 @@ export interface DbDriver {
   buildRowCountEstimate(ref: TableRef): SqlFragment;
   buildInsertRow(ref: TableRef, entries: [string, unknown][]): SqlFragment;
   buildUpdateRow(ref: TableRef, column: string, value: unknown, pkColumns: string[], pkValues: unknown[]): SqlFragment;
+  /**
+   * Multi-column update of one row, guarded by an optimistic-concurrency predicate so a stale write
+   * affects zero rows (the caller treats `rowCount !== 1` as a conflict). On `token` engines the
+   * returned rows re-project the refreshed version token as `__version`.
+   */
+  buildUpdateRowGuarded(
+    ref: TableRef,
+    edits: [string, unknown][],
+    pkColumns: string[],
+    pkValues: unknown[],
+    guard: RowUpdateGuard,
+  ): SqlFragment;
   buildDeleteRow(ref: TableRef, pkColumns: string[], pkValues: unknown[]): SqlFragment;
 
   // --- ddl builders ---

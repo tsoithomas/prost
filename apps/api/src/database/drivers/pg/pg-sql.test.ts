@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pgPlaceholder, pgQuoteIdent, pgBuildListColumns, pgBuildListIndexes, pgBuildListTables } from './pg-sql';
-import { pgBuildSelectRows, pgBuildInsertRow, pgBuildUpdateRow, pgBuildDeleteRow, pgBuildRowCountEstimate } from './pg-sql';
+import { pgBuildSelectRows, pgBuildInsertRow, pgBuildUpdateRow, pgBuildUpdateRowGuarded, pgBuildDeleteRow, pgBuildRowCountEstimate } from './pg-sql';
 import { pgBuildCreateTable, pgBuildAlterTable, pgBuildCreateIndex, pgBuildDropIndex, pgBuildResolveTypeNames } from './pg-sql';
 
 describe('pg-sql quoting/placeholders', () => {
@@ -55,6 +55,30 @@ describe('pg-sql grid builders', () => {
     const { sql, params } = pgBuildUpdateRow(ref, 'name', 'ada', ['id'], [7]);
     expect(sql).toBe('UPDATE "public"."users" SET "name" = $1 WHERE "id" = $2 RETURNING *');
     expect(params).toEqual(['ada', 7]);
+  });
+  it('includes the __version projection when includeVersion is set', () => {
+    const { sql } = pgBuildSelectRows(ref, {
+      whereClause: '', whereParams: [], orderColumn: 'id', sortDir: 'ASC', limit: 10, offset: 0, includeVersion: true,
+    });
+    expect(sql).toBe('SELECT *, xmin::text AS "__version" FROM "public"."users" ORDER BY "id" ASC LIMIT $1 OFFSET $2');
+  });
+  it('guarded update with a version token matches on xmin and re-projects __version', () => {
+    const { sql, params } = pgBuildUpdateRowGuarded(
+      ref, [['name', 'ada'], ['age', 36]], ['id'], [7], { kind: 'version', value: '512' },
+    );
+    expect(sql).toBe(
+      'UPDATE "public"."users" SET "name" = $1, "age" = $2 WHERE "id" = $3 AND xmin = $4::xid RETURNING *, xmin::text AS "__version"',
+    );
+    expect(params).toEqual(['ada', 36, 7, '512']);
+  });
+  it('guarded update with a preimage matches each old value via IS NOT DISTINCT FROM', () => {
+    const { sql, params } = pgBuildUpdateRowGuarded(
+      ref, [['name', 'ada']], ['id'], [7], { kind: 'preimage', columns: ['name'], values: [null] },
+    );
+    expect(sql).toBe(
+      'UPDATE "public"."users" SET "name" = $1 WHERE "id" = $2 AND "name" IS NOT DISTINCT FROM $3 RETURNING *, xmin::text AS "__version"',
+    );
+    expect(params).toEqual(['ada', 7, null]);
   });
   it('deletes by composite pk', () => {
     const { sql, params } = pgBuildDeleteRow(ref, ['a', 'b'], [1, 2]);

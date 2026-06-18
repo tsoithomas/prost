@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
 import type { DbDriver } from '../db-driver.interface';
-import type { ConnectionParams, NativePool } from '../types';
+import type { ConnectionParams, NativePool, RowUpdateGuard } from '../types';
 
 // Network-level failures that mean "the target DB just isn't running here" (e.g. no
 // `docker compose up`, or CI without a Postgres service). These skip the suite rather
@@ -109,6 +109,56 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
 
       const del = await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [1]));
       expect(del.rowCount).toBe(1);
+    });
+
+    it('guarded update commits with a fresh guard and conflicts (zero rows) with a stale one', async (ctx) => {
+      skipIfUnreachable(ctx);
+      await driver.query(pool!, driver.buildInsertRow(ref, [['id', 2], ['name', 'alpha']]));
+
+      const idWhere = `WHERE ${driver.quoteIdent('id')} = ${driver.placeholder(1)}`;
+      const freshGuard = async (): Promise<RowUpdateGuard> => {
+        if (driver.capabilities.concurrency === 'token') {
+          const sel = await driver.query(pool!, driver.buildSelectRows(ref, {
+            whereClause: idWhere, whereParams: [2], orderColumn: 'id', sortDir: 'ASC', limit: 1, offset: 0, includeVersion: true,
+          }));
+          return { kind: 'version', value: String((sel.rows[0] as Record<string, unknown>).__version) };
+        }
+        // preimage: the current value of the column we're about to edit.
+        return { kind: 'preimage', columns: ['name'], values: ['alpha'] };
+      };
+
+      const ok = await driver.query(pool!, driver.buildUpdateRowGuarded(ref, [['name', 'beta']], ['id'], [2], await freshGuard()));
+      expect(ok.rowCount).toBe(1);
+
+      // The guard captured before the update above is now stale → must match zero rows.
+      const stale: RowUpdateGuard =
+        driver.capabilities.concurrency === 'token'
+          ? { kind: 'version', value: '0' }
+          : { kind: 'preimage', columns: ['name'], values: ['alpha'] };
+      const conflict = await driver.query(pool!, driver.buildUpdateRowGuarded(ref, [['name', 'gamma']], ['id'], [2], stale));
+      expect(conflict.rowCount).toBe(0);
+
+      await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [2]));
+    });
+
+    it('withTransaction rolls the whole batch back when fn throws', async (ctx) => {
+      skipIfUnreachable(ctx);
+      await driver.query(pool!, driver.buildInsertRow(ref, [['id', 3], ['name', 'one']]));
+
+      await expect(
+        driver.withTransaction(pool!, async (q) => {
+          await q(driver.buildUpdateRow(ref, 'name', 'two', ['id'], [3]));
+          throw new Error('boom');
+        }),
+      ).rejects.toThrow('boom');
+
+      const sel = await driver.query(pool!, driver.buildSelectRows(ref, {
+        whereClause: `WHERE ${driver.quoteIdent('id')} = ${driver.placeholder(1)}`,
+        whereParams: [3], orderColumn: 'id', sortDir: 'ASC', limit: 1, offset: 0,
+      }));
+      expect((sel.rows[0] as Record<string, unknown>).name).toBe('one');
+
+      await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [3]));
     });
 
     it('lists columns with the documented shape', async (ctx) => {
