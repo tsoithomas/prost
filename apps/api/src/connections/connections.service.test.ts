@@ -134,16 +134,22 @@ describe('ConnectionsService', () => {
   it('rejects an unknown engine before persistence', async () => {
     const { service, connection } = createService();
 
-    await expect(service.create('user-1', { ...validFields, engine: 'oracle' as any })).rejects.toThrow(
-      BadRequestException,
-    );
+    await expect(
+      service.create('user-1', {
+        ...validFields,
+        engine: 'oracle',
+      } as unknown as Parameters<ConnectionsService['create']>[1]),
+    ).rejects.toThrow(BadRequestException);
     expect(connection.create).not.toHaveBeenCalled();
   });
 
   it('does not write engine during update', async () => {
     const { service, connection } = createService();
 
-    await service.update('user-1', 'conn-1', { name: 'Renamed', engine: 'mysql' } as any);
+    await service.update('user-1', 'conn-1', {
+      name: 'Renamed',
+      engine: 'mysql',
+    } as unknown as Parameters<ConnectionsService['update']>[2]);
 
     const data = connection.update.mock.calls[0]![0].data;
     expect(data).not.toHaveProperty('engine');
