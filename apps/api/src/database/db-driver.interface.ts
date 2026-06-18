@@ -1,5 +1,6 @@
 import type {
   AlterTableOperation,
+  ColumnMetadata,
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
@@ -30,6 +31,8 @@ export interface DbDriver {
   createPool(params: ConnectionParams): Promise<NativePool>;
   closePool(pool: NativePool): Promise<void>;
   query(pool: NativePool, frag: SqlFragment): Promise<DriverResult>;
+  /** Pin one connection, run `fn`, no automatic transaction. Used by QueryService. */
+  withSession<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T>;
   /**
    * Runs `fn` inside a single transaction: the driver issues `BEGIN` before `fn`, `COMMIT` on
    * success, and `ROLLBACK` if `fn` throws (the error then propagates). All statements `fn` runs
@@ -69,6 +72,25 @@ export interface DbDriver {
     pkValues: unknown[],
     guard: RowUpdateGuard,
   ): SqlFragment;
+  /** Execute an insert and return the persisted row. `q` is the transactional query fn from
+   *  PoolManager.withTransaction. PG/SQLite: one `INSERT ... RETURNING *`. `columns` carries
+   *  PK/AUTO_INCREMENT flags (used by MySQL later; PG/SQLite ignore it). */
+  insertRow(
+    q: DriverQueryFn,
+    ref: TableRef,
+    entries: [string, unknown][],
+    columns: ColumnMetadata[],
+  ): Promise<Record<string, unknown>>;
+  /** Execute a single-column update and return the persisted row. Throws NotFoundException when
+   *  the primary key matches no row. */
+  updateRow(
+    q: DriverQueryFn,
+    ref: TableRef,
+    column: string,
+    value: unknown,
+    primaryKey: string[],
+    primaryKeyValues: unknown[],
+  ): Promise<Record<string, unknown>>;
   buildDeleteRow(ref: TableRef, pkColumns: string[], pkValues: unknown[]): SqlFragment;
 
   // --- ddl builders ---

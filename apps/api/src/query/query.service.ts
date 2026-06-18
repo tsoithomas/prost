@@ -94,7 +94,7 @@ export class QueryService {
 
   /** All statements share one client/session under BEGIN; the first failure rolls back the whole batch and stops. */
   private async executeTransactional(connectionId: string, driver: DbDriver, statementTexts: string[], correlationId: string): Promise<StatementResult[]> {
-    return this.pool.withTransaction(connectionId, async (query) => {
+    return this.pool.withSession(connectionId, async (query) => {
       const results: StatementResult[] = [];
       await query({ sql: 'BEGIN', params: [] });
 

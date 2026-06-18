@@ -51,6 +51,12 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async withSession<T>(connectionId: string, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+    const { driver, pool } = await this.resolve(connectionId);
+    this.poolLastUsed.set(connectionId, Date.now());
+    return driver.withSession(pool, fn);
+  }
+
   async withTransaction<T>(connectionId: string, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
     const { driver, pool } = await this.resolve(connectionId);
     this.poolLastUsed.set(connectionId, Date.now());

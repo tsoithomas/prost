@@ -35,11 +35,11 @@ function createService(run = vi.fn(), tableColumns: ColumnMetadata[] = USERS_COL
   const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);
 
   // `PoolManager.run(connectionId, frag)` — the run mock receives `(connectionId, { sql, params })`.
-  const pool = { run, withTransaction: vi.fn(), driverFor: vi.fn().mockResolvedValue(driver) } as unknown as PoolManager;
+  const pool = { run, withSession: vi.fn(), driverFor: vi.fn().mockResolvedValue(driver) } as unknown as PoolManager;
 
-  // Mirrors `PoolManager.withTransaction`: runs `fn` against a `query` callback that proxies to
+  // Mirrors `PoolManager.withSession`: runs `fn` against a `query` callback that proxies to
   // the same `run` mock, so transactional tests assert on the same call queue as autocommit tests.
-  (pool.withTransaction as ReturnType<typeof vi.fn>).mockImplementation(
+  (pool.withSession as ReturnType<typeof vi.fn>).mockImplementation(
     async (connectionId: string, fn: (query: (frag: SqlFragment) => Promise<DriverResult>) => Promise<unknown>) => {
       const query = (frag: SqlFragment) => run(connectionId, frag);
       return fn(query);
@@ -52,7 +52,7 @@ function createService(run = vi.fn(), tableColumns: ColumnMetadata[] = USERS_COL
   return {
     service: new QueryService(pool, metadataService, historyService),
     run,
-    withTransaction: pool.withTransaction as ReturnType<typeof vi.fn>,
+    withSession: pool.withSession as ReturnType<typeof vi.fn>,
     metadataService,
     record,
   };
@@ -302,11 +302,11 @@ describe('QueryService.execute — transactional', () => {
       .mockResolvedValueOnce(result([], { rowCount: 1, command: 'UPDATE' }))
       .mockResolvedValueOnce(result([], { rowCount: 1, command: 'UPDATE' }))
       .mockResolvedValueOnce(result([], { rowCount: 0, command: 'COMMIT' }));
-    const { service, withTransaction } = createService(run);
+    const { service, withSession } = createService(run);
 
     const response = await service.execute('conn-1', 'UPDATE a SET x = 1; UPDATE b SET y = 1', 'user-1', '', true);
 
-    expect(withTransaction).toHaveBeenCalledOnce();
+    expect(withSession).toHaveBeenCalledOnce();
     expect(response.transactional).toBe(true);
     expect(response.statements).toHaveLength(2);
 

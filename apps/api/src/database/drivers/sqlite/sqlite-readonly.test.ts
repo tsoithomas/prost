@@ -43,7 +43,7 @@ describe('SqliteDriver read-only handle', () => {
 
   it('rejects writes through the read-only handle', async () => {
     await expect(
-      driver.query(ro, driver.buildInsertRow({ name: 't' }, [['id', 2], ['v', 'b']])),
+      driver.withTransaction(ro, (q) => driver.insertRow(q, { name: 't' }, [['id', 2], ['v', 'b']], [])),
     ).rejects.toThrow(/readonly|read-only/i);
   });
 });

@@ -125,20 +125,16 @@ export class GridService {
     }
     this.assertPrimaryKeyMatches(req.primaryKey, primaryKey, schema, table);
 
-    const frag = driver.buildUpdateRow(
-      { namespace: schema, name: table },
-      req.column,
-      req.value,
-      primaryKey,
-      primaryKey.map((c) => req.primaryKey[c]),
+    return this.pool.withTransaction(connectionId, (q) =>
+      driver.updateRow(
+        q,
+        { namespace: schema, name: table },
+        req.column,
+        req.value,
+        primaryKey,
+        primaryKey.map((c) => req.primaryKey[c]),
+      ),
     );
-    const { rows, rowCount } = await this.pool.run(connectionId, frag);
-    if (rowCount !== 1) {
-      throw new NotFoundException(
-        `Row in "${schema}.${table}" no longer exists — it may have been changed or deleted`,
-      );
-    }
-    return rows[0]!;
   }
 
   /**
@@ -246,14 +242,14 @@ export class GridService {
   ): Promise<Record<string, unknown>> {
     assertWritable(connectionId);
     const driver = await this.pool.driverFor(connectionId);
-    const { columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
+    const { columns, columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
     this.assertEditable(primaryKey, schema, table);
 
     const entries = Object.entries(req.values).filter(([column]) => columnNames.has(column));
 
-    const frag = driver.buildInsertRow({ namespace: schema, name: table }, entries);
-    const { rows } = await this.pool.run(connectionId, frag);
-    return rows[0]!;
+    return this.pool.withTransaction(connectionId, (q) =>
+      driver.insertRow(q, { namespace: schema, name: table }, entries, columns),
+    );
   }
 
   /** Deletes a row by primary key, re-validated against live metadata. */

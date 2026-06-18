@@ -1,8 +1,9 @@
-import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Database from 'better-sqlite3';
 import type {
   AlterTableOperation,
+  ColumnMetadata,
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
@@ -89,11 +90,29 @@ export class SqliteDriver implements DbDriver {
     return { rows: [], fields: [], rowCount: Number(info.changes), command };
   }
 
-  async withTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+  async withSession<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
     const db = pool as Db;
     const query: DriverQueryFn = (frag) => this.query(db, frag);
     db.prepare('BEGIN').run();
     try {
+      const result = await fn(query);
+      db.prepare('COMMIT').run();
+      return result;
+    } catch (error) {
+      try {
+        db.prepare('ROLLBACK').run();
+      } catch {
+        /* no active transaction */
+      }
+      throw error;
+    }
+  }
+
+  async withTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+    const db = pool as Db;
+    const query: DriverQueryFn = (frag) => this.query(db, frag);
+    try {
+      db.prepare('BEGIN').run();
       const result = await fn(query);
       db.prepare('COMMIT').run();
       return result;
@@ -145,6 +164,31 @@ export class SqliteDriver implements DbDriver {
   buildUpdateRow = (ref: TableRef, c: string, v: unknown, pk: string[], pv: unknown[]) => sql.sqliteBuildUpdateRow(ref, c, v, pk, pv);
   buildUpdateRowGuarded = (ref: TableRef, e: [string, unknown][], pk: string[], pv: unknown[], g: RowUpdateGuard) =>
     sql.sqliteBuildUpdateRowGuarded(ref, e, pk, pv, g);
+  async insertRow(
+    q: DriverQueryFn,
+    ref: TableRef,
+    entries: [string, unknown][],
+    _columns: ColumnMetadata[],
+  ): Promise<Record<string, unknown>> {
+    const r = await q(sql.sqliteBuildInsertRow(ref, entries));
+    return r.rows[0] as Record<string, unknown>;
+  }
+
+  async updateRow(
+    q: DriverQueryFn,
+    ref: TableRef,
+    column: string,
+    value: unknown,
+    primaryKey: string[],
+    primaryKeyValues: unknown[],
+  ): Promise<Record<string, unknown>> {
+    const r = await q(sql.sqliteBuildUpdateRow(ref, column, value, primaryKey, primaryKeyValues));
+    if (r.rowCount !== 1) {
+      throw new NotFoundException(`Row in "${ref.namespace ?? ''}.${ref.name}" no longer exists — it may have been changed or deleted`);
+    }
+    return r.rows[0] as Record<string, unknown>;
+  }
+
   buildDeleteRow = (ref: TableRef, pk: string[], pv: unknown[]) => sql.sqliteBuildDeleteRow(ref, pk, pv);
   buildCreateTable = (req: CreateTableRequest) => sql.sqliteBuildCreateTable(req);
   buildAlterTable = (ref: TableRef, op: AlterTableOperation) => sql.sqliteBuildAlterTable(ref, op);

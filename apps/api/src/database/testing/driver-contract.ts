@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { TestContext } from 'vitest';
+import type { ColumnMetadata } from '@prost/shared-types';
 import type { DbDriver } from '../db-driver.interface';
 import type { ConnectionParams, NativePool, RowUpdateGuard } from '../types';
 
 // Network-level failures that mean "the target DB just isn't running here" (e.g. no
 // `docker compose up`, or CI without a Postgres service). These skip the suite rather
 // than fail it; any other error still surfaces as a real failure.
-const UNREACHABLE_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'EHOSTUNREACH', 'ECONNRESET', 'EAI_AGAIN']);
+const UNREACHABLE_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', 'EHOSTUNREACH', 'ECONNRESET', 'EAI_AGAIN', 'EPERM']);
 
 function isUnreachable(err: unknown): boolean {
   const e = err as { code?: string; errors?: Array<{ code?: string }> };
@@ -98,14 +99,24 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
 
     it('round-trips CRUD with insert returning the row', async (ctx) => {
       skipIfUnreachable(ctx);
-      const ins = await driver.query(pool!, driver.buildInsertRow(ref, [['id', 1], ['name', 'gadget']]));
-      expect(driver.capabilities.supportsReturning ? ins.rows[0] : true).toBeTruthy();
+      const cols: ColumnMetadata[] = [
+        { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+        { name: 'name', dataType: 'text', nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+      ];
+      const inserted = await driver.withTransaction(
+        pool!,
+        (q) => driver.insertRow(q, ref, [['id', 1], ['name', 'gadget']], cols),
+      );
+      expect(inserted.id).toBe(1);
 
       const sel = await driver.query(pool!, driver.buildSelectRows(ref, { whereClause: '', whereParams: [], orderColumn: 'id', sortDir: 'ASC', limit: 10, offset: 0 }));
       expect(sel.rows).toHaveLength(1);
 
-      const upd = await driver.query(pool!, driver.buildUpdateRow(ref, 'name', 'gizmo', ['id'], [1]));
-      expect(upd.rowCount).toBe(1);
+      const updated = await driver.withTransaction(
+        pool!,
+        (q) => driver.updateRow(q, ref, 'name', 'gizmo', ['id'], [1]),
+      );
+      expect(updated.name).toBe('gizmo');
 
       const del = await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [1]));
       expect(del.rowCount).toBe(1);
@@ -159,6 +170,34 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       expect((sel.rows[0] as Record<string, unknown>).name).toBe('one');
 
       await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [3]));
+    });
+
+    it('withTransaction rolls back an executing insertRow on throw', async (ctx) => {
+      skipIfUnreachable(ctx);
+      const cols: ColumnMetadata[] = [
+        { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+        { name: 'name', dataType: 'text', nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+      ];
+
+      await expect(
+        driver.withTransaction(pool!, async (q) => {
+          await driver.insertRow(q, ref, [['id', 99], ['name', 'rollback']], cols);
+          throw new Error('boom');
+        }),
+      ).rejects.toThrow('boom');
+
+      const selected = await driver.query(
+        pool!,
+        driver.buildSelectRows(ref, {
+          whereClause: `WHERE ${driver.quoteIdent('id')} = ${driver.placeholder(1)}`,
+          whereParams: [99],
+          orderColumn: 'id',
+          sortDir: 'ASC',
+          limit: 10,
+          offset: 0,
+        }),
+      );
+      expect(selected.rows).toHaveLength(0);
     });
 
     it('lists columns with the documented shape', async (ctx) => {

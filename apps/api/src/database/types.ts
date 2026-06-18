@@ -25,6 +25,8 @@ export interface DriverResult<T extends QueryResultRow = QueryResultRow> {
   fields: { name: string; dataTypeID: number; dataTypeName?: string }[];
   rowCount: number | null;
   command: string;
+  /** Connection-scoped generated key (MySQL `insertId`); other engines leave it undefined. */
+  lastInsertId?: string | number;
 }
 
 export interface DbCapabilities {

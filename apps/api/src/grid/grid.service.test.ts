@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, type Mock } from 'vitest';
 import {
   BadRequestException,
   ConflictException,
@@ -10,7 +10,7 @@ import type { ColumnMetadata } from '@prost/shared-types';
 import { GridService } from './grid.service';
 import type { MetadataService } from '../metadata/metadata.service';
 import type { PoolManager } from '../database/pool-manager.service';
-import type { DriverResult } from '../database/types';
+import type { DriverResult, SqlFragment } from '../database/types';
 import { PgDriver } from '../database/drivers/pg/pg-driver';
 
 const COLUMNS: ColumnMetadata[] = [
@@ -26,20 +26,27 @@ function result<T extends Record<string, unknown>>(rows: T[]): DriverResult {
   return { rows: rows as never, fields: [], rowCount: rows.length, command: 'SELECT' };
 }
 
-function createService(run = vi.fn(), columns: ColumnMetadata[] = COLUMNS, q = vi.fn()) {
+function createService(
+  run = vi.fn(),
+  columns: ColumnMetadata[] = COLUMNS,
+  q?: Mock<(frag: SqlFragment) => Promise<DriverResult>>,
+) {
   const metadataService = {
     getTableColumns: vi.fn().mockResolvedValue(columns),
   } as unknown as MetadataService;
 
   const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);
-  const pool = {
-    run,
-    driverFor: vi.fn().mockResolvedValue(driver),
-    // Mirror the driver contract: invoke fn with a query fn, propagating throws (rollback).
-    withTransaction: vi.fn((_id: string, fn: (qf: typeof q) => unknown) => fn(q)),
-  } as unknown as PoolManager;
+  // bulkUpdate (guarded builders) passes an explicit `q` mock and asserts on it; updateCell/insertRow
+  // use the driver's executing methods, whose query fn routes through `run(connectionId, frag)`.
+  const withTransaction = vi.fn(
+    (connectionId: string, fn: (query: (frag: SqlFragment) => Promise<DriverResult>) => unknown) => {
+      const query = q ?? ((frag: SqlFragment) => run(connectionId, frag));
+      return fn(query as (frag: SqlFragment) => Promise<DriverResult>);
+    },
+  );
+  const pool = { run, withTransaction, driverFor: vi.fn().mockResolvedValue(driver) } as unknown as PoolManager;
 
-  return { service: new GridService(pool, metadataService), run, q };
+  return { service: new GridService(pool, metadataService), run, q, withTransaction };
 }
 
 describe('GridService.getRows', () => {
@@ -147,7 +154,7 @@ describe('GridService.getRows', () => {
 describe('GridService.updateCell', () => {
   it('builds a quoted UPDATE ... RETURNING * with value and PK bound as $n params', async () => {
     const run = vi.fn().mockResolvedValueOnce(result([{ id: 1, email: 'new@x.com' }]));
-    const { service } = createService(run);
+    const { service, withTransaction } = createService(run);
 
     const row = await service.updateCell('conn-1', 'public', 'users', {
       primaryKey: { id: 1 },
@@ -157,6 +164,7 @@ describe('GridService.updateCell', () => {
 
     const [connectionId, frag] = run.mock.calls[0]!;
     expect(connectionId).toBe('conn-1');
+    expect(withTransaction).toHaveBeenCalledWith('conn-1', expect.any(Function));
     expect(frag.sql).toBe('UPDATE "public"."users" SET "email" = $1 WHERE "id" = $2 RETURNING *');
     expect(frag.params).toEqual(['new@x.com', 1]);
     expect(row).toEqual({ id: 1, email: 'new@x.com' });
@@ -188,24 +196,25 @@ describe('GridService.updateCell', () => {
 
   it('throws NotFoundException when no row matches the primary key (changed/deleted concurrently)', async () => {
     const run = vi.fn().mockResolvedValueOnce(result([]));
-    const { service } = createService(run);
+    const { service, withTransaction } = createService(run);
 
     await expect(
       service.updateCell('conn-1', 'public', 'users', { primaryKey: { id: 1 }, column: 'email', value: 'x' }),
     ).rejects.toBeInstanceOf(NotFoundException);
+    expect(withTransaction).toHaveBeenCalledWith('conn-1', expect.any(Function));
   });
 });
 
 describe('GridService.bulkUpdate', () => {
   it('runs each row update inside one transaction with a version guard and refreshed __version', async () => {
     const q = vi.fn().mockResolvedValue(result([{ id: 1, email: 'a@x.com', __version: '99' }]));
-    const { service, q: qf } = createService(vi.fn(), COLUMNS, q);
+    const { service } = createService(vi.fn(), COLUMNS, q);
 
     const out = await service.bulkUpdate('conn-1', 'public', 'users', {
       rows: [{ primaryKey: { id: 1 }, edits: [{ column: 'email', value: 'a@x.com' }], version: '42' }],
     });
 
-    const [frag] = qf.mock.calls[0]!;
+    const [frag] = q.mock.calls[0]!;
     expect(frag.sql).toBe(
       'UPDATE "public"."users" SET "email" = $1 WHERE "id" = $2 AND xmin = $3::xid RETURNING *, xmin::text AS "__version"',
     );
@@ -215,13 +224,13 @@ describe('GridService.bulkUpdate', () => {
 
   it('builds a preimage guard from `expected` (one IS NOT DISTINCT FROM per column)', async () => {
     const q = vi.fn().mockResolvedValue(result([{ id: 1, email: 'b@x.com' }]));
-    const { service, q: qf } = createService(vi.fn(), COLUMNS, q);
+    const { service } = createService(vi.fn(), COLUMNS, q);
 
     await service.bulkUpdate('conn-1', 'public', 'users', {
       rows: [{ primaryKey: { id: 1 }, edits: [{ column: 'email', value: 'b@x.com' }], expected: { email: 'a@x.com' } }],
     });
 
-    const [frag] = qf.mock.calls[0]!;
+    const [frag] = q.mock.calls[0]!;
     expect(frag.sql).toBe(
       'UPDATE "public"."users" SET "email" = $1 WHERE "id" = $2 AND "email" IS NOT DISTINCT FROM $3 RETURNING *, xmin::text AS "__version"',
     );
@@ -290,11 +299,12 @@ describe('GridService.bulkUpdate', () => {
 describe('GridService.insertRow', () => {
   it('builds a quoted INSERT ... RETURNING * with values bound as $n params', async () => {
     const run = vi.fn().mockResolvedValueOnce(result([{ id: 2, email: 'new@x.com' }]));
-    const { service } = createService(run);
+    const { service, withTransaction } = createService(run);
 
     const row = await service.insertRow('conn-1', 'public', 'users', { values: { email: 'new@x.com' } });
 
     const [, frag] = run.mock.calls[0]!;
+    expect(withTransaction).toHaveBeenCalledWith('conn-1', expect.any(Function));
     expect(frag.sql).toBe('INSERT INTO "public"."users" ("email") VALUES ($1) RETURNING *');
     expect(frag.params).toEqual(['new@x.com']);
     expect(row).toEqual({ id: 2, email: 'new@x.com' });

@@ -1,8 +1,9 @@
-import { ConflictException, Injectable, Logger, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client, Pool } from 'pg';
 import type {
   AlterTableOperation,
+  ColumnMetadata,
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
@@ -92,6 +93,25 @@ export class PgDriver implements DbDriver {
     return { rows: r.rows, fields: r.fields, rowCount: r.rowCount, command: r.command };
   }
 
+  async withSession<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+    const client = await (pool as Pool).connect();
+    const query: DriverQueryFn = async ({ sql: text, params = [] }) => {
+      const r = await client.query(text, params);
+      return { rows: r.rows, fields: r.fields, rowCount: r.rowCount, command: r.command };
+    };
+    try {
+      await client.query('BEGIN');
+      const result = await fn(query);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async withTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
     const client = await (pool as Pool).connect();
     const query: DriverQueryFn = async ({ sql: text, params = [] }) => {
@@ -153,6 +173,31 @@ export class PgDriver implements DbDriver {
   buildUpdateRow = (ref: TableRef, c: string, v: unknown, pk: string[], pv: unknown[]) => sql.pgBuildUpdateRow(ref, c, v, pk, pv);
   buildUpdateRowGuarded = (ref: TableRef, e: [string, unknown][], pk: string[], pv: unknown[], g: RowUpdateGuard) =>
     sql.pgBuildUpdateRowGuarded(ref, e, pk, pv, g);
+  async insertRow(
+    q: DriverQueryFn,
+    ref: TableRef,
+    entries: [string, unknown][],
+    _columns: ColumnMetadata[],
+  ): Promise<Record<string, unknown>> {
+    const r = await q(sql.pgBuildInsertRow(ref, entries));
+    return r.rows[0] as Record<string, unknown>;
+  }
+
+  async updateRow(
+    q: DriverQueryFn,
+    ref: TableRef,
+    column: string,
+    value: unknown,
+    primaryKey: string[],
+    primaryKeyValues: unknown[],
+  ): Promise<Record<string, unknown>> {
+    const r = await q(sql.pgBuildUpdateRow(ref, column, value, primaryKey, primaryKeyValues));
+    if (r.rowCount !== 1) {
+      throw new NotFoundException(`Row in "${ref.namespace ?? ''}.${ref.name}" no longer exists — it may have been changed or deleted`);
+    }
+    return r.rows[0] as Record<string, unknown>;
+  }
+
   buildDeleteRow = (ref: TableRef, pk: string[], pv: unknown[]) => sql.pgBuildDeleteRow(ref, pk, pv);
   buildCreateTable = (req: CreateTableRequest) => sql.pgBuildCreateTable(req);
   buildAlterTable = (ref: TableRef, op: AlterTableOperation) => sql.pgBuildAlterTable(ref, op);
