@@ -24,13 +24,13 @@ passes **and** it violates none of the architecture principles.
 | [8](./phase-8-create-table.md) | Create table (first DDL write; preview→confirm→execute) | ✅ Complete |
 | [9](./phase-9-edit-schema-indexes.md) | Edit schema & indexes (alter columns, add/drop indexes) | ✅ Complete |
 | [10](./phase-10-ai-chat-rag.md) | AI chat assistant with metadata-grounded RAG | ✅ Complete |
-| [11](./phase-11-reliability-hardening.md) | Reliability & abuse hardening (throttling, pool lifecycle, editability fail-safe) | 📋 Planned |
-| [12](./phase-12-frontend-test-foundation.md) | Frontend test foundation (Vitest + RTL harness) | 📋 Planned |
-| [13](./phase-13-saved-snippets.md) | Saved snippets (Sidebar tab + save-from-editor) | 📋 Planned |
-| [14](./phase-14-row-filtering.md) | Row filtering (per-column `WHERE` builder) | 📋 Planned |
-| [15](./phase-15-multi-query-tabs.md) | Multi-query tabs (workspace-state refactor) | 📋 Planned |
-| [16](./phase-16-multi-statement-explain.md) | Multi-statement scripts, transactions, `EXPLAIN` | 📋 Planned |
-| [17](./phase-17-editor-intellisense.md) | Schema-aware autocomplete + query formatting | 📋 Planned |
+| [11](./phase-11-reliability-hardening.md) | Reliability & abuse hardening (throttling, pool lifecycle, editability fail-safe) | ✅ Complete |
+| [12](./phase-12-frontend-test-foundation.md) | Frontend test foundation (Vitest + RTL harness) | ✅ Complete |
+| [13](./phase-13-saved-snippets.md) | Saved snippets (Sidebar tab + save-from-editor) | ✅ Complete |
+| [14](./phase-14-row-filtering.md) | Row filtering (per-column `WHERE` builder) | ✅ Complete |
+| [15](./phase-15-multi-query-tabs.md) | Multi-query tabs (workspace-state refactor) | ✅ Complete |
+| [16](./phase-16-multi-statement-explain.md) | Multi-statement scripts, transactions, `EXPLAIN` | ✅ Complete |
+| [17](./phase-17-editor-intellisense.md) | Schema-aware autocomplete + query formatting | ✅ Complete |
 | [18](./phase-18-grid-editing-depth.md) | Grid editing depth (type-aware editors, bulk edits, undo/redo, pin/group) | 📋 Planned |
 | [19](./phase-19-history-management.md) | Query history management (edit/star/delete, search, export) | 📋 Planned |
 | [20](./phase-20-global-search.md) | Global search (command-palette overlay) | 📋 Planned |
@@ -40,8 +40,8 @@ passes **and** it violates none of the architecture principles.
 Phases 0–5 are the **MVP** (complete). Phases 6–10 are the **first post-MVP wave** drawn from
 [`../future-features.md`](../future-features.md) (all complete). Phases 11–22 are the **second
 post-MVP wave** — two "strengthening" phases (11, 12) that harden already-built features, then the
-remaining backlog (13–22). Their sequencing, dependencies, and rationale live in
-[`roadmap-phase-11-22.md`](./roadmap-phase-11-22.md).
+remaining backlog (13–22). Phases 11–17 are complete; **18–22 remain**. Their sequencing,
+dependencies, and rationale live in [`roadmap-phase-11-22.md`](./roadmap-phase-11-22.md).
 
 ## Sequencing notes
 
