@@ -3,11 +3,13 @@ import { X } from 'lucide-react';
 import { quoteIdent } from '@prost/utils';
 import type { ColumnMetadata } from '@prost/shared-types';
 import { Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
+import { useEngineDescriptor } from '../api/databaseEngines';
 import { useAlterTable } from '../api/ddl';
+import { useDdlPreview } from '../api/ddlPreview';
 import { useConfirm } from '../hooks/useConfirm';
 import { apiErrorDetail } from '../lib/apiClient';
 
-const ALLOWED_TYPES = [
+const FALLBACK_PG_TYPES = [
   'integer', 'bigint', 'smallint', 'serial', 'bigserial',
   'boolean', 'text', 'varchar', 'varchar(255)', 'varchar(64)',
   'char(1)', 'real', 'double precision', 'numeric', 'numeric(10,2)',
@@ -34,8 +36,25 @@ export function EditColumnModal({ open, onClose, col, connectionId, schema, tabl
   const [defaultError, setDefaultError] = useState<string | null>(null);
   const [dropError, setDropError] = useState<string | null>(null);
 
+  const descriptor = useEngineDescriptor(connectionId);
   const alter = useAlterTable(connectionId, schema, table);
   const { confirm, dialog } = useConfirm();
+  const columnTypes = descriptor?.ddl.columnTypes ?? FALLBACK_PG_TYPES;
+  const supportsUsingExpression = descriptor?.ddl.supportsUsingExpression ?? true;
+  const previewBody = col && newType
+    ? {
+        kind: 'alterTable',
+        request: {
+          kind: 'changeType',
+          schema,
+          table,
+          columnName: col.name,
+          type: newType,
+          using: supportsUsingExpression && usingExpr.trim() ? usingExpr.trim() : undefined,
+        },
+      }
+    : null;
+  const { sql: previewSql } = useDdlPreview(connectionId, previewBody);
 
   useEffect(() => {
     if (open && col) {
@@ -62,13 +81,6 @@ export function EditColumnModal({ open, onClose, col, connectionId, schema, tabl
   const tableRef = `${q(schema)}.${q(table)}`;
   const colRef = q(c.name);
 
-  function typePreview() {
-    if (!newType) return '';
-    let sql = `ALTER TABLE ${tableRef} ALTER COLUMN ${colRef} TYPE ${newType}`;
-    if (usingExpr.trim()) sql += ` USING ${usingExpr.trim()}`;
-    return sql;
-  }
-
   function nullPreview() {
     return `ALTER TABLE ${tableRef} ALTER COLUMN ${colRef} ${nullable ? 'DROP' : 'SET'} NOT NULL`;
   }
@@ -81,7 +93,12 @@ export function EditColumnModal({ open, onClose, col, connectionId, schema, tabl
   function applyType() {
     setTypeError(null);
     alter.mutate(
-      { kind: 'changeType', columnName: c.name, type: newType, using: usingExpr.trim() || undefined },
+      {
+        kind: 'changeType',
+        columnName: c.name,
+        type: newType,
+        using: supportsUsingExpression && usingExpr.trim() ? usingExpr.trim() : undefined,
+      },
       {
         onSuccess: () => onClose(),
         onError: (err) => setTypeError(apiErrorDetail(err, 'Failed to change type.')),
@@ -166,20 +183,24 @@ export function EditColumnModal({ open, onClose, col, connectionId, schema, tabl
                     onChange={(e) => setNewType(e.target.value)}
                     className="h-9 w-full rounded-sm border border-border bg-surface px-sm text-xs font-mono text-text focus:border-accent focus:outline-none"
                   >
-                    {ALLOWED_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    {columnTypes.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <Button variant="secondary" size="sm" onClick={applyType} disabled={alter.isPending}>Change type</Button>
               </div>
-              <div>
-                <Input
-                  value={usingExpr}
-                  onChange={(e) => setUsingExpr(e.target.value)}
-                  placeholder="USING expr — e.g. col_name::integer (optional)"
-                  className="font-mono text-xs"
-                />
-              </div>
-              <pre className="overflow-x-auto rounded-sm border border-border bg-surface-sunken p-sm font-mono text-xs text-text-faint">{typePreview()}</pre>
+              {supportsUsingExpression ? (
+                <div>
+                  <Input
+                    value={usingExpr}
+                    onChange={(e) => setUsingExpr(e.target.value)}
+                    placeholder="USING expr — e.g. col_name::integer (optional)"
+                    className="font-mono text-xs"
+                  />
+                </div>
+              ) : null}
+              {previewSql ? (
+                <pre className="overflow-x-auto rounded-sm border border-border bg-surface-sunken p-sm font-mono text-xs text-text-faint">{previewSql}</pre>
+              ) : null}
               {typeError ? <p className="text-xs text-danger" role="alert">{typeError}</p> : null}
             </div>
 

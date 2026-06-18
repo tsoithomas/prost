@@ -17,6 +17,10 @@ export class NewColumnDto implements NewColumn {
   @IsBoolean()
   isPrimaryKey!: boolean;
 
+  @IsBoolean()
+  @IsOptional()
+  autoIncrement?: boolean;
+
   @IsString()
   @IsOptional()
   default?: string;

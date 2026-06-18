@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { quoteIdent } from '@prost/utils';
 import { Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
+import { useEngineDescriptor } from '../api/databaseEngines';
 import { useAlterTable } from '../api/ddl';
+import { useDdlPreview } from '../api/ddlPreview';
 import { FormField } from '../components/FormField';
 import { apiErrorDetail } from '../lib/apiClient';
 
-const ALLOWED_TYPES = [
+const FALLBACK_PG_TYPES = [
   'integer', 'bigint', 'smallint', 'serial', 'bigserial',
   'boolean', 'text', 'varchar', 'varchar(255)', 'varchar(64)',
   'char(1)', 'real', 'double precision', 'numeric', 'numeric(10,2)',
@@ -27,15 +28,38 @@ export function AddColumnModal({ open, onClose, connectionId, schema, table }: P
   const [type, setType] = useState('text');
   const [nullable, setNullable] = useState(true);
   const [isPrimaryKey, setIsPrimaryKey] = useState(false);
+  const [autoIncrement, setAutoIncrement] = useState(false);
   const [defaultVal, setDefaultVal] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
+  const descriptor = useEngineDescriptor(connectionId);
   const alter = useAlterTable(connectionId, schema, table);
+  const columnTypes = descriptor?.ddl.columnTypes ?? FALLBACK_PG_TYPES;
+  const effectiveNullable = isPrimaryKey ? false : nullable;
+  const previewBody = name.trim() && type
+    ? {
+        kind: 'alterTable',
+        request: {
+          kind: 'addColumn',
+          schema,
+          table,
+          column: {
+            name: name.trim(),
+            type,
+            nullable: effectiveNullable,
+            isPrimaryKey,
+            autoIncrement,
+            default: defaultVal.trim() || undefined,
+          },
+        },
+      }
+    : null;
+  const { sql: previewSql } = useDdlPreview(connectionId, previewBody);
 
   useEffect(() => {
     if (!open) {
       setName(''); setType('text'); setNullable(true); setIsPrimaryKey(false);
-      setDefaultVal(''); setFormError(null); alter.reset();
+      setAutoIncrement(false); setDefaultVal(''); setFormError(null); alter.reset();
     }
   }, [open]);
 
@@ -48,17 +72,6 @@ export function AddColumnModal({ open, onClose, connectionId, schema, table }: P
 
   if (!open) return null;
 
-  const effectiveNullable = isPrimaryKey ? false : nullable;
-
-  function previewSql() {
-    if (!name.trim()) return '';
-    let def = `  ${quoteIdent(name.trim())} ${type}`;
-    if (isPrimaryKey) { def += ' PRIMARY KEY'; }
-    else if (!effectiveNullable) { def += ' NOT NULL'; }
-    if (defaultVal.trim()) def += ` DEFAULT ${defaultVal.trim()}`;
-    return `ALTER TABLE ${quoteIdent(schema)}.${quoteIdent(table)} ADD COLUMN ${def}`;
-  }
-
   function handleSubmit() {
     if (!name.trim()) { setFormError('Column name is required.'); return; }
     setFormError(null);
@@ -70,6 +83,7 @@ export function AddColumnModal({ open, onClose, connectionId, schema, table }: P
           type,
           nullable: effectiveNullable,
           isPrimaryKey,
+          autoIncrement,
           default: defaultVal.trim() || undefined,
         },
       },
@@ -79,8 +93,6 @@ export function AddColumnModal({ open, onClose, connectionId, schema, table }: P
       },
     );
   }
-
-  const preview = previewSql();
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-md md:items-center">
@@ -105,7 +117,7 @@ export function AddColumnModal({ open, onClose, connectionId, schema, table }: P
                 onChange={(e) => setType(e.target.value)}
                 className="h-9 w-full rounded-sm border border-border bg-surface px-sm text-xs font-mono text-text focus:border-accent focus:outline-none"
               >
-                {ALLOWED_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                {columnTypes.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </FormField>
           </div>
@@ -119,16 +131,26 @@ export function AddColumnModal({ open, onClose, connectionId, schema, table }: P
               <Checkbox checked={effectiveNullable} disabled={isPrimaryKey} onChange={(e) => setNullable(e.target.checked)} aria-label="Nullable" />
               Nullable
             </label>
+            {descriptor?.ddl.supportsAutoIncrement ? (
+              <label className="flex items-center gap-sm text-sm text-text">
+                <Checkbox
+                  checked={autoIncrement}
+                  onChange={(e) => setAutoIncrement(e.target.checked)}
+                  aria-label="Auto-increment"
+                />
+                Auto-increment
+              </label>
+            ) : null}
           </div>
 
           <FormField label="Default (optional)">
             <Input value={defaultVal} onChange={(e) => setDefaultVal(e.target.value)} placeholder="now(), 0, true…" className="font-mono text-xs" />
           </FormField>
 
-          {preview ? (
+          {previewSql ? (
             <div>
               <span className="mb-xs block text-xs font-medium uppercase tracking-wider text-text-faint">SQL Preview</span>
-              <pre className="overflow-x-auto rounded-sm border border-border bg-surface-sunken p-md font-mono text-xs text-text">{preview}</pre>
+              <pre className="overflow-x-auto rounded-sm border border-border bg-surface-sunken p-md font-mono text-xs text-text">{previewSql}</pre>
             </div>
           ) : null}
 

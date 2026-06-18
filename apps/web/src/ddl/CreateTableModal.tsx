@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import { quoteIdent } from '@prost/utils';
 import { Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
+import { useEngineDescriptor } from '../api/databaseEngines';
 import { useCreateTable } from '../api/ddl';
+import { useDdlPreview } from '../api/ddlPreview';
 import { FormField } from '../components/FormField';
 import { apiErrorDetail } from '../lib/apiClient';
 
-const ALLOWED_TYPES = [
+const FALLBACK_PG_TYPES = [
   'integer', 'bigint', 'smallint', 'serial', 'bigserial',
   'boolean', 'text', 'varchar', 'varchar(255)', 'varchar(64)',
   'char(1)', 'real', 'double precision', 'numeric', 'numeric(10,2)',
@@ -20,27 +21,20 @@ interface ColumnRow {
   type: string;
   nullable: boolean;
   isPrimaryKey: boolean;
+  autoIncrement: boolean;
   default: string;
 }
 
 function newRow(): ColumnRow {
-  return { id: crypto.randomUUID(), name: '', type: 'text', nullable: true, isPrimaryKey: false, default: '' };
-}
-
-function buildPreviewSql(schema: string, table: string, columns: ColumnRow[]): string {
-  if (!schema || !table || columns.length === 0) return '';
-  const pkCols = columns.filter((c) => c.isPrimaryKey).map((c) => c.name).filter(Boolean);
-  const colDefs = columns
-    .filter((c) => c.name)
-    .map((col) => {
-      let def = `  ${quoteIdent(col.name)} ${col.type}`;
-      if (!col.nullable) def += ' NOT NULL';
-      if (col.default.trim()) def += ` DEFAULT ${col.default.trim()}`;
-      return def;
-    });
-  if (pkCols.length > 0) colDefs.push(`  PRIMARY KEY (${pkCols.map(quoteIdent).join(', ')})`);
-  if (colDefs.length === 0) return '';
-  return `CREATE TABLE ${quoteIdent(schema)}.${quoteIdent(table)} (\n${colDefs.join(',\n')}\n)`;
+  return {
+    id: crypto.randomUUID(),
+    name: '',
+    type: 'text',
+    nullable: true,
+    isPrimaryKey: false,
+    autoIncrement: false,
+    default: '',
+  };
 }
 
 export interface CreateTableModalProps {
@@ -65,7 +59,30 @@ export function CreateTableModal({
   const [columns, setColumns] = useState<ColumnRow[]>([newRow()]);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const descriptor = useEngineDescriptor(connectionId);
   const createTable = useCreateTable(connectionId);
+  const columnTypes = descriptor?.ddl.columnTypes ?? FALLBACK_PG_TYPES;
+  const namedColumns = columns.filter((column) => column.name.trim());
+  const names = namedColumns.map((column) => column.name.trim());
+  const hasDuplicateNames = names.some((name, index) => names.indexOf(name) !== index);
+  const previewBody = tableName.trim() && namedColumns.length > 0 && !hasDuplicateNames
+    ? {
+        kind: 'createTable',
+        request: {
+          schema,
+          table: tableName.trim(),
+          columns: namedColumns.map((column) => ({
+            name: column.name.trim(),
+            type: column.type,
+            nullable: column.nullable,
+            isPrimaryKey: column.isPrimaryKey,
+            autoIncrement: column.autoIncrement,
+            default: column.default.trim() || undefined,
+          })),
+        },
+      }
+    : null;
+  const { sql: previewSql } = useDdlPreview(connectionId, previewBody);
 
   useEffect(() => {
     if (!open) {
@@ -140,6 +157,7 @@ export function CreateTableModal({
             type: c.type,
             nullable: c.nullable,
             isPrimaryKey: c.isPrimaryKey,
+            autoIncrement: c.autoIncrement,
             default: c.default.trim() || undefined,
           })),
       },
@@ -152,8 +170,6 @@ export function CreateTableModal({
       },
     );
   }
-
-  const previewSql = buildPreviewSql(schema, tableName, columns);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-md md:items-center">
@@ -206,8 +222,8 @@ export function CreateTableModal({
             </div>
 
             {/* Desktop column header */}
-            <div className="hidden md:grid md:grid-cols-[1fr_1fr_auto_auto_1fr_auto] md:gap-x-sm md:mb-xs md:px-sm">
-              {['Name', 'Type', 'PK', 'Null', 'Default', ''].map((h) => (
+            <div className={`hidden md:grid ${descriptor?.ddl.supportsAutoIncrement ? 'md:grid-cols-[1fr_1fr_auto_auto_auto_1fr_auto]' : 'md:grid-cols-[1fr_1fr_auto_auto_1fr_auto]'} md:gap-x-sm md:mb-xs md:px-sm`}>
+              {['Name', 'Type', 'PK', 'Null', ...(descriptor?.ddl.supportsAutoIncrement ? ['Auto'] : []), 'Default', ''].map((h) => (
                 <span key={h} className="text-xs font-medium text-text-faint">{h}</span>
               ))}
             </div>
@@ -216,7 +232,7 @@ export function CreateTableModal({
               {columns.map((col) => (
                 <div
                   key={col.id}
-                  className="rounded-sm border border-border p-sm md:border-0 md:p-0 md:grid md:grid-cols-[1fr_1fr_auto_auto_1fr_auto] md:items-center md:gap-x-sm"
+                  className={`rounded-sm border border-border p-sm md:border-0 md:p-0 md:grid ${descriptor?.ddl.supportsAutoIncrement ? 'md:grid-cols-[1fr_1fr_auto_auto_auto_1fr_auto]' : 'md:grid-cols-[1fr_1fr_auto_auto_1fr_auto]'} md:items-center md:gap-x-sm`}
                 >
                   {/* Name */}
                   <div className="mb-xs md:mb-0">
@@ -237,7 +253,7 @@ export function CreateTableModal({
                       onChange={(e) => updateColumn(col.id, { type: e.target.value })}
                       className="h-9 w-full rounded-sm border border-border bg-surface px-sm text-xs font-mono text-text focus:border-accent focus:outline-none"
                     >
-                      {ALLOWED_TYPES.map((t) => (
+                      {columnTypes.map((t) => (
                         <option key={t} value={t}>{t}</option>
                       ))}
                     </select>
@@ -264,6 +280,17 @@ export function CreateTableModal({
                     />
                   </div>
 
+                  {descriptor?.ddl.supportsAutoIncrement ? (
+                    <div className="flex items-center gap-xs mb-xs md:mb-0 md:justify-center">
+                      <span className="text-xs text-text-faint md:hidden">Auto-increment</span>
+                      <Checkbox
+                        checked={col.autoIncrement}
+                        onChange={(e) => updateColumn(col.id, { autoIncrement: e.target.checked })}
+                        aria-label="Auto-increment"
+                      />
+                    </div>
+                  ) : null}
+
                   {/* Default */}
                   <div className="mb-xs md:mb-0">
                     <span className="block text-xs text-text-faint md:hidden">Default</span>
@@ -288,10 +315,12 @@ export function CreateTableModal({
               ))}
             </div>
             <p className="mt-xs text-xs text-text-faint">
-              Allowed defaults: <span className="font-mono">now()</span>,{' '}
-              <span className="font-mono">gen_random_uuid()</span>,{' '}
-              <span className="font-mono">true</span> / <span className="font-mono">false</span>,{' '}
-              <span className="font-mono">null</span>, integers
+              Allowed defaults:{' '}
+              <span className="font-mono">
+                {descriptor?.ddl.defaultExamples.length
+                  ? descriptor.ddl.defaultExamples.join(', ')
+                  : 'now(), gen_random_uuid(), true / false, null, integers'}
+              </span>
             </p>
           </div>
 
