@@ -323,7 +323,7 @@ export class MysqlDriver implements DbDriver {
     const hasOneMissingAutoIncrementKey =
       missing.length === 1 && missing[0] === autoIncrementPrimaryKey;
 
-    if (entries.length === 0 || (!hasCompletePrimaryKey && !hasOneMissingAutoIncrementKey)) {
+    if (!hasCompletePrimaryKey && !hasOneMissingAutoIncrementKey) {
       throw new UnprocessableEntityException(
         'MySQL inserts require a complete primary key or exactly one missing AUTO_INCREMENT primary-key component',
       );

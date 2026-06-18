@@ -227,6 +227,42 @@ describe('MysqlDriver insertRow', () => {
     expect(q.mock.calls[1]![0].params).toEqual([7, 42]);
   });
 
+  it('allows a default-only insert for a lone AUTO_INCREMENT primary key', async () => {
+    const q = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [],
+        fields: [],
+        rowCount: 1,
+        command: 'INSERT',
+        lastInsertId: 42,
+      })
+      .mockResolvedValueOnce({
+        rows: [{ id: 42 }],
+        fields: [],
+        rowCount: 1,
+        command: 'SELECT',
+      });
+    const driver = createDriver();
+
+    await expect(
+      driver.insertRow(
+        q as DriverQueryFn,
+        ref,
+        [],
+        [column('id', { isPrimaryKey: true, autoIncrement: true })],
+      ),
+    ).resolves.toEqual({ id: 42 });
+    expect(q.mock.calls[0]![0]).toEqual({
+      sql: 'INSERT INTO `app`.`users` () VALUES ()',
+      params: [],
+    });
+    expect(q.mock.calls[1]![0]).toEqual({
+      sql: 'SELECT * FROM `app`.`users` WHERE `id` = ?',
+      params: [42],
+    });
+  });
+
   it.each([
     {
       name: 'no primary key',
@@ -247,9 +283,12 @@ describe('MysqlDriver insertRow', () => {
       columns: [column('id', { isPrimaryKey: true })],
     },
     {
-      name: 'a default-only insert',
+      name: 'a default-only insert without a lone AUTO_INCREMENT primary key',
       entries: [] as [string, unknown][],
-      columns: [column('id', { isPrimaryKey: true, autoIncrement: true })],
+      columns: [
+        column('tenant_id', { isPrimaryKey: true }),
+        column('id', { isPrimaryKey: true, autoIncrement: true }),
+      ],
     },
   ])('rejects $name before executing INSERT', async ({ entries, columns }) => {
     const q = vi.fn();

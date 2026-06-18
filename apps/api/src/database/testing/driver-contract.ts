@@ -172,6 +172,27 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [3]));
     });
 
+    it('updateRow returning the row when set to its current value', async (ctx) => {
+      skipIfUnreachable(ctx);
+      const cols: ColumnMetadata[] = [
+        { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+        { name: 'name', dataType: 'text', nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+      ];
+      const id = 2;
+      const name = 'unchanged';
+
+      await driver.withTransaction(
+        pool!,
+        (q) => driver.insertRow(q, ref, [['id', id], ['name', name]], cols),
+      );
+      const updated = await driver.withTransaction(
+        pool!,
+        (q) => driver.updateRow(q, ref, 'name', name, ['id'], [id]),
+      );
+
+      expect(updated.name).toBe(name);
+    });
+
     it('withTransaction rolls back an executing insertRow on throw', async (ctx) => {
       skipIfUnreachable(ctx);
       const cols: ColumnMetadata[] = [
