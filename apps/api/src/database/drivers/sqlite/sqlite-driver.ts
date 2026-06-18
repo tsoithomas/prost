@@ -190,11 +190,34 @@ export class SqliteDriver implements DbDriver {
   }
 
   buildDeleteRow = (ref: TableRef, pk: string[], pv: unknown[]) => sql.sqliteBuildDeleteRow(ref, pk, pv);
+  normalizeCreateTable = (req: CreateTableRequest) => sql.sqliteNormalizeCreateTable(req, this.descriptor.ddl.columnTypes);
+  normalizeAlterTable = (ref: TableRef, op: AlterTableOperation, columns: ColumnMetadata[]) =>
+    sql.sqliteNormalizeAlterTable(ref, op, columns, this.descriptor.ddl.columnTypes);
+  normalizeCreateIndex = (req: CreateIndexRequest) => sql.sqliteNormalizeCreateIndex(req);
   buildCreateTable = (req: CreateTableRequest) => sql.sqliteBuildCreateTable(req);
   buildAlterTable = (ref: TableRef, op: AlterTableOperation) => sql.sqliteBuildAlterTable(ref, op);
   buildCreateIndex = (req: CreateIndexRequest, name: string, method: string) => sql.sqliteBuildCreateIndex(req, name, method);
   buildDropIndex = (ref: TableRef, indexName: string) => sql.sqliteBuildDropIndex(ref, indexName);
-  buildResolveTypeNames = (oids: number[]) => sql.sqliteBuildResolveTypeNames(oids);
+
+  async describeResultColumns(
+    _query: DriverQueryFn,
+    fields: { name: string; dataTypeID: number; dataTypeName?: string }[],
+    primaryKey: string[] = [],
+  ): Promise<ColumnMetadata[]> {
+    const primaryKeySet = new Set(primaryKey);
+    return fields.map((field) => ({
+      name: field.name,
+      dataType: field.dataTypeName ?? 'unknown',
+      nullable: true,
+      isPrimaryKey: primaryKeySet.has(field.name),
+      autoIncrement: false,
+      defaultValue: null,
+    }));
+  }
+
+  formatExplain(rows: Record<string, unknown>[]): string {
+    return rows.map((row) => String(row['QUERY PLAN'] ?? row.detail ?? '')).join('\n');
+  }
 
   mapError(error: unknown, ctx: DriverErrorContext): void {
     const message = (error as { message?: string } | undefined)?.message ?? '';

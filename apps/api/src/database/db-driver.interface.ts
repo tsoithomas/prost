@@ -94,13 +94,23 @@ export interface DbDriver {
   buildDeleteRow(ref: TableRef, pkColumns: string[], pkValues: unknown[]): SqlFragment;
 
   // --- ddl builders ---
+  normalizeCreateTable(req: CreateTableRequest): CreateTableRequest;
+  normalizeAlterTable(ref: TableRef, operation: AlterTableOperation, columns: ColumnMetadata[]): AlterTableOperation;
+  normalizeCreateIndex(req: CreateIndexRequest): { request: CreateIndexRequest; name: string; method: string };
   buildCreateTable(req: CreateTableRequest): SqlFragment;
   buildAlterTable(ref: TableRef, op: AlterTableOperation): SqlFragment;
   buildCreateIndex(req: CreateIndexRequest, name: string, method: string): SqlFragment;
   buildDropIndex(ref: TableRef, indexName: string): SqlFragment;
 
   // --- query-editor support ---
-  buildResolveTypeNames(oids: number[]): SqlFragment;
+  /** Resolve result-column types into ColumnMetadata. PG runs a pg_type OID lookup through
+   *  `query`; SQLite returns declared types from field metadata. Async because PG hits the DB. */
+  describeResultColumns(
+    query: DriverQueryFn,
+    fields: { name: string; dataTypeID: number; dataTypeName?: string }[],
+    primaryKey?: string[],
+  ): Promise<ColumnMetadata[]>;
+  formatExplain(rows: Record<string, unknown>[]): string;
 
   /** Inspect a native error; throw the right Nest HTTP exception, or return to let the caller rethrow. */
   mapError(error: unknown, context: DriverErrorContext): void;

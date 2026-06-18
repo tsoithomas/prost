@@ -1,6 +1,141 @@
+import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
 import { quoteIdent } from '@prost/utils';
-import type { AlterTableOperation, CreateIndexRequest, CreateTableRequest } from '@prost/shared-types';
+import type {
+  AlterTableOperation,
+  ColumnMetadata,
+  CreateIndexRequest,
+  CreateTableRequest,
+  NewColumn,
+} from '@prost/shared-types';
 import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
+
+const SAFE_DEFAULT_PATTERN = /^(\d+|true|false|null|now\(\)|current_timestamp|gen_random_uuid\(\))$/i;
+
+function validateType(type: string, columnTypes: string[]): string {
+  const canonical = columnTypes.find((candidate) => candidate.toLowerCase() === type.trim().toLowerCase());
+  if (!canonical) {
+    throw new UnprocessableEntityException(
+      `Unsupported column type "${type}". Allowed types: ${columnTypes.join(', ')}`,
+    );
+  }
+  return canonical;
+}
+
+function validateDefault(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+  if (!SAFE_DEFAULT_PATTERN.test(trimmed)) {
+    throw new UnprocessableEntityException(
+      `Unsupported default value "${value}". Allowed: now(), current_timestamp, gen_random_uuid(), true, false, null, or a non-negative integer`,
+    );
+  }
+  return trimmed;
+}
+
+function normalizeColumn(col: NewColumn, columnTypes: string[]): NewColumn {
+  const type = validateType(col.type, columnTypes);
+  const canonicalDefault = validateDefault(col.default);
+  return {
+    name: col.name,
+    type,
+    nullable: col.nullable,
+    isPrimaryKey: col.isPrimaryKey,
+    ...(canonicalDefault !== null ? { default: canonicalDefault } : {}),
+  };
+}
+
+export function sqliteNormalizeCreateTable(
+  req: CreateTableRequest,
+  columnTypes: string[],
+): CreateTableRequest {
+  return {
+    schema: req.schema,
+    table: req.table,
+    columns: req.columns.map((column) => normalizeColumn(column, columnTypes)),
+  };
+}
+
+export function sqliteNormalizeAlterTable(
+  _ref: TableRef,
+  op: AlterTableOperation,
+  columns: ColumnMetadata[],
+  columnTypes: string[],
+): AlterTableOperation {
+  const colNames = new Set(columns.map((column) => column.name));
+
+  switch (op.kind) {
+    case 'addColumn': {
+      if (colNames.has(op.column.name)) {
+        throw new ConflictException(`Column "${op.column.name}" already exists`);
+      }
+      const type = validateType(op.column.type, columnTypes);
+      const canonDefault = validateDefault(op.column.default);
+      const nullable = op.column.isPrimaryKey ? false : op.column.nullable;
+      return {
+        kind: 'addColumn',
+        column: {
+          ...op.column,
+          type,
+          nullable,
+          ...(canonDefault !== null ? { default: canonDefault } : { default: undefined }),
+        },
+      };
+    }
+    case 'dropColumn': {
+      if (!colNames.has(op.column)) {
+        throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+      }
+      const col = columns.find((column) => column.name === op.column)!;
+      if (col.isPrimaryKey) {
+        throw new UnprocessableEntityException(`Cannot drop primary key column "${op.column}"`);
+      }
+      return op;
+    }
+    case 'setNotNull':
+      if (!colNames.has(op.column)) {
+        throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+      }
+      return op;
+    case 'setDefault': {
+      if (!colNames.has(op.column)) {
+        throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+      }
+      let canonDefault: string | null = null;
+      if (op.default !== null) {
+        canonDefault = validateDefault(op.default);
+        if (canonDefault === null) {
+          throw new UnprocessableEntityException('Default value cannot be empty; pass null to drop the default');
+        }
+      }
+      return { ...op, default: canonDefault };
+    }
+    case 'changeType':
+      if (!colNames.has(op.column)) {
+        throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+      }
+      return { ...op, type: validateType(op.type, columnTypes) };
+    default:
+      throw new UnprocessableEntityException('Unknown operation kind');
+  }
+}
+
+export function sqliteNormalizeCreateIndex(
+  req: CreateIndexRequest,
+): { request: CreateIndexRequest; name: string; method: string } {
+  const method = (req.method ?? 'btree').toLowerCase();
+  if (method !== 'btree') {
+    throw new UnprocessableEntityException(`Unsupported index method "${req.method}". Allowed: btree`);
+  }
+
+  let name = req.name;
+  if (!name) {
+    const raw = `${req.table}_${req.columns.join('_')}_idx`;
+    name = raw.length > 63 ? raw.slice(0, 59) + '_idx' : raw;
+  }
+
+  return { request: req, name, method };
+}
 
 /** SQLite accepts double-quoted identifiers, with embedded quotes doubled — same as PG. */
 export const sqliteQuoteIdent = quoteIdent;
@@ -28,6 +163,10 @@ export function sqliteBuildListAllColumns(): SqlFragment {
     sql: `SELECT 'main' AS table_schema, m.name AS table_name, ti.name AS column_name,
            ti.type AS data_type,
            CASE WHEN ti."notnull" = 0 THEN 'YES' ELSE 'NO' END AS is_nullable,
+           ti.dflt_value AS default_value,
+           CASE WHEN ti.pk = 1 AND UPPER(ti.type) = 'INTEGER'
+             AND (SELECT COUNT(*) FROM pragma_table_info(m.name) WHERE pk > 0) = 1
+             THEN 1 ELSE 0 END AS is_auto_increment,
            CASE WHEN ti.pk > 0 THEN 1 ELSE 0 END AS is_primary_key
          FROM sqlite_master m
          JOIN pragma_table_info(m.name) ti
@@ -41,10 +180,14 @@ export function sqliteBuildListColumns(ref: TableRef): SqlFragment {
   return {
     sql: `SELECT name AS column_name, type AS data_type,
            CASE WHEN "notnull" = 0 THEN 'YES' ELSE 'NO' END AS is_nullable,
+           dflt_value AS default_value,
+           CASE WHEN pk = 1 AND UPPER(type) = 'INTEGER'
+             AND (SELECT COUNT(*) FROM pragma_table_info(?) WHERE pk > 0) = 1
+             THEN 1 ELSE 0 END AS is_auto_increment,
            CASE WHEN pk > 0 THEN 1 ELSE 0 END AS is_primary_key
          FROM pragma_table_info(?)
          ORDER BY cid`,
-    params: [ref.name],
+    params: [ref.name, ref.name],
   };
 }
 
@@ -184,14 +327,6 @@ export function sqliteBuildDropIndex(ref: TableRef, indexName: string): SqlFragm
     ? `${sqliteQuoteIdent(ref.namespace)}.${sqliteQuoteIdent(indexName)}`
     : sqliteQuoteIdent(indexName);
   return { sql: `DROP INDEX ${qualified}`, params: [] };
-}
-
-/**
- * SQLite carries column type names on the prepared-statement metadata, so the query layer never
- * needs a catalog round-trip. This is a no-op query (returns no rows) to satisfy the interface.
- */
-export function sqliteBuildResolveTypeNames(_oids: number[]): SqlFragment {
-  return { sql: "SELECT 0 AS oid, '' AS typname WHERE 0 = 1", params: [] };
 }
 
 export { qualify as sqliteQualify };

@@ -207,6 +207,8 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       expect(row).toHaveProperty('column_name');
       expect(row).toHaveProperty('is_nullable');
       expect(row).toHaveProperty('is_primary_key');
+      expect(row).toHaveProperty('default_value');
+      expect(row).toHaveProperty('is_auto_increment');
     });
 
     it('lists indexes with a columns array', async (ctx) => {

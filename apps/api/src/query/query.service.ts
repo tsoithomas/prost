@@ -121,7 +121,7 @@ export class QueryService {
     run: RunFn,
   ): Promise<StatementResult> {
     const explainMatch = EXPLAIN_RE.exec(statementText);
-    if (explainMatch) return this.executePlan(statementText, explainMatch, run);
+    if (explainMatch) return this.executePlan(driver, statementText, explainMatch, run);
 
     const ast = this.tryAstifyOne(driver, statementText);
     const isSelect = ast?.type === 'select';
@@ -205,13 +205,13 @@ export class QueryService {
   }
 
   /** Covers both `EXPLAIN ANALYZE ...` and `EXPLAIN (ANALYZE, ...) ...`. Runs the statement exactly as written — no FORMAT JSON rewrite. */
-  private async executePlan(statementText: string, explainMatch: RegExpExecArray, run: RunFn): Promise<StatementResult> {
+  private async executePlan(driver: DbDriver, statementText: string, explainMatch: RegExpExecArray, run: RunFn): Promise<StatementResult> {
     const optionsList = explainMatch[2] ?? '';
     const analyze = /^\s*explain\s+analyze\b/i.test(statementText) || /\banalyze\b/i.test(optionsList);
 
     const start = Date.now();
     const { rows } = await run({ sql: statementText, params: [] });
-    const planText = rows.map((row) => String((row as Record<string, unknown>)['QUERY PLAN'] ?? '')).join('\n');
+    const planText = driver.formatExplain(rows as Record<string, unknown>[]);
 
     const result: PlanStatementResult = {
       kind: 'plan',
@@ -246,32 +246,8 @@ export class QueryService {
     return analyzeEditability(statements, table, primaryKey);
   }
 
-  /**
-   * Maps driver field metadata to `ColumnMetadata` so results render in the shared grid.
-   * Drivers that carry a `dataTypeName` (SQLite) skip the catalog round-trip; PG resolves
-   * its OID-based type ids via `buildResolveTypeNames`.
-   */
-  private async mapColumns(connectionId: string, driver: DbDriver, fields: FieldInfo[], primaryKey: string[] = []): Promise<ColumnMetadata[]> {
-    if (fields.length === 0) return [];
-
-    const primaryKeySet = new Set(primaryKey);
-    const needsResolution = fields.some((field) => field.dataTypeName === undefined);
-
-    let typeNames = new Map<number, string>();
-    if (needsResolution) {
-      const oids = [...new Set(fields.map((field) => field.dataTypeID))];
-      const { rows } = await this.pool.run(connectionId, driver.buildResolveTypeNames(oids));
-      const typeRows = rows as unknown as { oid: number; typname: string }[];
-      typeNames = new Map(typeRows.map((row) => [Number(row.oid), row.typname]));
-    }
-
-    return fields.map((field) => ({
-      name: field.name,
-      dataType: field.dataTypeName ?? typeNames.get(field.dataTypeID) ?? 'unknown',
-      nullable: true,
-      isPrimaryKey: primaryKeySet.has(field.name),
-      autoIncrement: false,
-      defaultValue: null,
-    }));
+  private mapColumns(connectionId: string, driver: DbDriver, fields: FieldInfo[], primaryKey: string[] = []): Promise<ColumnMetadata[]> {
+    if (fields.length === 0) return Promise.resolve([]);
+    return driver.describeResultColumns((frag) => this.pool.run(connectionId, frag), fields, primaryKey);
   }
 }

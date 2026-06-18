@@ -30,7 +30,7 @@ function pgTypeResult(types: Record<number, string>): DriverResult {
 function createService(run = vi.fn(), tableColumns: ColumnMetadata[] = USERS_COLUMNS) {
   const metadataService = { getTableColumns: vi.fn().mockResolvedValue(tableColumns) } as unknown as MetadataService;
 
-  // Real driver: parser dialect comes from its capabilities, and `buildResolveTypeNames`
+  // Real driver: parser dialect comes from its capabilities, and `describeResultColumns`
   // produces the pg_type lookup fragment that `pool.run` receives during column mapping.
   const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);
 

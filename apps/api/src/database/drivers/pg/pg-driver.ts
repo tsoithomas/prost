@@ -199,11 +199,43 @@ export class PgDriver implements DbDriver {
   }
 
   buildDeleteRow = (ref: TableRef, pk: string[], pv: unknown[]) => sql.pgBuildDeleteRow(ref, pk, pv);
+  normalizeCreateTable = (req: CreateTableRequest) => sql.pgNormalizeCreateTable(req);
+  normalizeAlterTable = (ref: TableRef, op: AlterTableOperation, columns: ColumnMetadata[]) =>
+    sql.pgNormalizeAlterTable(ref, op, columns);
+  normalizeCreateIndex = (req: CreateIndexRequest) => sql.pgNormalizeCreateIndex(req);
   buildCreateTable = (req: CreateTableRequest) => sql.pgBuildCreateTable(req);
   buildAlterTable = (ref: TableRef, op: AlterTableOperation) => sql.pgBuildAlterTable(ref, op);
   buildCreateIndex = (req: CreateIndexRequest, name: string, method: string) => sql.pgBuildCreateIndex(req, name, method);
   buildDropIndex = (ref: TableRef, indexName: string) => sql.pgBuildDropIndex(ref, indexName);
-  buildResolveTypeNames = (oids: number[]) => sql.pgBuildResolveTypeNames(oids);
+
+  async describeResultColumns(
+    query: DriverQueryFn,
+    fields: { name: string; dataTypeID: number; dataTypeName?: string }[],
+    primaryKey: string[] = [],
+  ): Promise<ColumnMetadata[]> {
+    const primaryKeySet = new Set(primaryKey);
+    let typeNames = new Map<number, string>();
+
+    if (fields.some((field) => field.dataTypeName === undefined)) {
+      const oids = [...new Set(fields.map((field) => field.dataTypeID))];
+      const { rows } = await query(sql.pgBuildResolveTypeNames(oids));
+      const typeRows = rows as unknown as { oid: number; typname: string }[];
+      typeNames = new Map(typeRows.map((row) => [Number(row.oid), row.typname]));
+    }
+
+    return fields.map((field) => ({
+      name: field.name,
+      dataType: field.dataTypeName ?? typeNames.get(field.dataTypeID) ?? 'unknown',
+      nullable: true,
+      isPrimaryKey: primaryKeySet.has(field.name),
+      autoIncrement: false,
+      defaultValue: null,
+    }));
+  }
+
+  formatExplain(rows: Record<string, unknown>[]): string {
+    return rows.map((row) => String(row['QUERY PLAN'] ?? '')).join('\n');
+  }
 
   mapError(error: unknown, ctx: DriverErrorContext): void {
     const code = (error as { code?: string } | undefined)?.code;

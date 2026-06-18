@@ -23,9 +23,18 @@ describe('MetadataService.getSchemas', () => {
         { table_schema: 'public', table_name: 'orders' },
       ]))
       .mockResolvedValueOnce(result([
-        { table_schema: 'public', table_name: 'users', column_name: 'id', data_type: 'integer', is_nullable: 'NO', is_primary_key: true },
-        { table_schema: 'public', table_name: 'users', column_name: 'email', data_type: 'character varying', is_nullable: 'NO', is_primary_key: false },
-        { table_schema: 'public', table_name: 'orders', column_name: 'id', data_type: 'integer', is_nullable: 'NO', is_primary_key: true },
+        {
+          table_schema: 'public', table_name: 'users', column_name: 'id', data_type: 'integer',
+          is_nullable: 'NO', is_primary_key: true, default_value: "nextval('users_id_seq'::regclass)", is_auto_increment: true,
+        },
+        {
+          table_schema: 'public', table_name: 'users', column_name: 'email', data_type: 'character varying',
+          is_nullable: 'NO', is_primary_key: false, default_value: null, is_auto_increment: false,
+        },
+        {
+          table_schema: 'public', table_name: 'orders', column_name: 'id', data_type: 'integer',
+          is_nullable: 'NO', is_primary_key: true, default_value: 0, is_auto_increment: 0,
+        },
       ]));
     const { service } = createService(run);
 
@@ -43,8 +52,8 @@ describe('MetadataService.getSchemas', () => {
       dataType: 'integer',
       nullable: false,
       isPrimaryKey: true,
-      autoIncrement: false,
-      defaultValue: null,
+      autoIncrement: true,
+      defaultValue: "nextval('users_id_seq'::regclass)",
     });
     expect(usersTable!.columns[1]).toEqual({
       name: 'email',
@@ -63,7 +72,7 @@ describe('MetadataService.getSchemas', () => {
       nullable: false,
       isPrimaryKey: true,
       autoIncrement: false,
-      defaultValue: null,
+      defaultValue: '0',
     });
   });
 
@@ -75,6 +84,33 @@ describe('MetadataService.getSchemas', () => {
 
     const schemas = await service.getSchemas('conn-1');
     expect(schemas[0]!.tables[0]!.columns).toEqual([]);
+  });
+});
+
+describe('MetadataService.getTableColumns', () => {
+  it('maps default values and SQLite numeric auto-increment flags', async () => {
+    const run = vi.fn().mockResolvedValue(result([
+      {
+        column_name: 'id', data_type: 'INTEGER', is_nullable: 'NO', is_primary_key: 1,
+        default_value: null, is_auto_increment: 1,
+      },
+      {
+        column_name: 'name', data_type: 'TEXT', is_nullable: 'YES', is_primary_key: 0,
+        default_value: "''", is_auto_increment: 0,
+      },
+    ]));
+    const { service } = createService(run);
+
+    await expect(service.getTableColumns('conn-1', 'main', 'widgets')).resolves.toEqual([
+      {
+        name: 'id', dataType: 'INTEGER', nullable: false, isPrimaryKey: true,
+        autoIncrement: true, defaultValue: null,
+      },
+      {
+        name: 'name', dataType: 'TEXT', nullable: true, isPrimaryKey: false,
+        autoIncrement: false, defaultValue: "''",
+      },
+    ]);
   });
 });
 

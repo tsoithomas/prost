@@ -19,8 +19,8 @@ export interface DriverResult<T extends QueryResultRow = QueryResultRow> {
   /**
    * `dataTypeID` is the engine's native type id (PG OID). Drivers that already know the
    * type name (e.g. SQLite, from prepared-statement column metadata) may also set
-   * `dataTypeName`, letting the query layer skip a catalog round-trip via
-   * `buildResolveTypeNames`.
+   * `dataTypeName`, letting the driver skip a catalog round-trip in
+   * `describeResultColumns`.
    */
   fields: { name: string; dataTypeID: number; dataTypeName?: string }[];
   rowCount: number | null;
