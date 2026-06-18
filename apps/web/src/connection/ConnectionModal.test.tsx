@@ -20,6 +20,53 @@ vi.mock('../api/connections', () => ({
   }),
 }));
 
+vi.mock('../api/databaseEngines', () => ({
+  useDatabaseEngines: () => ({
+    data: [
+      {
+        engine: 'postgres',
+        label: 'PostgreSQL',
+        connectionMode: 'network',
+        defaultPort: 5432,
+        uriSchemes: ['postgres', 'postgresql'],
+        parserDialect: 'postgresql',
+        formatterDialect: 'postgresql',
+        namespaceLabel: 'Schema',
+        defaultNamespace: 'public',
+        supportsSsl: true,
+        sslEnabledByDefault: true,
+        ddl: {
+          columnTypes: [],
+          defaultExamples: [],
+          indexMethods: [],
+          supportsAutoIncrement: false,
+          supportsUsingExpression: true,
+        },
+      },
+      {
+        engine: 'mysql',
+        label: 'MySQL',
+        connectionMode: 'network',
+        defaultPort: 3306,
+        uriSchemes: ['mysql'],
+        parserDialect: 'mysql',
+        formatterDialect: 'mysql',
+        namespaceLabel: 'Database',
+        supportsSsl: true,
+        sslEnabledByDefault: false,
+        ddl: {
+          columnTypes: [],
+          defaultExamples: [],
+          indexMethods: ['btree'],
+          supportsAutoIncrement: true,
+          supportsUsingExpression: false,
+        },
+      },
+    ],
+    isLoading: false,
+  }),
+}));
+
 vi.mock('../hooks/useConfirm', () => ({
   useConfirm: () => ({ confirm: vi.fn().mockResolvedValue(true), dialog: null }),
 }));
@@ -40,6 +87,16 @@ async function openImportForm() {
 }
 
 describe('ConnectionModal — connection-string import', () => {
+  it('sets the default port when the engine picker changes to MySQL', async () => {
+    renderModal();
+
+    const engineSelect = screen.getByRole('combobox', { name: 'Engine' });
+    await userEvent.selectOptions(engineSelect, 'mysql');
+
+    expect(engineSelect).toHaveValue('mysql');
+    expect(screen.getByDisplayValue('3306')).toBeInTheDocument();
+  });
+
   it('reveals the import input when "Paste a connection string" is clicked', async () => {
     renderModal();
     expect(screen.queryByPlaceholderText(/postgres:\/\//i)).not.toBeInTheDocument();
@@ -75,6 +132,21 @@ describe('ConnectionModal — connection-string import', () => {
 
     const portInput = screen.getByDisplayValue('5434') as HTMLInputElement;
     expect(portInput).toBeInTheDocument();
+  });
+
+  it('parses a mysql URL and selects the MySQL engine', async () => {
+    renderModal();
+    await openImportForm();
+
+    const input = screen.getByPlaceholderText(/postgres:\/\//i);
+    await userEvent.type(input, 'mysql://user:pw@host:3307/db');
+    await userEvent.click(screen.getByRole('button', { name: /parse/i }));
+
+    expect(screen.getByPlaceholderText('localhost')).toHaveValue('host');
+    const [databaseInput] = screen.getAllByPlaceholderText('postgres') as HTMLInputElement[];
+    expect(databaseInput).toHaveValue('db');
+    expect(screen.getByRole('combobox', { name: 'Engine' })).toHaveValue('mysql');
+    expect(screen.getByDisplayValue('3307')).toBeInTheDocument();
   });
 
   it('preserves an existing connection name when one is already entered', async () => {

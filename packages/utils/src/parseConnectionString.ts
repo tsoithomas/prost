@@ -1,4 +1,7 @@
+export type ParsedEngine = 'postgres' | 'mysql';
+
 export interface ParsedConnectionString {
+  engine: ParsedEngine;
   host: string;
   port: number;
   database: string;
@@ -20,8 +23,17 @@ const SSL_DISABLED_MODES = new Set(['disable', 'allow']);
 // `prefer`, and a missing `sslmode` encrypt without verifying.
 const SSL_VERIFIED_MODES = new Set(['verify-ca', 'verify-full']);
 
+function getCaseInsensitiveQueryParam(searchParams: URLSearchParams, name: string): string | null {
+  const normalizedName = name.toLowerCase();
+  let match: string | null = null;
+  searchParams.forEach((value, key) => {
+    if (match === null && key.toLowerCase() === normalizedName) match = value;
+  });
+  return match;
+}
+
 /**
- * Parses a `postgres://`/`postgresql://` connection URI into the fields used by
+ * Parses a Postgres or MySQL connection URI into the fields used by
  * `ConnectionFormState`. Never throws — invalid input produces `{ ok: false, error }`
  * with a message suitable for display to the user.
  */
@@ -38,23 +50,43 @@ export function parseConnectionString(input: string): ParseConnectionStringResul
     return { ok: false, error: 'Could not parse connection string.' };
   }
 
-  if (url.protocol !== 'postgres:' && url.protocol !== 'postgresql:') {
-    return { ok: false, error: 'Connection string must start with postgres:// or postgresql://' };
+  const engine: ParsedEngine | null =
+    url.protocol === 'postgres:' || url.protocol === 'postgresql:'
+      ? 'postgres'
+      : url.protocol === 'mysql:'
+        ? 'mysql'
+        : null;
+
+  if (!engine) {
+    return {
+      ok: false,
+      error: 'Connection string must start with postgres://, postgresql://, or mysql://',
+    };
   }
 
   if (!url.hostname) {
     return { ok: false, error: 'Connection string is missing a host.' };
   }
 
-  const sslmode = url.searchParams.get('sslmode');
-  const sslEnabled = !SSL_DISABLED_MODES.has(sslmode ?? '');
-  const sslRejectUnauthorized = SSL_VERIFIED_MODES.has(sslmode ?? '');
+  let sslEnabled: boolean;
+  let sslRejectUnauthorized: boolean;
+
+  if (engine === 'mysql') {
+    const sslMode = getCaseInsensitiveQueryParam(url.searchParams, 'ssl-mode')?.toUpperCase();
+    sslEnabled = sslMode !== 'DISABLED';
+    sslRejectUnauthorized = sslMode === 'VERIFY_CA' || sslMode === 'VERIFY_IDENTITY';
+  } else {
+    const sslmode = url.searchParams.get('sslmode');
+    sslEnabled = !SSL_DISABLED_MODES.has(sslmode ?? '');
+    sslRejectUnauthorized = SSL_VERIFIED_MODES.has(sslmode ?? '');
+  }
 
   return {
     ok: true,
     value: {
+      engine,
       host: url.hostname,
-      port: url.port ? Number(url.port) : 5432,
+      port: url.port ? Number(url.port) : engine === 'mysql' ? 3306 : 5432,
       database: decodeURIComponent(url.pathname.replace(/^\//, '')),
       username: decodeURIComponent(url.username),
       password: decodeURIComponent(url.password),
