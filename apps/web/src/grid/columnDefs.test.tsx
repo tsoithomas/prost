@@ -3,7 +3,7 @@ import type { ColumnMetadata } from '@prost/shared-types';
 import { buildColumnDefs } from './columnDefs';
 
 function col(name: string, dataType: string, isPrimaryKey = false): ColumnMetadata {
-  return { name, dataType, nullable: true, isPrimaryKey };
+  return { name, dataType, nullable: true, isPrimaryKey, autoIncrement: false, defaultValue: null };
 }
 
 const COLUMNS: ColumnMetadata[] = [
