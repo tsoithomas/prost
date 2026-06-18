@@ -50,7 +50,14 @@ export class ConnectionsService {
     return { hasSchemas, readOnly };
   }
 
+  /** Reject engines no registered driver supports — defers to the registry so new engines
+   *  become valid purely by registration. */
+  private assertSupportedEngine(engine: string): void {
+    this.registry.get(engine);
+  }
+
   async create(userId: string, dto: CreateConnectionDto): Promise<ConnectionDto> {
+    this.assertSupportedEngine(dto.engine ?? 'postgres');
     const connection = await this.prisma.connection.create({
       data: {
         userId,
@@ -104,7 +111,7 @@ export class ConnectionsService {
     if (dto.id) {
       const existing = await this.requireOwned(userId, dto.id);
       const storedPassword = this.crypto.decrypt(existing.encryptedCredentials as unknown as EncryptedPayload);
-      return this.poolManager.testConnection(dto.engine ?? existing.engine ?? 'postgres', {
+      return this.poolManager.testConnection(existing.engine ?? 'postgres', {
         host: dto.host ?? existing.host,
         port: dto.port ?? existing.port,
         database: dto.database ?? existing.database,
@@ -122,6 +129,7 @@ export class ConnectionsService {
       };
     }
 
+    this.assertSupportedEngine(dto.engine ?? 'postgres');
     return this.poolManager.testConnection(dto.engine ?? 'postgres', {
       host: dto.host,
       port: dto.port,
