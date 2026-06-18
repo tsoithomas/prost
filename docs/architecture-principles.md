@@ -13,9 +13,13 @@ Prost touches two kinds of database, and they must never be confused.
 
 - **Application DB** — Prost's own data: users, saved connections, preferences, query
   history. Accessed **only** through Prisma.
-- **Target DBs** — the databases users connect to and manage. Accessed **only** through the
-  engine-neutral driver layer (`PoolManager` → a `DbDriver` resolved per `Connection.engine`,
-  e.g. `PgDriver`, `SqliteDriver`), never through Prisma.
+- **Target DBs** — the databases users connect to and manage (PostgreSQL, MySQL 8.0+, or
+  SQLite). Accessed **only** through the engine-neutral driver layer (`PoolManager` → a
+  `DbDriver` resolved per `Connection.engine`: `PgDriver`, `MysqlDriver`, `SqliteDriver`),
+  never through Prisma. Engine-specific behavior (placeholders, namespace model, insert-key
+  derivation, supported DDL) lives entirely behind the driver and its descriptor — **feature
+  services contain no `engine === '…'` branches**, and the frontend consumes the descriptor
+  rather than duplicating engine policy.
 
 **Rules**
 - Prisma never opens a target DB. A `DbDriver` never opens the app DB through the app's Prisma
@@ -38,7 +42,8 @@ The rule is about **intent, not dogma**: no untrusted input ever reaches SQL as 
 Dynamic SQL is allowed — it must pass through an approved builder or validator, never through
 naive concatenation.
 
-- Values are **always** bound as `$n` parameters. Never interpolate a value into SQL.
+- Values are **always** bound as parameters through the driver's positional placeholder
+  (`$n` for PostgreSQL, `?` for MySQL/SQLite). Never interpolate a value into SQL.
 - Identifiers (schema/table/column names) come from server-side metadata and are passed
   through the `quoteIdent` util — never concatenated raw, never taken on trust from the client.
 - Legitimate dynamic constructs (e.g. a chosen `ORDER BY` column) are valid **only** when the
@@ -54,8 +59,9 @@ naive concatenation.
   after creation. DTOs omit secrets by construction, not by hoping the caller filters them.
 - **AuthN/AuthZ live on the backend.** Every data route is guarded (JWT). The frontend may
   hide UI, but the server must independently reject unauthorized requests.
-- **Queries are bounded.** Every target query runs under a `statement_timeout`. No unbounded
-  execution.
+- **Queries are bounded.** Every target query runs under a statement timeout, applied by the
+  driver in the engine's idiom (PostgreSQL `statement_timeout`, the `mysql2` per-query
+  `timeout`, …). No unbounded execution.
 - Secrets come from environment/config (`CREDENTIAL_ENCRYPTION_KEY`, `JWT_SECRET`, DB URLs) —
   never hardcoded, never committed.
 
@@ -158,13 +164,14 @@ add-on.
 
 ## 13. Stay inside MVP scope
 
-- Out of scope until explicitly revisited: non-Postgres engines, SSH tunneling, ER diagrams,
-  team/multi-tenant features, stored-procedure/trigger editors, advanced RBAC, query plans,
-  background jobs, scheduling.
+- Supported target engines are PostgreSQL, MySQL 8.0+, and SQLite — added through the driver
+  seam, not by branching feature code. Out of scope until explicitly revisited: other engines
+  (e.g. MariaDB, SQL Server, Oracle), SSH tunneling, ER diagrams, team/multi-tenant features,
+  stored-procedure/trigger editors, advanced RBAC, background jobs, scheduling.
 - **AI features are no longer blanket out-of-scope** — they're tracked for upcoming
   development in [`docs/future-features.md`](./future-features.md) (e.g. a schema-aware
   chat/RAG assistant). They remain subject to every other principle: no path to a target DB
-  outside `PgConnectionService` (§1), no credentials/row data/bound values sent to an
+  outside the `PoolManager`/driver seam (§1), no credentials/row data/bound values sent to an
   external model (§3), and any model-facing context is built from the same server-validated
   metadata the rest of the app uses (§4).
 - Build the smallest thing that satisfies the principle. Add abstraction when a second real

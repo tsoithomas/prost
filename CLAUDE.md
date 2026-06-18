@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Prost is a web-based PostgreSQL client (TablePlus-style) for internal developer use:
-connection management, schema browsing, table viewing/editing, and a SQL editor with
-query results. Full spec: [`docs/plans/prost-mvp.md`](docs/plans/prost-mvp.md). Per-phase
+Prost is a web-based, multi-engine database client (TablePlus-style) for internal developer
+use — PostgreSQL, MySQL 8.0+, and SQLite — covering connection management, schema browsing,
+table viewing/editing, and a SQL editor with query results. Full spec:
+[`docs/plans/prost-mvp.md`](docs/plans/prost-mvp.md). Per-phase
 implementation plans + status live in [`docs/plans/`](docs/plans/README.md). Durable
 architectural rules (read before making non-trivial changes — a violation is a defect
 even if it works): [`docs/architecture-principles.md`](docs/architecture-principles.md).
@@ -26,9 +27,9 @@ tab and mobile Settings — clicking an entry loads it back into Monaco. Per-use
 `useConfirm()` (centered on desktop, full-width bottom sheet on mobile) replaces all
 `window.confirm()` calls, and mobile touch targets (≥44px), safe-area-aware bottom nav, and
 a results-favoring SQL editor split (`max-md:h-2/5`/`h-3/5`) round out the responsiveness
-hardening pass. `ConnectionModal` can also parse a pasted `postgres://`/`postgresql://`
-connection string (`parseConnectionString` in `@prost/utils`) to fill in the host/port/
-database/user/password/SSL fields.
+hardening pass. `ConnectionModal` can also parse a pasted `postgres://`/`postgresql://`/
+`mysql://` connection string (`parseConnectionString` in `@prost/utils`, which infers the
+engine and its default port) to fill in the host/port/database/user/password/SSL fields.
 
 **Phases 7–10 (post-MVP)**: A read-only `TableStructurePanel` (Phase 7) shows columns +
 indexes for the active table tab. `DdlModule` (`DdlService`, `DdlController`) handles all DDL
@@ -76,17 +77,21 @@ pnpm --filter @prost/utils test -- quoteIdent      # or: cd packages/utils && np
 pnpm --filter @prost/api test -- crypto.service
 ```
 
-Local Postgres (app DB + demo target DB for manual testing):
+Local demo target databases for manual testing (the app DB itself is file-based SQLite — no
+service; `prisma:migrate` writes to `apps/api/prisma/data/prost.db`):
 
 ```sh
-docker compose up -d
-pnpm --filter @prost/api prisma:migrate   # apply Prisma schema to prost-postgres (port 5433)
+docker compose up -d                      # demo-target-postgres :5434, demo-target-mysql :3307
+pnpm --filter @prost/api prisma:migrate   # apply Prisma schema to the SQLite app DB
 pnpm --filter @prost/api prisma:seed      # create admin user from ADMIN_EMAIL/ADMIN_PASSWORD
 ```
 
-`demo-target-postgres` (port 5434) is seeded from `docker/demo-target-init.sql` with
-`users`/`orders`/`products` — useful as a real target DB for Phase 1+ work, and its
-shape matches the mock data already in `apps/web/src/mocks/`.
+`demo-target-postgres` (port 5434, `docker/demo-target-init.sql`) and `demo-target-mysql`
+(MySQL 8.0, port 3307, `docker/demo-target-mysql-init.sql`) are both seeded with
+`users`/`orders`/`products` (the MySQL one adds a composite-key `order_items`) — useful as real
+target DBs, and the Postgres shape matches the mock data in `apps/web/src/mocks/`. The shared
+driver conformance suite (`*-driver.contract.test.ts`) runs against both live engines; set
+`REQUIRE_LIVE_DRIVER_CONTRACTS=true` (as CI does) to fail rather than skip when one is down.
 
 ## Commit messages
 
@@ -126,12 +131,25 @@ This is principle #1 in `docs/architecture-principles.md` and shapes `apps/api`:
   `PoolManager` (`apps/api/src/database/`), the single choke point that owns pool
   caching, idle-sweep, and LRU eviction, delegating all native connection work to a
   `DbDriver`. There is **one driver per engine**, resolved per `Connection.engine` via the
-  engine-keyed `DbDriverRegistry`: `PgDriver` (`drivers/pg/`, the `pg` Pool) and
-  `SqliteDriver` (`drivers/sqlite/`, a `better-sqlite3` handle — `database` holds the file
-  path or `:memory:`; capabilities `supportsSchemas: false`, parser dialect `sqlite`).
+  engine-keyed `DbDriverRegistry`: `PgDriver` (`drivers/pg/`, the `pg` Pool), `MysqlDriver`
+  (`drivers/mysql/`, a `mysql2` Pool — `?` placeholders, no `RETURNING`, parser dialect
+  `mysql`, `supportsSchemas: false`), and `SqliteDriver` (`drivers/sqlite/`, a `better-sqlite3`
+  handle — `database` holds the file path or `:memory:`; capabilities `supportsSchemas: false`,
+  parser dialect `sqlite`).
+- **MySQL specifics** (8.0+; MariaDB and pre-8.0 are rejected at `testConnection` and pool
+  creation via `SELECT VERSION()`): a connection browses **only its own `database`** (sibling
+  databases on the server are never listed — "schema" maps to that one database). Since MySQL
+  has no `RETURNING`, `insertRow`/`updateRow` are **executing methods** (the driver runs the
+  statement on a pinned connection, then re-selects the row by primary key). An insert must
+  carry a **complete primary key**, or omit **exactly one** missing `AUTO_INCREMENT` PK
+  component (resolved from `LAST_INSERT_ID()`); any other shape throws
+  `UnprocessableEntityException` (**HTTP 422**) **before** any mutation runs. MySQL URIs use the
+  `mysql://` scheme; TLS follows the connection's `sslEnabled`/`sslRejectUnauthorized` like PG.
+  Indexes advertise BTREE only. None of this lives in feature services — it's all in the driver
+  + its `descriptor` (the frontend consumes the descriptor, never hardcodes engine policy).
 - Feature services hold **no driver reference and no raw target SQL**: they resolve the right
   driver per call via `PoolManager.driverFor(connectionId)`, then reach the dialect's pure
-  `{ sql, params }` builders (`pg-sql.ts` / `sqlite-sql.ts`) through it. The grid filter
+  `{ sql, params }` builders (`pg-sql.ts` / `mysql-sql.ts` / `sqlite-sql.ts`) through it. The grid filter
   compiler (`grid/filter.ts`) and query pager (`query/paging.ts`) take the driver's
   `whereDialect`/`placeholder` so they stay engine-neutral. Adding a new engine = implement
   `DbDriver` + register it in `DatabaseModule`'s `DB_DRIVERS`, with the conformance suite
