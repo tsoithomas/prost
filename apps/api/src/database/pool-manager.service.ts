@@ -86,6 +86,13 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
     return this.registry.get(engine);
   }
 
+  async defaultNamespace(connectionId: string): Promise<string> {
+    const driver = await this.driverFor(connectionId);
+    if (driver.descriptor.defaultNamespace) return driver.descriptor.defaultNamespace;
+    const { params } = await this.resolveConfig(connectionId);
+    return params.database;
+  }
+
   async evictPool(connectionId: string): Promise<void> {
     const cached = this.pools.get(connectionId);
     if (!cached) return;

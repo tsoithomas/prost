@@ -40,6 +40,7 @@ export class SqliteDriver implements DbDriver {
     parserDialect: 'sqlite',
     formatterDialect: 'sqlite',
     namespaceLabel: 'Database',
+    defaultNamespace: 'main',
     supportsSsl: false,
     sslEnabledByDefault: false,
     ddl: {

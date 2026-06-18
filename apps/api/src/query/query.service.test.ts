@@ -27,7 +27,11 @@ function pgTypeResult(types: Record<number, string>): DriverResult {
   return result(rows);
 }
 
-function createService(run = vi.fn(), tableColumns: ColumnMetadata[] = USERS_COLUMNS) {
+function createService(
+  run = vi.fn(),
+  tableColumns: ColumnMetadata[] = USERS_COLUMNS,
+  defaultNamespace = 'public',
+) {
   const metadataService = { getTableColumns: vi.fn().mockResolvedValue(tableColumns) } as unknown as MetadataService;
 
   // Real driver: parser dialect comes from its capabilities, and `describeResultColumns`
@@ -35,7 +39,12 @@ function createService(run = vi.fn(), tableColumns: ColumnMetadata[] = USERS_COL
   const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);
 
   // `PoolManager.run(connectionId, frag)` — the run mock receives `(connectionId, { sql, params })`.
-  const pool = { run, withSession: vi.fn(), driverFor: vi.fn().mockResolvedValue(driver) } as unknown as PoolManager;
+  const pool = {
+    run,
+    withSession: vi.fn(),
+    driverFor: vi.fn().mockResolvedValue(driver),
+    defaultNamespace: vi.fn().mockResolvedValue(defaultNamespace),
+  } as unknown as PoolManager;
 
   // Mirrors `PoolManager.withSession`: runs `fn` against a `query` callback that proxies to
   // the same `run` mock, so transactional tests assert on the same call queue as autocommit tests.
@@ -123,6 +132,24 @@ describe('QueryService.execute — single statement, SELECT', () => {
     expect(stmt.editable).toBe(false);
     expect(stmt.sourceTable).toBeUndefined();
     expect(stmt.primaryKey).toBeUndefined();
+  });
+
+  it('resolves an unqualified table against the connection database', async () => {
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce(result([{ id: 1 }], { fields: [{ name: 'id', dataTypeID: 23 }] }))
+      .mockResolvedValueOnce(pgTypeResult({ 23: 'int4' }));
+    const { service, metadataService } = createService(run, USERS_COLUMNS, 'shop');
+
+    const response = await service.execute('conn-1', 'SELECT * FROM orders', 'user-1');
+
+    expect(metadataService.getTableColumns).toHaveBeenCalledWith('conn-1', 'shop', 'orders');
+    const stmt = expectKind(response.statements[0]!, 'rows');
+    expect(stmt).toMatchObject({
+      editable: true,
+      sourceTable: 'shop.orders',
+      primaryKey: ['id'],
+    });
   });
 
   it('marks a join as read-only without resolving table metadata', async () => {

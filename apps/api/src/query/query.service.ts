@@ -237,7 +237,8 @@ export class QueryService {
   }
 
   private async resolveEditability(connectionId: string, statements: ParsedStatement[]): Promise<EditabilityResult> {
-    const table = extractSingleTable(statements);
+    const defaultSchema = await this.pool.defaultNamespace(connectionId);
+    const table = extractSingleTable(statements, defaultSchema);
     if (!table) return { editable: false };
 
     const tableColumns = await this.metadataService.getTableColumns(connectionId, table.schema, table.table);

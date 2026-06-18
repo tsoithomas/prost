@@ -217,3 +217,41 @@ describe('compileWhere — validation errors', () => {
     ).toThrow(BadRequestException);
   });
 });
+
+describe('compileWhere — MySQL type families', () => {
+  it('accepts numeric operators for MySQL integer and floating-point types', () => {
+    expect(() => {
+      for (const dataType of ['tinyint', 'int', 'double']) {
+        compileWhere(
+          { conditions: [{ column: 'value', operator: 'gt', value: 1 }], combinator: 'and' },
+          [col('value', dataType)],
+          0,
+        );
+      }
+    }).not.toThrow();
+  });
+
+  it('accepts datetime operators for MySQL datetime types', () => {
+    expect(() => {
+      for (const dataType of ['datetime', 'year']) {
+        compileWhere(
+          { conditions: [{ column: 'value', operator: 'lt', value: '2026-01-01' }], combinator: 'and' },
+          [col('value', dataType)],
+          0,
+        );
+      }
+    }).not.toThrow();
+  });
+
+  it('accepts text operators for MySQL text types', () => {
+    expect(() => {
+      for (const dataType of ['mediumtext', 'enum']) {
+        compileWhere(
+          { conditions: [{ column: 'value', operator: 'contains', value: 'active' }], combinator: 'and' },
+          [col('value', dataType)],
+          0,
+        );
+      }
+    }).not.toThrow();
+  });
+});
