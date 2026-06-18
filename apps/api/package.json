@@ -33,6 +33,7 @@
     "node-sql-parser": "^5.4.0",
     "openai": "^6.42.0",
     "pg": "^8",
+    "prisma": "^6",
     "reflect-metadata": "^0.2",
     "rxjs": "^7"
   },
@@ -44,7 +45,6 @@
     "@types/node": "^22",
     "@types/pg": "^8",
     "dotenv-cli": "^7",
-    "prisma": "^6",
     "tsx": "^4",
     "typescript": "^5",
     "vitest": "^2"

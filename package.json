@@ -17,6 +17,7 @@
   },
   "pnpm": {
     "onlyBuiltDependencies": [
+      "bcrypt",
       "better-sqlite3"
     ]
   },

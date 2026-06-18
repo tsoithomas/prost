@@ -1,0 +1,30 @@
+# Dependencies & build outputs (re-created inside the image)
+**/node_modules
+**/dist
+**/build
+.turbo
+**/.turbo
+**/coverage
+
+# Local env & secrets — never bake into the image
+.env
+.env.*
+!.env.example
+
+# Local SQLite app DB (file + WAL/SHM siblings)
+apps/api/prisma/dev.db*
+apps/api/prisma/data
+
+# VCS, CI, editor, OS noise
+.git
+.github
+.gitignore
+.idea
+.vscode
+**/*.log
+.DS_Store
+
+# Docs & test files not needed to build/run the image
+docs
+**/*.test.ts
+**/*.spec.ts

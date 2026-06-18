@@ -141,6 +141,94 @@ pnpm --filter @prost/api test -- query.service
 pnpm --filter @prost/web test -- SqlEditorView
 ```
 
+## Docker
+
+Prost ships as a **single production image** (`thomastsoi/prost`): the NestJS API serves both
+the JSON API and the pre-built React SPA on one port (`5354` by default). The app database is file-based
+SQLite stored on a volume mounted at `/data`; on start the container applies Prisma migrations
+and (optionally) seeds the admin user.
+
+### Build locally
+
+```sh
+docker build -t prost:local .
+```
+
+The multi-stage build (`Dockerfile`) installs the workspace, builds the SPA (with an empty
+`VITE_API_URL` so it calls the API same-origin) and the API, then extracts only the API's
+production dependency closure via `pnpm deploy`. The final image runs as the non-root `node`
+user.
+
+### Run
+
+```sh
+docker run -d --name prost -p 5354:5354 \
+  -v prost-data:/data \
+  -e JWT_SECRET="$(openssl rand -base64 48)" \
+  -e CREDENTIAL_ENCRYPTION_KEY="$(openssl rand -base64 32)" \
+  -e ADMIN_EMAIL="admin@prost.local" \
+  -e ADMIN_PASSWORD="change-me" \
+  thomastsoi/prost:latest
+```
+
+Then open <http://localhost:5354> and log in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
+
+**Running on a different port** — the image listens on `5354` by default. To publish it on
+another host port just remap with `-p` (the container's internal port can stay `5354`):
+
+```sh
+docker run -d --name prost -p 8080:5354 -v prost-data:/data \
+  -e JWT_SECRET="..." -e CREDENTIAL_ENCRYPTION_KEY="..." thomastsoi/prost:latest
+# → http://localhost:8080
+```
+
+To also change the port the server *listens* on inside the container (e.g. for a reverse
+proxy on the Docker network), set `PORT`: `-e PORT=8080 -p 8080:8080`. `PORT` flows through to
+the server, the entrypoint, and the healthcheck.
+
+> ⚠️ **Set `CREDENTIAL_ENCRYPTION_KEY` to a stable value in production.** Saved target-DB
+> credentials are encrypted with it; if it changes (or the container generates an ephemeral one
+> because it was left unset), previously stored credentials can no longer be decrypted. Keep the
+> `/data` volume to persist users, connections, history, and snippets across restarts.
+
+#### Environment variables
+
+| Variable | Required | Default | Purpose |
+| --- | --- | --- | --- |
+| `JWT_SECRET` | **yes** (prod) | ephemeral random | Signs auth JWTs. Rotating it invalidates issued tokens. |
+| `CREDENTIAL_ENCRYPTION_KEY` | **yes** (prod) | ephemeral random | 32-byte base64 key (AES-256-GCM) for target-DB credentials at rest. |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | no | — | If both set, an admin user is upserted on start. |
+| `DATABASE_URL` | no | `file:/data/prost.db` | SQLite app-DB location (keep it under the `/data` volume). |
+| `PORT` | no | `5354` | Port the server listens on. |
+| `WEB_ORIGIN` | no | `http://localhost:5173` | Extra CORS origins (comma-separated). Not needed for the bundled same-origin SPA. |
+| `QUERY_TIMEOUT_MS` | no | `30000` | Per-query timeout against target DBs. |
+
+For a throwaway demo, `docker run -p 5354:5354 thomastsoi/prost` works without any flags — the
+entrypoint generates ephemeral secrets and warns. Do not rely on that in production.
+
+### Automated publishing (GitHub Actions)
+
+[`.github/workflows/docker.yml`](.github/workflows/docker.yml) builds and pushes the image to
+Docker Hub on every push to `main` (and via manual **Run workflow** / `workflow_dispatch`):
+
+1. Checks out the repo and sets up Docker Buildx.
+2. Logs in to Docker Hub using the repository secrets.
+3. Builds from the root `Dockerfile` (with GitHub Actions layer caching).
+4. Pushes `thomastsoi/prost` tagged **`latest`**, the **full git commit SHA**, and a short
+   `sha-<short>` convenience tag.
+
+#### Configure the required secrets
+
+In the GitHub repo: **Settings → Secrets and variables → Actions → New repository secret**, add:
+
+| Secret | Value |
+| --- | --- |
+| `DOCKERHUB_USERNAME` | Your Docker Hub username (e.g. `thomastsoi`). |
+| `DOCKERHUB_TOKEN` | A Docker Hub **access token** (Account Settings → Security → New Access Token) with Read/Write/Delete on the `thomastsoi/prost` repo. Prefer a token over your password. |
+
+The Docker Hub repository `thomastsoi/prost` must exist (or the token must be allowed to create
+it) before the first push.
+
 ## Releases
 
 Versioning is automated with [semantic-release](https://semantic-release.gitbook.io/) on

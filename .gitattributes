@@ -1,0 +1,5 @@
+# Shell scripts must keep LF endings or they break when run inside Linux containers
+# (a CRLF `#!/bin/sh` / `set -e` becomes `\r`-suffixed and fails). Force LF regardless of
+# the contributor's core.autocrlf setting.
+*.sh text eol=lf
+docker/entrypoint.sh text eol=lf
