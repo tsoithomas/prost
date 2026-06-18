@@ -20,7 +20,7 @@ import type {
 import { MetadataService } from '../metadata/metadata.service';
 import { PoolManager } from '../database/pool-manager.service';
 import type { DbDriver } from '../database/db-driver.interface';
-import type { RowUpdateGuard } from '../database/types';
+import type { DriverQueryFn, RowUpdateGuard, TableRef } from '../database/types';
 import { isSystemConnectionId } from '../connections/system-connection';
 import { compileWhere } from './filter';
 
@@ -175,12 +175,43 @@ export class GridService {
             `Row in "${schema}.${table}" changed since you loaded it — nothing was saved. Refresh and retry.`,
           );
         }
-        updated.push(out[0]!);
+        // Engines with RETURNING (PG/SQLite) hand back the refreshed row inline. Engines without
+        // it (MySQL) return no rows, so re-read by the row's post-edit primary key.
+        updated.push(out[0] ?? (await this.reselectRow(q, driver, ref, primaryKey, pkValues, edits)));
       }
       return updated;
     });
 
     return { rows };
+  }
+
+  /**
+   * Re-reads a single row by its primary key after a guarded UPDATE, for engines that lack
+   * `RETURNING` (MySQL). Applies any edits that changed a primary-key column so the lookup
+   * targets the row's new key.
+   */
+  private async reselectRow(
+    q: DriverQueryFn,
+    driver: DbDriver,
+    ref: TableRef,
+    primaryKey: string[],
+    pkValues: unknown[],
+    edits: [string, unknown][],
+  ): Promise<Record<string, unknown>> {
+    const editByColumn = new Map(edits);
+    const newPkValues = primaryKey.map((column, i) => (editByColumn.has(column) ? editByColumn.get(column) : pkValues[i]));
+    const whereClause = `WHERE ${primaryKey.map((column, i) => `${driver.quoteIdent(column)} = ${driver.placeholder(i + 1)}`).join(' AND ')}`;
+    const { rows } = await q(
+      driver.buildSelectRows(ref, {
+        whereClause,
+        whereParams: newPkValues,
+        orderColumn: primaryKey[0],
+        sortDir: 'ASC',
+        limit: 1,
+        offset: 0,
+      }),
+    );
+    return rows[0] as Record<string, unknown>;
   }
 
   /** Validates a single bulk edit's PK + columns; returns the PK values in PK-column order. */

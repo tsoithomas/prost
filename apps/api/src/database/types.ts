@@ -32,7 +32,7 @@ export interface DriverResult<T extends QueryResultRow = QueryResultRow> {
 export interface DbCapabilities {
   supportsReturning: boolean;
   supportsSchemas: boolean;
-  parserDialect: 'postgresql' | 'sqlite';
+  parserDialect: 'postgresql' | 'mysql' | 'sqlite';
   /**
    * Optimistic-concurrency basis for row writes: `token` engines expose a per-row version
    * (PG `xmin`); `preimage` engines have none, so writes guard on the edited columns' old values.

@@ -6,7 +6,7 @@ import type {
   CreateTableRequest,
   NewColumn,
 } from '@prost/shared-types';
-import type { SelectRowsOptions, SqlFragment, TableRef } from '../../types';
+import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
 
 const ALLOWED_TYPES = new Set([
   'BIGINT',
@@ -386,6 +386,30 @@ export function mysqlBuildUpdateRow(
   return {
     sql: `UPDATE ${qualify(ref)} SET ${mysqlQuoteIdent(column)} = ? WHERE ${whereClause}`,
     params: [value, ...pkValues],
+  };
+}
+
+export function mysqlBuildUpdateRowGuarded(
+  ref: TableRef,
+  edits: [string, unknown][],
+  pkColumns: string[],
+  pkValues: unknown[],
+  guard: RowUpdateGuard,
+): SqlFragment {
+  // MySQL has no row-version token; it only ever uses the column pre-image basis.
+  if (guard.kind === 'version') {
+    throw new Error('MySQL does not support version-token concurrency');
+  }
+  const setClause = edits.map(([column]) => `${mysqlQuoteIdent(column)} = ?`).join(', ');
+  // `<=>` is MySQL's NULL-safe equality so a NULL pre-image matches a NULL current value.
+  const where = [
+    ...pkColumns.map((column) => `${mysqlQuoteIdent(column)} = ?`),
+    ...guard.columns.map((column) => `${mysqlQuoteIdent(column)} <=> ?`),
+  ].join(' AND ');
+  // No RETURNING in MySQL — the caller re-selects the refreshed row (see GridService.bulkUpdate).
+  return {
+    sql: `UPDATE ${qualify(ref)} SET ${setClause} WHERE ${where}`,
+    params: [...edits.map(([, value]) => value), ...pkValues, ...guard.values],
   };
 }
 
