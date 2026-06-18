@@ -11,7 +11,7 @@ import type {
 } from 'ag-grid-community';
 import { Bookmark, Play, Plus, Save, Trash2, WandSparkles, X } from 'lucide-react';
 import { format } from 'sql-formatter';
-import type { ExecuteQueryResponse } from '@prost/shared-types';
+import type { DbEngineDescriptor, ExecuteQueryResponse } from '@prost/shared-types';
 import {
   Badge,
   Button,
@@ -26,6 +26,7 @@ import {
   resolveColorMode,
 } from '@prost/ui';
 import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
+import { useEngineDescriptor } from '../api/databaseEngines';
 import { useMetadata } from '../api/metadata';
 import { useExecuteQuery } from '../api/query';
 import { useCreateSnippet } from '../api/snippets';
@@ -47,8 +48,15 @@ function splitSourceTable(sourceTable: string | undefined): { schema: string; ta
   return { schema: sourceTable.slice(0, dot), table: sourceTable.slice(dot + 1) };
 }
 
+export function formatterLanguage(
+  descriptor?: DbEngineDescriptor,
+): 'postgresql' | 'mysql' | 'sqlite' {
+  return descriptor?.formatterDialect ?? 'postgresql';
+}
+
 export function SqlEditorView() {
   const connectionId = useConnectionStore((state) => state.activeConnectionId);
+  const descriptor = useEngineDescriptor(connectionId);
   const colorMode = useThemeStore((state) => state.colorMode);
   const accentColor = useThemeStore((state) => state.accentColor);
   const pendingQuerySql = useWorkspaceStore((state) => state.pendingQuerySql);
@@ -64,6 +72,8 @@ export function SqlEditorView() {
   const monacoRef = useRef<Monaco | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const gridApiRef = useRef<GridApi | null>(null);
+  const formatterDialectRef = useRef<'postgresql' | 'mysql' | 'sqlite'>('postgresql');
+  formatterDialectRef.current = formatterLanguage(descriptor);
   const [monacoInstance, setMonacoInstance] = useState<Monaco | null>(null);
 
   const sql = activeTab?.sql ?? INITIAL_SQL;
@@ -299,7 +309,11 @@ export function SqlEditorView() {
             editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runQueryRef.current());
             monaco.languages.registerDocumentFormattingEditProvider('sql', {
               provideDocumentFormattingEdits(model) {
-                const formatted = format(model.getValue(), { language: 'postgresql', tabWidth: 2, keywordCase: 'upper' });
+                const formatted = format(model.getValue(), {
+                  language: formatterDialectRef.current,
+                  tabWidth: 2,
+                  keywordCase: 'upper',
+                });
                 return [{ range: model.getFullModelRange(), text: formatted }];
               },
             });
