@@ -1,7 +1,9 @@
 # Prost
 
-A web-based PostgreSQL client (TablePlus-style) for internal developer use: connection
-management, schema browsing, table viewing/editing, and a SQL editor with query results.
+A web-based, multi-engine database client (TablePlus-style) for internal developer use:
+connection management, schema browsing, table viewing/editing, and a SQL editor with query
+results. Connect to **PostgreSQL**, **MySQL 8.0+**, or a **SQLite** file through one consistent
+UI — each engine resolved behind a single driver seam (see [Supported engines](#supported-engines)).
 
 > **Status:** Phases 0–16 complete. See [`docs/plans/README.md`](docs/plans/README.md) for
 > per-phase status and [`docs/plans/roadmap-phase-11-22.md`](docs/plans/roadmap-phase-11-22.md)
@@ -11,9 +13,9 @@ management, schema browsing, table viewing/editing, and a SQL editor with query 
 ## Features
 
 - 🔐 **JWT auth** — seeded admin account (no public sign-up); every data route is guarded.
-- 🗄️ **Connection management** — create/test/edit/delete; paste a `postgres://` URI to fill
-  the form; target-DB credentials encrypted at rest (AES-256-GCM), never returned to the
-  client.
+- 🗄️ **Connection management** — create/test/edit/delete; paste a `postgres://` or `mysql://`
+  URI to fill the form; target-DB credentials encrypted at rest (AES-256-GCM), never returned
+  to the client.
 - 🌳 **Schema explorer** — real schemas/tables/columns/primary keys from system catalogs, with
   a resizable sidebar.
 - 📊 **Data grid** — AG Grid with server-side pagination (Infinite Row Model); stays
@@ -58,20 +60,45 @@ architectural principle):
 
 - **Application DB** — Prost's own data (users, saved connections, preferences, query
   history, snippets). Accessed **only** through Prisma.
-- **Target DBs** — the PostgreSQL databases users connect to. Accessed **only** through the
-  raw `pg` driver, funneled through a single `PgConnectionService` choke point with fully
-  parameterized SQL (identifiers quoted via `quoteIdent`, values bound as `$n`).
+- **Target DBs** — the databases users connect to (PostgreSQL, MySQL, or SQLite). Accessed
+  **only** through the engine-neutral driver layer: a single `PoolManager` choke point that
+  resolves one `DbDriver` per `Connection.engine` (`PgDriver`, `MysqlDriver`, `SqliteDriver`).
+  All SQL is fully parameterized — identifiers quoted via each driver's `quoteIdent`, values
+  bound through its positional placeholder (`$n` for PG, `?` for MySQL/SQLite). Feature
+  services hold no engine branches; engine-specific policy travels through the driver and its
+  descriptor.
 
 The durable rules every change must obey live in
 [`docs/architecture-principles.md`](docs/architecture-principles.md); the full product/
 engineering spec is [`docs/plans/prost-mvp.md`](docs/plans/prost-mvp.md).
+
+### Supported engines
+
+| Engine | Versions | Namespace browsed | URI schemes | TLS |
+| --- | --- | --- | --- | --- |
+| **PostgreSQL** | 12+ | all schemas | `postgres://`, `postgresql://` | optional |
+| **MySQL** | **8.0+** (MariaDB is **not** supported and is rejected at connect time) | the connection's own database only — sibling databases on the server are not listed | `mysql://` | optional |
+| **SQLite** | file / `:memory:` | `main` | — (file path, not a network URI) | — |
+
+MySQL specifics worth knowing:
+
+- **Connected-database-only browsing.** A MySQL connection's `database` is its single
+  namespace; Prost never enumerates other databases on the server.
+- **MariaDB and pre-8.0 are refused.** Both `testConnection` and pool creation read
+  `SELECT VERSION()` and throw if the server is MariaDB or older than MySQL 8.0.
+- **Deterministic insert-key derivation.** MySQL has no `RETURNING`, so inserts/updates execute
+  the statement and re-select the row by primary key. An insert must supply a **complete primary
+  key**, or omit **exactly one** missing `AUTO_INCREMENT` primary-key component (filled from
+  `LAST_INSERT_ID()`). Any other shape is rejected with **HTTP 422 before any mutation runs**.
+- **Indexes advertise BTREE only**; rich `ALTER`/index features mirror the PostgreSQL flow,
+  driven by the engine descriptor rather than hardcoded UI policy.
 
 ## Tech stack
 
 | Layer | Stack |
 | --- | --- |
 | **Frontend** (`apps/web`) | React 19, Vite, Tailwind v4, React Router, Zustand, TanStack Query, AG Grid, Monaco |
-| **Backend** (`apps/api`) | NestJS 11, Prisma (app DB), `pg` (target DBs), JWT, class-validator |
+| **Backend** (`apps/api`) | NestJS 11, Prisma (app DB), `pg` / `mysql2` / `better-sqlite3` (target DBs), JWT, class-validator |
 | **Shared** (`packages/*`) | `shared-types` (cross-boundary DTOs), `ui` (tokens + primitives + grid/editor themes), `utils` (`quoteIdent`) |
 | **Tooling** | pnpm workspaces, Turborepo, TypeScript, ESLint + Prettier, Vitest |
 
@@ -84,7 +111,7 @@ packages/
   ui/                  design tokens, primitives, AG Grid theme, Monaco theme
   utils/               framework-free helpers (e.g. quoteIdent, parseConnectionString)
 docs/                  spec, architecture principles, per-phase plans
-docker-compose.yml     local app Postgres + demo target Postgres
+docker-compose.yml     demo target databases (Postgres :5434, MySQL :3307)
 ```
 
 ## Getting started
@@ -94,7 +121,7 @@ docker-compose.yml     local app Postgres + demo target Postgres
 - **Node** ≥ 22.14
 - **pnpm** 9.15 (pinned via `packageManager`; if not on PATH, prefix commands with
   `npx --yes pnpm@9.15.0`)
-- **Docker** (for local Postgres)
+- **Docker** (for the local demo target databases)
 
 ### Setup
 
@@ -105,7 +132,8 @@ pnpm install
 # 2. Configure environment
 cp .env.example .env        # then fill in JWT_SECRET, CREDENTIAL_ENCRYPTION_KEY, admin creds
 
-# 3. Start local databases (app DB on :5433, demo target DB on :5434)
+# 3. Start the local demo target databases (Postgres on :5434, MySQL on :3307).
+#    The app DB is file-based SQLite (no service needed).
 docker compose up -d
 
 # 4. Apply the schema and seed the admin user
@@ -117,8 +145,10 @@ pnpm -w dev
 ```
 
 Then open <http://localhost:5173/app> and log in with the admin credentials from your `.env`
-(`ADMIN_EMAIL` / `ADMIN_PASSWORD`). The seeded `demo-target-postgres` (port 5434, db `demo`,
-user/password `demo`) is a ready-made target DB with `users`/`orders`/`products` tables.
+(`ADMIN_EMAIL` / `ADMIN_PASSWORD`). Two ready-made target DBs are seeded (both `demo`/`demo`,
+db `demo`) with `users`/`orders`/`products` tables: `demo-target-postgres` on port **5434** and
+`demo-target-mysql` (MySQL 8.0) on port **3307** — the latter also seeds a composite-key
+`order_items` table.
 
 ## Common commands
 

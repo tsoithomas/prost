@@ -15,5 +15,26 @@ services:
       - demo-target-postgres-data:/var/lib/postgresql/data
       - ./docker/demo-target-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
 
+  demo-target-mysql:
+    image: mysql:8.0.39
+    container_name: demo-target-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: demo
+      MYSQL_DATABASE: demo
+      MYSQL_USER: demo
+      MYSQL_PASSWORD: demo
+    ports:
+      - "3307:3306"
+    volumes:
+      - demo-target-mysql-data:/var/lib/mysql
+      - ./docker/demo-target-mysql-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "demo", "-pdemo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   demo-target-postgres-data:
+  demo-target-mysql-data:

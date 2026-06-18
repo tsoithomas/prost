@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { SqlEditorView } from './SqlEditorView';
+import { formatterLanguage, SqlEditorView } from './SqlEditorView';
 import { renderWithProviders } from '../test/renderWithProviders';
 import type {
   CommandStatementResult,
+  DbEngineDescriptor,
   ErrorStatementResult,
   ExecuteQueryResponse,
   PlanStatementResult,
@@ -33,6 +34,10 @@ vi.mock('../stores/connectionStore', () => ({
 
 vi.mock('../api/metadata', () => ({
   useMetadata: () => ({ data: undefined }),
+}));
+
+vi.mock('../api/databaseEngines', () => ({
+  useEngineDescriptor: () => undefined,
 }));
 
 vi.mock('./useMonacoCompletions', () => ({
@@ -84,7 +89,9 @@ function makeRowsResult(overrides: Partial<RowsStatementResult> = {}): RowsState
   return {
     kind: 'rows',
     sql: 'SELECT 1',
-    columns: [{ name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false }],
+    columns: [
+      { name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+    ],
     rows: [{ id: 1 }],
     totalRows: 1,
     executionTimeMs: 5,
@@ -141,6 +148,44 @@ function simulateQuery(response: ExecuteQueryResponse) {
     },
   );
 }
+
+function makeDescriptor(
+  engine: DbEngineDescriptor['engine'],
+  formatterDialect: DbEngineDescriptor['formatterDialect'],
+): DbEngineDescriptor {
+  return {
+    engine,
+    label: engine,
+    connectionMode: engine === 'sqlite' ? 'file' : 'network',
+    uriSchemes: [engine],
+    parserDialect: formatterDialect,
+    formatterDialect,
+    namespaceLabel: 'Schema',
+    supportsSsl: engine !== 'sqlite',
+    sslEnabledByDefault: false,
+    ddl: {
+      columnTypes: [],
+      defaultExamples: [],
+      indexMethods: [],
+      supportsAutoIncrement: true,
+      supportsUsingExpression: false,
+    },
+  };
+}
+
+describe('formatterLanguage', () => {
+  it.each([
+    ['postgres', 'postgresql'],
+    ['mysql', 'mysql'],
+    ['sqlite', 'sqlite'],
+  ] as const)('returns the %s descriptor dialect', (engine, dialect) => {
+    expect(formatterLanguage(makeDescriptor(engine, dialect))).toBe(dialect);
+  });
+
+  it('defaults to PostgreSQL when the descriptor is unavailable', () => {
+    expect(formatterLanguage()).toBe('postgresql');
+  });
+});
 
 describe('SqlEditorView — toolbar', () => {
   it('renders the Format SQL button', () => {

@@ -17,9 +17,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Live Postgres for the PgDriver conformance suite (apps/api/.../pg-driver.contract.test.ts).
-    # Matches docker-compose's demo-target-postgres: host port 5434, demo/demo/demo. The suite
-    # creates its own schema/table, so no init SQL is needed; without this it skips itself.
+    # Live PostgreSQL and MySQL for the driver conformance suites (apps/api/.../*-driver.contract.test.ts).
+    # Match docker-compose's demo targets: Postgres on 5434, MySQL on 3307, both demo/demo/demo.
+    # Each suite creates its own schema/table, so no init SQL is needed. The Test step sets
+    # REQUIRE_LIVE_DRIVER_CONTRACTS=true so a missing/unhealthy engine fails CI instead of skipping.
     services:
       demo-target-postgres:
         image: postgres:16-alpine
@@ -34,6 +35,20 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      demo-target-mysql:
+        image: mysql:8.0.39
+        env:
+          MYSQL_ROOT_PASSWORD: demo
+          MYSQL_DATABASE: demo
+          MYSQL_USER: demo
+          MYSQL_PASSWORD: demo
+        ports:
+          - 3307:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -u demo -pdemo"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -66,6 +81,13 @@ jobs:
 
       - name: Test
         run: pnpm -w test
+        env:
+          # Both live engines are mandatory in CI — the contract suites fail rather than skip.
+          REQUIRE_LIVE_DRIVER_CONTRACTS: 'true'
+          CONTRACT_PG_HOST: localhost
+          CONTRACT_PG_PORT: '5434'
+          CONTRACT_MYSQL_HOST: localhost
+          CONTRACT_MYSQL_PORT: '3307'
 
   release:
     needs: build

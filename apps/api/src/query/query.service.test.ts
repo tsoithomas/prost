@@ -10,11 +10,13 @@ import { QUERY_PAGE_SIZE } from './paging';
 import { QueryService } from './query.service';
 
 const USERS_COLUMNS: ColumnMetadata[] = [
-  { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true },
-  { name: 'email', dataType: 'character varying', nullable: false, isPrimaryKey: false },
+  { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+  { name: 'email', dataType: 'character varying', nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
 ];
 
-const NO_PK_COLUMNS: ColumnMetadata[] = [{ name: 'value', dataType: 'integer', nullable: false, isPrimaryKey: false }];
+const NO_PK_COLUMNS: ColumnMetadata[] = [
+  { name: 'value', dataType: 'integer', nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+];
 
 function result<T extends Record<string, unknown>>(rows: T[], overrides: Partial<DriverResult> = {}): DriverResult {
   return { rows, fields: [], rowCount: rows.length, command: 'SELECT', ...overrides } as DriverResult;
@@ -25,19 +27,28 @@ function pgTypeResult(types: Record<number, string>): DriverResult {
   return result(rows);
 }
 
-function createService(run = vi.fn(), tableColumns: ColumnMetadata[] = USERS_COLUMNS) {
+function createService(
+  run = vi.fn(),
+  tableColumns: ColumnMetadata[] = USERS_COLUMNS,
+  defaultNamespace = 'public',
+) {
   const metadataService = { getTableColumns: vi.fn().mockResolvedValue(tableColumns) } as unknown as MetadataService;
 
-  // Real driver: parser dialect comes from its capabilities, and `buildResolveTypeNames`
+  // Real driver: parser dialect comes from its capabilities, and `describeResultColumns`
   // produces the pg_type lookup fragment that `pool.run` receives during column mapping.
   const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);
 
   // `PoolManager.run(connectionId, frag)` — the run mock receives `(connectionId, { sql, params })`.
-  const pool = { run, withTransaction: vi.fn(), driverFor: vi.fn().mockResolvedValue(driver) } as unknown as PoolManager;
+  const pool = {
+    run,
+    withSession: vi.fn(),
+    driverFor: vi.fn().mockResolvedValue(driver),
+    defaultNamespace: vi.fn().mockResolvedValue(defaultNamespace),
+  } as unknown as PoolManager;
 
-  // Mirrors `PoolManager.withTransaction`: runs `fn` against a `query` callback that proxies to
+  // Mirrors `PoolManager.withSession`: runs `fn` against a `query` callback that proxies to
   // the same `run` mock, so transactional tests assert on the same call queue as autocommit tests.
-  (pool.withTransaction as ReturnType<typeof vi.fn>).mockImplementation(
+  (pool.withSession as ReturnType<typeof vi.fn>).mockImplementation(
     async (connectionId: string, fn: (query: (frag: SqlFragment) => Promise<DriverResult>) => Promise<unknown>) => {
       const query = (frag: SqlFragment) => run(connectionId, frag);
       return fn(query);
@@ -50,7 +61,7 @@ function createService(run = vi.fn(), tableColumns: ColumnMetadata[] = USERS_COL
   return {
     service: new QueryService(pool, metadataService, historyService),
     run,
-    withTransaction: pool.withTransaction as ReturnType<typeof vi.fn>,
+    withSession: pool.withSession as ReturnType<typeof vi.fn>,
     metadataService,
     record,
   };
@@ -93,8 +104,8 @@ describe('QueryService.execute — single statement, SELECT', () => {
       sql: 'SELECT * FROM users',
       rows: [{ id: 1, email: 'a@x.com' }],
       columns: [
-        { name: 'id', dataType: 'int4', nullable: true, isPrimaryKey: true },
-        { name: 'email', dataType: 'varchar', nullable: true, isPrimaryKey: false },
+        { name: 'id', dataType: 'int4', nullable: true, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+        { name: 'email', dataType: 'varchar', nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
       ],
       totalRows: 1,
       truncated: false,
@@ -121,6 +132,24 @@ describe('QueryService.execute — single statement, SELECT', () => {
     expect(stmt.editable).toBe(false);
     expect(stmt.sourceTable).toBeUndefined();
     expect(stmt.primaryKey).toBeUndefined();
+  });
+
+  it('resolves an unqualified table against the connection database', async () => {
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce(result([{ id: 1 }], { fields: [{ name: 'id', dataTypeID: 23 }] }))
+      .mockResolvedValueOnce(pgTypeResult({ 23: 'int4' }));
+    const { service, metadataService } = createService(run, USERS_COLUMNS, 'shop');
+
+    const response = await service.execute('conn-1', 'SELECT * FROM orders', 'user-1');
+
+    expect(metadataService.getTableColumns).toHaveBeenCalledWith('conn-1', 'shop', 'orders');
+    const stmt = expectKind(response.statements[0]!, 'rows');
+    expect(stmt).toMatchObject({
+      editable: true,
+      sourceTable: 'shop.orders',
+      primaryKey: ['id'],
+    });
   });
 
   it('marks a join as read-only without resolving table metadata', async () => {
@@ -300,11 +329,11 @@ describe('QueryService.execute — transactional', () => {
       .mockResolvedValueOnce(result([], { rowCount: 1, command: 'UPDATE' }))
       .mockResolvedValueOnce(result([], { rowCount: 1, command: 'UPDATE' }))
       .mockResolvedValueOnce(result([], { rowCount: 0, command: 'COMMIT' }));
-    const { service, withTransaction } = createService(run);
+    const { service, withSession } = createService(run);
 
     const response = await service.execute('conn-1', 'UPDATE a SET x = 1; UPDATE b SET y = 1', 'user-1', '', true);
 
-    expect(withTransaction).toHaveBeenCalledOnce();
+    expect(withSession).toHaveBeenCalledOnce();
     expect(response.transactional).toBe(true);
     expect(response.statements).toHaveLength(2);
 

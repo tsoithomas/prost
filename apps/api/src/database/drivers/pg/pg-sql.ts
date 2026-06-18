@@ -1,7 +1,174 @@
+import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
 import { quoteIdent } from '@prost/utils';
 import { ROW_VERSION_KEY } from '@prost/shared-types';
-import type { AlterTableOperation, CreateIndexRequest, CreateTableRequest } from '@prost/shared-types';
+import type {
+  AlterTableOperation,
+  ColumnMetadata,
+  CreateIndexRequest,
+  CreateTableRequest,
+  NewColumn,
+} from '@prost/shared-types';
 import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
+
+const ALLOWED_TYPES = new Set([
+  'integer', 'bigint', 'smallint', 'serial', 'bigserial',
+  'boolean', 'text', 'varchar', 'char',
+  'real', 'double precision', 'numeric',
+  'date', 'time', 'timestamp', 'timestamptz',
+  'uuid', 'json', 'jsonb', 'bytea',
+]);
+
+const PARAMETERIZED_TYPES = new Set(['varchar', 'char', 'numeric']);
+
+const TYPE_PATTERN = /^([a-z]+(?: [a-z]+)*)(\(\s*\d+\s*(?:,\s*\d+\s*)?\))?$/;
+
+const SAFE_DEFAULT_PATTERN = /^(\d+|true|false|null|now\(\)|current_timestamp|gen_random_uuid\(\))$/i;
+
+const ALLOWED_INDEX_METHODS = new Set(['btree', 'hash', 'gin', 'gist', 'brin']);
+
+const USING_PATTERN = /^[a-z_][a-z0-9_]*(::([a-z][a-z0-9 ]*)(\(\s*\d+\s*(?:,\s*\d+\s*)?\))?)?$/i;
+
+function validateType(type: string): string {
+  const normalized = type.trim().toLowerCase().replace(/\s+/g, ' ');
+  const match = TYPE_PATTERN.exec(normalized);
+  const base = match?.[1];
+  const params = match?.[2];
+  if (!base || !ALLOWED_TYPES.has(base)) {
+    throw new UnprocessableEntityException(
+      `Unsupported column type "${type}". Allowed types: ${[...ALLOWED_TYPES].join(', ')}`,
+    );
+  }
+  if (params && !PARAMETERIZED_TYPES.has(base)) {
+    throw new UnprocessableEntityException(`Type "${base}" does not accept a length/precision parameter`);
+  }
+  return `${base}${params ? params.replace(/\s+/g, '') : ''}`;
+}
+
+function validateDefault(value: string | undefined): string | null {
+  if (value === undefined) return null;
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+  if (!SAFE_DEFAULT_PATTERN.test(trimmed)) {
+    throw new UnprocessableEntityException(
+      `Unsupported default value "${value}". Allowed: now(), current_timestamp, gen_random_uuid(), true, false, null, or a non-negative integer`,
+    );
+  }
+  return trimmed.toLowerCase();
+}
+
+function normalizeColumn(col: NewColumn): NewColumn {
+  const type = validateType(col.type);
+  const canonicalDefault = validateDefault(col.default);
+  return {
+    name: col.name,
+    type,
+    nullable: col.nullable,
+    isPrimaryKey: col.isPrimaryKey,
+    ...(canonicalDefault !== null ? { default: canonicalDefault } : {}),
+  };
+}
+
+export function pgNormalizeCreateTable(req: CreateTableRequest): CreateTableRequest {
+  return {
+    schema: req.schema,
+    table: req.table,
+    columns: req.columns.map(normalizeColumn),
+  };
+}
+
+export function pgNormalizeAlterTable(
+  _ref: TableRef,
+  op: AlterTableOperation,
+  columns: ColumnMetadata[],
+): AlterTableOperation {
+  const colNames = new Set(columns.map((column) => column.name));
+
+  switch (op.kind) {
+    case 'addColumn': {
+      if (colNames.has(op.column.name)) {
+        throw new ConflictException(`Column "${op.column.name}" already exists`);
+      }
+      const type = validateType(op.column.type);
+      const canonDefault = validateDefault(op.column.default);
+      const nullable = op.column.isPrimaryKey ? false : op.column.nullable;
+      return {
+        kind: 'addColumn',
+        column: {
+          ...op.column,
+          type,
+          nullable,
+          ...(canonDefault !== null ? { default: canonDefault } : { default: undefined }),
+        },
+      };
+    }
+    case 'dropColumn': {
+      if (!colNames.has(op.column)) {
+        throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+      }
+      const col = columns.find((column) => column.name === op.column)!;
+      if (col.isPrimaryKey) {
+        throw new UnprocessableEntityException(`Cannot drop primary key column "${op.column}"`);
+      }
+      return op;
+    }
+    case 'setNotNull':
+      if (!colNames.has(op.column)) {
+        throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+      }
+      return op;
+    case 'setDefault': {
+      if (!colNames.has(op.column)) {
+        throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+      }
+      let canonDefault: string | null = null;
+      if (op.default !== null) {
+        canonDefault = validateDefault(op.default);
+        if (canonDefault === null) {
+          throw new UnprocessableEntityException('Default value cannot be empty; pass null to drop the default');
+        }
+      }
+      return { ...op, default: canonDefault };
+    }
+    case 'changeType': {
+      if (!colNames.has(op.column)) {
+        throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+      }
+      const type = validateType(op.type);
+      let using: string | undefined;
+      if (op.using !== undefined) {
+        const trimmed = op.using.trim();
+        if (!USING_PATTERN.test(trimmed)) {
+          throw new UnprocessableEntityException(
+            `Unsupported USING expression "${op.using}". Allowed: identifier or identifier::type`,
+          );
+        }
+        using = trimmed.toLowerCase();
+      }
+      return { kind: 'changeType', column: op.column, type, ...(using !== undefined ? { using } : {}) };
+    }
+    default:
+      throw new UnprocessableEntityException('Unknown operation kind');
+  }
+}
+
+export function pgNormalizeCreateIndex(
+  req: CreateIndexRequest,
+): { request: CreateIndexRequest; name: string; method: string } {
+  const method = (req.method ?? 'btree').toLowerCase();
+  if (!ALLOWED_INDEX_METHODS.has(method)) {
+    throw new UnprocessableEntityException(
+      `Unsupported index method "${req.method}". Allowed: ${[...ALLOWED_INDEX_METHODS].join(', ')}`,
+    );
+  }
+
+  let name = req.name;
+  if (!name) {
+    const raw = `${req.table}_${req.columns.join('_')}_idx`;
+    name = raw.length > 63 ? raw.slice(0, 59) + '_idx' : raw;
+  }
+
+  return { request: req, name, method };
+}
 
 export const pgQuoteIdent = quoteIdent;
 export const pgPlaceholder = (index: number): string => `$${index}`;
@@ -27,6 +194,8 @@ export function pgBuildListTables(): SqlFragment {
 export function pgBuildListAllColumns(): SqlFragment {
   return {
     sql: `SELECT c.table_schema, c.table_name, c.column_name, c.data_type, c.is_nullable,
+           c.column_default AS default_value,
+           (c.is_identity = 'YES' OR c.column_default LIKE 'nextval(%') AS is_auto_increment,
            EXISTS (
              SELECT 1
              FROM information_schema.table_constraints tc
@@ -52,6 +221,8 @@ export function pgBuildListColumns(ref: TableRef): SqlFragment {
          c.column_name,
          c.data_type,
          c.is_nullable,
+         c.column_default AS default_value,
+         (c.is_identity = 'YES' OR c.column_default LIKE 'nextval(%') AS is_auto_increment,
          EXISTS (
            SELECT 1
            FROM information_schema.table_constraints tc

@@ -1,7 +1,13 @@
-import { ConflictException, Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Database from 'better-sqlite3';
-import type { AlterTableOperation, CreateIndexRequest, CreateTableRequest } from '@prost/shared-types';
+import type {
+  AlterTableOperation,
+  ColumnMetadata,
+  CreateIndexRequest,
+  CreateTableRequest,
+  DbEngineDescriptor,
+} from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
   ConnectionParams, DbCapabilities, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
@@ -26,6 +32,25 @@ function leadingKeyword(text: string): string {
 @Injectable()
 export class SqliteDriver implements DbDriver {
   readonly engine = 'sqlite';
+  readonly descriptor: DbEngineDescriptor = {
+    engine: 'sqlite',
+    label: 'SQLite',
+    connectionMode: 'file',
+    uriSchemes: [],
+    parserDialect: 'sqlite',
+    formatterDialect: 'sqlite',
+    namespaceLabel: 'Database',
+    defaultNamespace: 'main',
+    supportsSsl: false,
+    sslEnabledByDefault: false,
+    ddl: {
+      columnTypes: ['INTEGER', 'TEXT', 'REAL', 'BLOB', 'NUMERIC'],
+      defaultExamples: ['0', "''", 'CURRENT_TIMESTAMP', 'null'],
+      indexMethods: [],
+      supportsAutoIncrement: false,
+      supportsUsingExpression: false,
+    },
+  };
   readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: false, parserDialect: 'sqlite', concurrency: 'preimage' };
 
   private readonly busyTimeoutMs: number;
@@ -66,11 +91,29 @@ export class SqliteDriver implements DbDriver {
     return { rows: [], fields: [], rowCount: Number(info.changes), command };
   }
 
-  async withTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+  async withSession<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
     const db = pool as Db;
     const query: DriverQueryFn = (frag) => this.query(db, frag);
     db.prepare('BEGIN').run();
     try {
+      const result = await fn(query);
+      db.prepare('COMMIT').run();
+      return result;
+    } catch (error) {
+      try {
+        db.prepare('ROLLBACK').run();
+      } catch {
+        /* no active transaction */
+      }
+      throw error;
+    }
+  }
+
+  async withTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+    const db = pool as Db;
+    const query: DriverQueryFn = (frag) => this.query(db, frag);
+    try {
+      db.prepare('BEGIN').run();
       const result = await fn(query);
       db.prepare('COMMIT').run();
       return result;
@@ -122,12 +165,60 @@ export class SqliteDriver implements DbDriver {
   buildUpdateRow = (ref: TableRef, c: string, v: unknown, pk: string[], pv: unknown[]) => sql.sqliteBuildUpdateRow(ref, c, v, pk, pv);
   buildUpdateRowGuarded = (ref: TableRef, e: [string, unknown][], pk: string[], pv: unknown[], g: RowUpdateGuard) =>
     sql.sqliteBuildUpdateRowGuarded(ref, e, pk, pv, g);
+  async insertRow(
+    q: DriverQueryFn,
+    ref: TableRef,
+    entries: [string, unknown][],
+    _columns: ColumnMetadata[],
+  ): Promise<Record<string, unknown>> {
+    const r = await q(sql.sqliteBuildInsertRow(ref, entries));
+    return r.rows[0] as Record<string, unknown>;
+  }
+
+  async updateRow(
+    q: DriverQueryFn,
+    ref: TableRef,
+    column: string,
+    value: unknown,
+    primaryKey: string[],
+    primaryKeyValues: unknown[],
+  ): Promise<Record<string, unknown>> {
+    const r = await q(sql.sqliteBuildUpdateRow(ref, column, value, primaryKey, primaryKeyValues));
+    if (r.rowCount !== 1) {
+      throw new NotFoundException(`Row in "${ref.namespace ?? ''}.${ref.name}" no longer exists — it may have been changed or deleted`);
+    }
+    return r.rows[0] as Record<string, unknown>;
+  }
+
   buildDeleteRow = (ref: TableRef, pk: string[], pv: unknown[]) => sql.sqliteBuildDeleteRow(ref, pk, pv);
+  normalizeCreateTable = (req: CreateTableRequest) => sql.sqliteNormalizeCreateTable(req, this.descriptor.ddl.columnTypes);
+  normalizeAlterTable = (ref: TableRef, op: AlterTableOperation, columns: ColumnMetadata[]) =>
+    sql.sqliteNormalizeAlterTable(ref, op, columns, this.descriptor.ddl.columnTypes);
+  normalizeCreateIndex = (req: CreateIndexRequest) => sql.sqliteNormalizeCreateIndex(req);
   buildCreateTable = (req: CreateTableRequest) => sql.sqliteBuildCreateTable(req);
   buildAlterTable = (ref: TableRef, op: AlterTableOperation) => sql.sqliteBuildAlterTable(ref, op);
   buildCreateIndex = (req: CreateIndexRequest, name: string, method: string) => sql.sqliteBuildCreateIndex(req, name, method);
   buildDropIndex = (ref: TableRef, indexName: string) => sql.sqliteBuildDropIndex(ref, indexName);
-  buildResolveTypeNames = (oids: number[]) => sql.sqliteBuildResolveTypeNames(oids);
+
+  async describeResultColumns(
+    _query: DriverQueryFn,
+    fields: { name: string; dataTypeID: number; dataTypeName?: string }[],
+    primaryKey: string[] = [],
+  ): Promise<ColumnMetadata[]> {
+    const primaryKeySet = new Set(primaryKey);
+    return fields.map((field) => ({
+      name: field.name,
+      dataType: field.dataTypeName ?? 'unknown',
+      nullable: true,
+      isPrimaryKey: primaryKeySet.has(field.name),
+      autoIncrement: false,
+      defaultValue: null,
+    }));
+  }
+
+  formatExplain(rows: Record<string, unknown>[]): string {
+    return rows.map((row) => String(row['QUERY PLAN'] ?? row.detail ?? '')).join('\n');
+  }
 
   mapError(error: unknown, ctx: DriverErrorContext): void {
     const message = (error as { message?: string } | undefined)?.message ?? '';

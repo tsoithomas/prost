@@ -1,15 +1,15 @@
-import { ConflictException, ForbiddenException, Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { ForbiddenException, Injectable, UnprocessableEntityException } from '@nestjs/common';
 import type {
-  AlterTableOperation,
   AlterTableRequest,
   AlterTableResult,
   CreateIndexRequest,
   CreateIndexResult,
   CreateTableRequest,
   CreateTableResult,
+  DdlPreviewRequest,
+  DdlPreviewResult,
   DropIndexRequest,
   DropIndexResult,
-  NewColumn,
 } from '@prost/shared-types';
 import { PoolManager } from '../database/pool-manager.service';
 import { MetadataService } from '../metadata/metadata.service';
@@ -21,27 +21,6 @@ function assertWritable(connectionId: string): void {
     throw new ForbiddenException('This connection is read-only');
   }
 }
-
-const ALLOWED_TYPES = new Set([
-  'integer', 'bigint', 'smallint', 'serial', 'bigserial',
-  'boolean', 'text', 'varchar', 'char',
-  'real', 'double precision', 'numeric',
-  'date', 'time', 'timestamp', 'timestamptz',
-  'uuid', 'json', 'jsonb', 'bytea',
-]);
-
-// Only these accept a (n) or (n,m) length/precision modifier in Postgres.
-const PARAMETERIZED_TYPES = new Set(['varchar', 'char', 'numeric']);
-
-// Anchored to the full (normalized) string so stray characters can't slip through
-// alongside an otherwise-valid type name.
-const TYPE_PATTERN = /^([a-z]+(?: [a-z]+)*)(\(\s*\d+\s*(?:,\s*\d+\s*)?\))?$/;
-
-const SAFE_DEFAULT_PATTERN = /^(\d+|true|false|null|now\(\)|current_timestamp|gen_random_uuid\(\))$/i;
-
-const ALLOWED_INDEX_METHODS = new Set(['btree', 'hash', 'gin', 'gist', 'brin']);
-
-const USING_PATTERN = /^[a-z_][a-z0-9_]*(::([a-z][a-z0-9 ]*)(\(\s*\d+\s*(?:,\s*\d+\s*)?\))?)?$/i;
 
 @Injectable()
 export class DdlService {
@@ -62,20 +41,9 @@ export class DdlService {
       throw new UnprocessableEntityException(`Duplicate column name: "${duplicates[0]}"`);
     }
 
-    const columns: NewColumn[] = req.columns.map((col) => {
-      const type = this.validateType(col.type);
-      const canonicalDefault = this.validateDefault(col.default);
-      return {
-        name: col.name,
-        type,
-        nullable: col.nullable,
-        isPrimaryKey: col.isPrimaryKey,
-        ...(canonicalDefault !== null ? { default: canonicalDefault } : {}),
-      };
-    });
-
     const driver = await this.pool.driverFor(connectionId);
-    const frag = driver.buildCreateTable({ schema: req.schema, table: req.table, columns });
+    const normalized = driver.normalizeCreateTable(req);
+    const frag = driver.buildCreateTable(normalized);
 
     try {
       await this.pool.run(connectionId, frag);
@@ -87,113 +55,15 @@ export class DdlService {
     return { schema: req.schema, table: req.table, sql: frag.sql };
   }
 
-  /** Returns the canonical (lowercased, whitespace-normalized) type that the create-table builder will emit verbatim. */
-  private validateType(type: string): string {
-    const normalized = type.trim().toLowerCase().replace(/\s+/g, ' ');
-    const match = TYPE_PATTERN.exec(normalized);
-    const base = match?.[1];
-    const params = match?.[2];
-    if (!base || !ALLOWED_TYPES.has(base)) {
-      throw new UnprocessableEntityException(
-        `Unsupported column type "${type}". Allowed types: ${[...ALLOWED_TYPES].join(', ')}`,
-      );
-    }
-    if (params && !PARAMETERIZED_TYPES.has(base)) {
-      throw new UnprocessableEntityException(`Type "${base}" does not accept a length/precision parameter`);
-    }
-    return `${base}${params ? params.replace(/\s+/g, '') : ''}`;
-  }
-
-  /** Returns the canonical (trimmed, lowercased) default that the create-table builder will emit verbatim, or `null` if none. */
-  private validateDefault(value: string | undefined): string | null {
-    if (value === undefined) return null;
-    const trimmed = value.trim();
-    if (trimmed === '') return null;
-    if (!SAFE_DEFAULT_PATTERN.test(trimmed)) {
-      throw new UnprocessableEntityException(
-        `Unsupported default value "${value}". Allowed: now(), current_timestamp, gen_random_uuid(), true, false, null, or a non-negative integer`,
-      );
-    }
-    return trimmed.toLowerCase();
-  }
-
   async alterTable(connectionId: string, req: AlterTableRequest): Promise<AlterTableResult> {
     assertWritable(connectionId);
-    const structure = await this.metadataService.getTableStructure(connectionId, req.schema, req.table);
-    const op = req.operation;
-    const colNames = new Set(structure.columns.map((c) => c.name));
-
-    let normalizedOp: AlterTableOperation;
-
-    switch (op.kind) {
-      case 'addColumn': {
-        if (colNames.has(op.column.name)) {
-          throw new ConflictException(`Column "${op.column.name}" already exists`);
-        }
-        const type = this.validateType(op.column.type);
-        const canonDefault = this.validateDefault(op.column.default);
-        const nullable = op.column.isPrimaryKey ? false : op.column.nullable;
-        normalizedOp = {
-          kind: 'addColumn',
-          column: { ...op.column, type, nullable, ...(canonDefault !== null ? { default: canonDefault } : { default: undefined }) },
-        };
-        break;
-      }
-      case 'dropColumn': {
-        if (!colNames.has(op.column)) {
-          throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
-        }
-        const col = structure.columns.find((c) => c.name === op.column)!;
-        if (col.isPrimaryKey) {
-          throw new UnprocessableEntityException(`Cannot drop primary key column "${op.column}"`);
-        }
-        normalizedOp = op;
-        break;
-      }
-      case 'setNotNull': {
-        if (!colNames.has(op.column)) {
-          throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
-        }
-        normalizedOp = op;
-        break;
-      }
-      case 'setDefault': {
-        if (!colNames.has(op.column)) {
-          throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
-        }
-        let canonDefault: string | null = null;
-        if (op.default !== null) {
-          canonDefault = this.validateDefault(op.default);
-          if (canonDefault === null) {
-            throw new UnprocessableEntityException('Default value cannot be empty; pass null to drop the default');
-          }
-        }
-        normalizedOp = { ...op, default: canonDefault };
-        break;
-      }
-      case 'changeType': {
-        if (!colNames.has(op.column)) {
-          throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
-        }
-        const type = this.validateType(op.type);
-        let using: string | undefined;
-        if (op.using !== undefined) {
-          const trimmed = op.using.trim();
-          if (!USING_PATTERN.test(trimmed)) {
-            throw new UnprocessableEntityException(
-              `Unsupported USING expression "${op.using}". Allowed: identifier or identifier::type`,
-            );
-          }
-          using = trimmed.toLowerCase();
-        }
-        normalizedOp = { kind: 'changeType', column: op.column, type, ...(using !== undefined ? { using } : {}) };
-        break;
-      }
-      default:
-        throw new UnprocessableEntityException('Unknown operation kind');
-    }
-
     const driver = await this.pool.driverFor(connectionId);
+    const structure = await this.metadataService.getTableStructure(connectionId, req.schema, req.table);
+    const normalizedOp = driver.normalizeAlterTable(
+      { namespace: req.schema, name: req.table },
+      req.operation,
+      structure.columns,
+    );
     const frag = driver.buildAlterTable({ namespace: req.schema, name: req.table }, normalizedOp);
 
     try {
@@ -219,25 +89,9 @@ export class DdlService {
       }
     }
 
-    const method = (req.method ?? 'btree').toLowerCase();
-    if (!ALLOWED_INDEX_METHODS.has(method)) {
-      throw new UnprocessableEntityException(
-        `Unsupported index method "${req.method}". Allowed: ${[...ALLOWED_INDEX_METHODS].join(', ')}`,
-      );
-    }
-
-    let name = req.name;
-    if (!name) {
-      const raw = `${req.table}_${req.columns.join('_')}_idx`;
-      name = raw.length > 63 ? raw.slice(0, 59) + '_idx' : raw;
-    }
-
     const driver = await this.pool.driverFor(connectionId);
-    const frag = driver.buildCreateIndex(
-      { schema: req.schema, table: req.table, columns: req.columns, unique: req.unique, name: req.name, method: req.method },
-      name,
-      method,
-    );
+    const { request, name, method } = driver.normalizeCreateIndex(req);
+    const frag = driver.buildCreateIndex(request, name, method);
 
     try {
       await this.pool.run(connectionId, frag);
@@ -268,5 +122,62 @@ export class DdlService {
     }
 
     return { schema: req.schema, index: req.index, sql: frag.sql };
+  }
+
+  async preview(connectionId: string, req: DdlPreviewRequest): Promise<DdlPreviewResult> {
+    assertWritable(connectionId);
+    const driver = await this.pool.driverFor(connectionId);
+
+    switch (req.kind) {
+      case 'createTable': {
+        const r = req.request;
+        if (r.columns.length === 0) {
+          throw new UnprocessableEntityException('At least one column is required');
+        }
+        const names = r.columns.map((c) => c.name);
+        const duplicate = names.find((name, index) => names.indexOf(name) !== index);
+        if (duplicate) {
+          throw new UnprocessableEntityException(`Duplicate column name: "${duplicate}"`);
+        }
+        const frag = driver.buildCreateTable(driver.normalizeCreateTable(r));
+        return { sql: frag.sql };
+      }
+      case 'alterTable': {
+        const r = req.request;
+        const structure = await this.metadataService.getTableStructure(connectionId, r.schema, r.table);
+        const operation = driver.normalizeAlterTable(
+          { namespace: r.schema, name: r.table },
+          r.operation,
+          structure.columns,
+        );
+        const frag = driver.buildAlterTable({ namespace: r.schema, name: r.table }, operation);
+        return { sql: frag.sql };
+      }
+      case 'createIndex': {
+        const r = req.request;
+        const columns = await this.metadataService.getTableColumns(connectionId, r.schema, r.table);
+        if (r.columns.length === 0) {
+          throw new UnprocessableEntityException('At least one column is required for an index');
+        }
+        const columnNames = new Set(columns.map((column) => column.name));
+        for (const column of r.columns) {
+          if (!columnNames.has(column)) {
+            throw new UnprocessableEntityException(`Column "${column}" does not exist`);
+          }
+        }
+        const { request, name, method } = driver.normalizeCreateIndex(r);
+        const frag = driver.buildCreateIndex(request, name, method);
+        return { sql: frag.sql };
+      }
+      case 'dropIndex': {
+        const r = req.request;
+        const structure = await this.metadataService.getTableStructure(connectionId, r.schema, r.table);
+        if (!structure.indexes.some((index) => index.name === r.index)) {
+          throw new UnprocessableEntityException(`Index "${r.index}" does not exist on "${r.schema}"."${r.table}"`);
+        }
+        const frag = driver.buildDropIndex({ namespace: r.schema, name: r.index }, r.index);
+        return { sql: frag.sql };
+      }
+    }
   }
 }

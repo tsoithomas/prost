@@ -68,7 +68,10 @@ function containsSubquery(node: unknown): boolean {
  * subqueries, CTEs, UNION/INTERSECT/EXCEPT, multi-statement input, or non-`SELECT` statements
  * are never editable, so there's no need to look up a table at all.
  */
-export function extractSingleTable(statements: ParsedStatement[]): SingleTableRef | null {
+export function extractSingleTable(
+  statements: ParsedStatement[],
+  defaultSchema = 'public',
+): SingleTableRef | null {
   if (statements.length !== 1) return null;
   const [statement] = statements;
   if (!statement || !isSelect(statement)) return null;
@@ -86,7 +89,7 @@ export function extractSingleTable(statements: ParsedStatement[]): SingleTableRe
   // Subqueries in WHERE make the result non-updatable even when FROM is a single table.
   if (containsSubquery((statement as Record<string, unknown>)['where'])) return null;
 
-  return { schema: ref.db ?? 'public', table: ref.table };
+  return { schema: ref.db ?? defaultSchema, table: ref.table };
 }
 
 function isStarColumn(column: ParsedColumn): boolean {

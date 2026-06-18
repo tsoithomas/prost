@@ -51,6 +51,12 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  async withSession<T>(connectionId: string, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+    const { driver, pool } = await this.resolve(connectionId);
+    this.poolLastUsed.set(connectionId, Date.now());
+    return driver.withSession(pool, fn);
+  }
+
   async withTransaction<T>(connectionId: string, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
     const { driver, pool } = await this.resolve(connectionId);
     this.poolLastUsed.set(connectionId, Date.now());
@@ -78,6 +84,13 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
     });
     this.poolEngine.set(connectionId, engine);
     return this.registry.get(engine);
+  }
+
+  async defaultNamespace(connectionId: string): Promise<string> {
+    const driver = await this.driverFor(connectionId);
+    if (driver.descriptor.defaultNamespace) return driver.descriptor.defaultNamespace;
+    const { params } = await this.resolveConfig(connectionId);
+    return params.database;
   }
 
   async evictPool(connectionId: string): Promise<void> {

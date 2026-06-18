@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
-import { quoteIdent } from '@prost/utils';
 import type { ColumnMetadata } from '@prost/shared-types';
 import { Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
+import { useEngineDescriptor } from '../api/databaseEngines';
 import { useCreateIndex } from '../api/ddl';
+import { useDdlPreview } from '../api/ddlPreview';
 import { FormField } from '../components/FormField';
 import { apiErrorDetail } from '../lib/apiClient';
-
-const INDEX_METHODS = ['btree', 'hash', 'gin', 'gist', 'brin'];
 
 interface Props {
   open: boolean;
@@ -25,7 +24,23 @@ export function CreateIndexModal({ open, onClose, connectionId, schema, table, a
   const [indexName, setIndexName] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
+  const descriptor = useEngineDescriptor(connectionId);
   const createIndex = useCreateIndex(connectionId, schema, table);
+  const indexMethods = descriptor?.ddl.indexMethods ?? ['btree'];
+  const previewBody = selectedCols.length > 0
+    ? {
+        kind: 'createIndex',
+        request: {
+          schema,
+          table,
+          columns: selectedCols,
+          unique,
+          method,
+          name: indexName.trim() || undefined,
+        },
+      }
+    : null;
+  const { sql: previewSql } = useDdlPreview(connectionId, previewBody);
 
   useEffect(() => {
     if (!open) {
@@ -33,6 +48,12 @@ export function CreateIndexModal({ open, onClose, connectionId, schema, table, a
       setIndexName(''); setFormError(null); createIndex.reset();
     }
   }, [open]);
+
+  useEffect(() => {
+    if (indexMethods.length > 0 && !indexMethods.includes(method)) {
+      setMethod(indexMethods[0]!);
+    }
+  }, [indexMethods, method]);
 
   useEffect(() => {
     if (!open) return;
@@ -48,13 +69,6 @@ export function CreateIndexModal({ open, onClose, connectionId, schema, table, a
     setFormError(null);
   }
 
-  function previewSql() {
-    if (selectedCols.length === 0) return '';
-    const autoName = indexName.trim() || `${table}_${selectedCols.join('_')}_idx`;
-    const colList = selectedCols.map(quoteIdent).join(', ');
-    return `CREATE ${unique ? 'UNIQUE ' : ''}INDEX ${quoteIdent(autoName)} ON ${quoteIdent(schema)}.${quoteIdent(table)} USING ${method} (${colList})`;
-  }
-
   function handleSubmit() {
     if (selectedCols.length === 0) { setFormError('Select at least one column.'); return; }
     setFormError(null);
@@ -66,8 +80,6 @@ export function CreateIndexModal({ open, onClose, connectionId, schema, table, a
       },
     );
   }
-
-  const preview = previewSql();
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-md md:items-center">
@@ -113,7 +125,7 @@ export function CreateIndexModal({ open, onClose, connectionId, schema, table, a
                 onChange={(e) => setMethod(e.target.value)}
                 className="h-9 w-full rounded-sm border border-border bg-surface px-sm text-sm text-text focus:border-accent focus:outline-none"
               >
-                {INDEX_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                {indexMethods.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </FormField>
           </div>
@@ -122,10 +134,10 @@ export function CreateIndexModal({ open, onClose, connectionId, schema, table, a
             <Input value={indexName} onChange={(e) => setIndexName(e.target.value)} placeholder={`${table}_col_idx`} className="font-mono text-xs" />
           </FormField>
 
-          {preview ? (
+          {previewSql ? (
             <div>
               <span className="mb-xs block text-xs font-medium uppercase tracking-wider text-text-faint">SQL Preview</span>
-              <pre className="overflow-x-auto rounded-sm border border-border bg-surface-sunken p-md font-mono text-xs text-text">{preview}</pre>
+              <pre className="overflow-x-auto rounded-sm border border-border bg-surface-sunken p-md font-mono text-xs text-text">{previewSql}</pre>
             </div>
           ) : null}
 

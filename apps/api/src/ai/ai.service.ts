@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import type { ChatRequest, ChatResponse } from '@prost/shared-types';
 import { ConnectionsService } from '../connections/connections.service';
+import { PoolManager } from '../database/pool-manager.service';
 import { AiProviderService } from './ai-provider.service';
 import { LlmEndpointService } from './llm-endpoint.service';
 import { RetrievalService } from './retrieval.service';
@@ -12,6 +13,7 @@ export class AiService {
     private readonly llmEndpointService: LlmEndpointService,
     private readonly provider: AiProviderService,
     private readonly retrieval: RetrievalService,
+    private readonly pool: PoolManager,
   ) {}
 
   async chat(userId: string, connectionId: string, req: ChatRequest): Promise<ChatResponse> {
@@ -23,7 +25,8 @@ export class AiService {
     }
 
     const schemaContext = await this.retrieval.buildContext(connectionId);
-    const systemPrompt = buildSystemPrompt(schemaContext, req.mode);
+    const engineLabel = (await this.pool.driverFor(connectionId)).descriptor.label;
+    const systemPrompt = buildSystemPrompt(schemaContext, req.mode, engineLabel);
 
     let content: string;
     try {
@@ -45,13 +48,13 @@ export class AiService {
   }
 }
 
-function buildSystemPrompt(schemaContext: string, mode?: string): string {
+function buildSystemPrompt(schemaContext: string, mode: string | undefined, engineLabel: string): string {
   const role =
     mode === 'generateSql'
-      ? 'You are a SQL generator for a PostgreSQL database.'
+      ? `You are a SQL generator for a ${engineLabel} database.`
       : mode === 'explain'
-        ? 'You are a SQL explainer for a PostgreSQL database.'
-        : 'You are a PostgreSQL assistant.';
+        ? `You are a SQL explainer for a ${engineLabel} database.`
+        : `You are a ${engineLabel} assistant.`;
 
   return `${role} The database has the following schema:
 

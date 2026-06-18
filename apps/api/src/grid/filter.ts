@@ -7,14 +7,16 @@ type TypeFamily = 'text' | 'numeric' | 'datetime' | 'boolean' | 'other';
 
 const TEXT_TYPES = new Set([
   'text', 'character varying', 'character', 'name', 'citext', 'varchar', 'char', 'bpchar',
+  'tinytext', 'mediumtext', 'longtext', 'enum', 'set', 'text/blob',
 ]);
 const NUMERIC_TYPES = new Set([
   'integer', 'bigint', 'smallint', 'int', 'int2', 'int4', 'int8',
-  'real', 'double precision', 'float4', 'float8',
-  'numeric', 'decimal', 'money',
+  'tinyint', 'mediumint',
+  'real', 'double precision', 'double', 'float4', 'float8',
+  'numeric', 'decimal', 'dec', 'fixed', 'money',
 ]);
 const DATETIME_TYPES = new Set([
-  'date',
+  'date', 'datetime', 'year',
   'timestamp without time zone', 'timestamp with time zone',
   'timestamp', 'timestamptz',
   'time without time zone', 'time with time zone',

@@ -6,8 +6,8 @@ import {
   sqliteBuildDropIndex,
   sqliteBuildFilteredRowCount,
   sqliteBuildInsertRow,
+  sqliteBuildListAllColumns,
   sqliteBuildListColumns,
-  sqliteBuildResolveTypeNames,
   sqliteBuildRowCountEstimate,
   sqliteBuildSelectRows,
   sqliteBuildUpdateRow,
@@ -29,11 +29,24 @@ describe('sqlite dialect helpers', () => {
 });
 
 describe('sqlite metadata builders', () => {
-  it('binds the table name as a pragma parameter — never interpolates it', () => {
+  it('binds the table name twice and only marks a single INTEGER primary key as auto-increment', () => {
     const frag = sqliteBuildListColumns({ namespace: 'main', name: 'orders' });
     expect(frag.sql).toContain('pragma_table_info(?)');
+    expect(frag.sql).toContain('dflt_value AS default_value');
+    expect(frag.sql).toContain("pk = 1 AND UPPER(type) = 'INTEGER'");
+    expect(frag.sql).toContain('(SELECT COUNT(*) FROM pragma_table_info(?) WHERE pk > 0) = 1');
+    expect(frag.sql).toContain('AS is_auto_increment');
     expect(frag.sql).not.toContain("'orders'");
-    expect(frag.params).toEqual(['orders']);
+    expect(frag.params).toEqual(['orders', 'orders']);
+  });
+
+  it('uses the current table name to reject composite primary keys when listing all columns', () => {
+    const frag = sqliteBuildListAllColumns();
+    expect(frag.sql).toContain('ti.dflt_value AS default_value');
+    expect(frag.sql).toContain("ti.pk = 1 AND UPPER(ti.type) = 'INTEGER'");
+    expect(frag.sql).toContain('(SELECT COUNT(*) FROM pragma_table_info(m.name) WHERE pk > 0) = 1');
+    expect(frag.sql).toContain('AS is_auto_increment');
+    expect(frag.params).toEqual([]);
   });
 });
 
@@ -144,13 +157,5 @@ describe('sqlite ddl builders', () => {
   it('drops a schema-qualified index', () => {
     const frag = sqliteBuildDropIndex({ namespace: 'main', name: 'users_email_idx' }, 'users_email_idx');
     expect(frag.sql).toBe('DROP INDEX "main"."users_email_idx"');
-  });
-});
-
-describe('sqliteBuildResolveTypeNames', () => {
-  it('is a no-op that returns no rows (type names are carried on field metadata)', () => {
-    const frag = sqliteBuildResolveTypeNames([1, 2, 3]);
-    expect(frag.sql).toContain('WHERE 0 = 1');
-    expect(frag.params).toEqual([]);
   });
 });

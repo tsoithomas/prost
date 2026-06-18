@@ -94,7 +94,7 @@ export class QueryService {
 
   /** All statements share one client/session under BEGIN; the first failure rolls back the whole batch and stops. */
   private async executeTransactional(connectionId: string, driver: DbDriver, statementTexts: string[], correlationId: string): Promise<StatementResult[]> {
-    return this.pool.withTransaction(connectionId, async (query) => {
+    return this.pool.withSession(connectionId, async (query) => {
       const results: StatementResult[] = [];
       await query({ sql: 'BEGIN', params: [] });
 
@@ -121,7 +121,7 @@ export class QueryService {
     run: RunFn,
   ): Promise<StatementResult> {
     const explainMatch = EXPLAIN_RE.exec(statementText);
-    if (explainMatch) return this.executePlan(statementText, explainMatch, run);
+    if (explainMatch) return this.executePlan(driver, statementText, explainMatch, run);
 
     const ast = this.tryAstifyOne(driver, statementText);
     const isSelect = ast?.type === 'select';
@@ -130,7 +130,7 @@ export class QueryService {
     if (isSelect || isUnparsedSelect) {
       return this.executeRows(connectionId, driver, statementText, ast, isOnlyStatement, run);
     }
-    return this.executeCommand(statementText, run);
+    return this.executeCommand(connectionId, driver, statementText, run);
   }
 
   /** `node-sql-parser` throws on input it can't parse — return `null` and let the caller fall back. */
@@ -161,7 +161,7 @@ export class QueryService {
       try {
         queryResult = await run({ sql: pagedSql, params });
       } catch {
-        return this.executeCommand(statementText, run);
+        return this.executeCommand(connectionId, driver, statementText, run);
       }
     } else {
       // astify-confirmed SELECT — a failure here is a real error.
@@ -191,9 +191,33 @@ export class QueryService {
     return result;
   }
 
-  private async executeCommand(statementText: string, run: RunFn): Promise<StatementResult> {
+  private async executeCommand(
+    connectionId: string,
+    driver: DbDriver,
+    statementText: string,
+    run: RunFn,
+  ): Promise<StatementResult> {
     const start = Date.now();
-    const { rowCount, command } = await run({ sql: statementText, params: [] });
+    const { rows, fields, rowCount, command } = await run({ sql: statementText, params: [] });
+
+    // A statement that wasn't classified as SELECT/EXPLAIN but still returns columns is a result
+    // set (e.g. DESCRIBE/SHOW on MySQL, PRAGMA on SQLite) — render it as a read-only grid rather
+    // than an affected-rows summary. Engine-neutral: any driver that returns `fields` qualifies.
+    if (fields.length > 0) {
+      const columns = await this.mapColumns(connectionId, driver, fields);
+      const result: RowsStatementResult = {
+        kind: 'rows',
+        sql: statementText,
+        rows,
+        columns,
+        totalRows: rows.length,
+        truncated: false,
+        editable: false,
+        executionTimeMs: Date.now() - start,
+      };
+      return result;
+    }
+
     const result: CommandStatementResult = {
       kind: 'command',
       sql: statementText,
@@ -205,13 +229,13 @@ export class QueryService {
   }
 
   /** Covers both `EXPLAIN ANALYZE ...` and `EXPLAIN (ANALYZE, ...) ...`. Runs the statement exactly as written — no FORMAT JSON rewrite. */
-  private async executePlan(statementText: string, explainMatch: RegExpExecArray, run: RunFn): Promise<StatementResult> {
+  private async executePlan(driver: DbDriver, statementText: string, explainMatch: RegExpExecArray, run: RunFn): Promise<StatementResult> {
     const optionsList = explainMatch[2] ?? '';
     const analyze = /^\s*explain\s+analyze\b/i.test(statementText) || /\banalyze\b/i.test(optionsList);
 
     const start = Date.now();
     const { rows } = await run({ sql: statementText, params: [] });
-    const planText = rows.map((row) => String((row as Record<string, unknown>)['QUERY PLAN'] ?? '')).join('\n');
+    const planText = driver.formatExplain(rows as Record<string, unknown>[]);
 
     const result: PlanStatementResult = {
       kind: 'plan',
@@ -237,7 +261,8 @@ export class QueryService {
   }
 
   private async resolveEditability(connectionId: string, statements: ParsedStatement[]): Promise<EditabilityResult> {
-    const table = extractSingleTable(statements);
+    const defaultSchema = await this.pool.defaultNamespace(connectionId);
+    const table = extractSingleTable(statements, defaultSchema);
     if (!table) return { editable: false };
 
     const tableColumns = await this.metadataService.getTableColumns(connectionId, table.schema, table.table);
@@ -246,30 +271,8 @@ export class QueryService {
     return analyzeEditability(statements, table, primaryKey);
   }
 
-  /**
-   * Maps driver field metadata to `ColumnMetadata` so results render in the shared grid.
-   * Drivers that carry a `dataTypeName` (SQLite) skip the catalog round-trip; PG resolves
-   * its OID-based type ids via `buildResolveTypeNames`.
-   */
-  private async mapColumns(connectionId: string, driver: DbDriver, fields: FieldInfo[], primaryKey: string[] = []): Promise<ColumnMetadata[]> {
-    if (fields.length === 0) return [];
-
-    const primaryKeySet = new Set(primaryKey);
-    const needsResolution = fields.some((field) => field.dataTypeName === undefined);
-
-    let typeNames = new Map<number, string>();
-    if (needsResolution) {
-      const oids = [...new Set(fields.map((field) => field.dataTypeID))];
-      const { rows } = await this.pool.run(connectionId, driver.buildResolveTypeNames(oids));
-      const typeRows = rows as unknown as { oid: number; typname: string }[];
-      typeNames = new Map(typeRows.map((row) => [Number(row.oid), row.typname]));
-    }
-
-    return fields.map((field) => ({
-      name: field.name,
-      dataType: field.dataTypeName ?? typeNames.get(field.dataTypeID) ?? 'unknown',
-      nullable: true,
-      isPrimaryKey: primaryKeySet.has(field.name),
-    }));
+  private mapColumns(connectionId: string, driver: DbDriver, fields: FieldInfo[], primaryKey: string[] = []): Promise<ColumnMetadata[]> {
+    if (fields.length === 0) return Promise.resolve([]);
+    return driver.describeResultColumns((frag) => this.pool.run(connectionId, frag), fields, primaryKey);
   }
 }

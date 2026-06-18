@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, Cable, Database, Eye, EyeOff, Plus, Save, Trash2, X, Zap } from 'lucide-react';
 import clsx from 'clsx';
-import type { ConnectionDto } from '@prost/shared-types';
+import type { ConnectionDto, DbEngine, DbEngineDescriptor } from '@prost/shared-types';
 import { parseConnectionString } from '@prost/utils';
 import { Badge, Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
 import {
@@ -11,6 +11,7 @@ import {
   useTestConnection,
   useUpdateConnection,
 } from '../api/connections';
+import { useDatabaseEngines } from '../api/databaseEngines';
 import { FormField } from '../components/FormField';
 import { useConfirm } from '../hooks/useConfirm';
 import { apiErrorMessage } from '../lib/apiClient';
@@ -23,6 +24,7 @@ export interface ConnectionModalProps {
 }
 
 interface ConnectionFormState {
+  engine: DbEngine;
   name: string;
   host: string;
   port: string;
@@ -34,6 +36,7 @@ interface ConnectionFormState {
 }
 
 const blankForm: ConnectionFormState = {
+  engine: 'postgres',
   name: '',
   host: '',
   port: '5432',
@@ -44,8 +47,30 @@ const blankForm: ConnectionFormState = {
   sslRejectUnauthorized: true,
 };
 
+const fallbackNetworkEngine: DbEngineDescriptor = {
+  engine: 'postgres',
+  label: 'PostgreSQL',
+  connectionMode: 'network',
+  defaultPort: 5432,
+  uriSchemes: ['postgres', 'postgresql'],
+  parserDialect: 'postgresql',
+  formatterDialect: 'postgresql',
+  namespaceLabel: 'Schema',
+  defaultNamespace: 'public',
+  supportsSsl: true,
+  sslEnabledByDefault: true,
+  ddl: {
+    columnTypes: [],
+    defaultExamples: [],
+    indexMethods: [],
+    supportsAutoIncrement: false,
+    supportsUsingExpression: true,
+  },
+};
+
 function toFormState(connection: ConnectionDto): ConnectionFormState {
   return {
+    engine: connection.engine,
     name: connection.name,
     host: connection.host,
     port: String(connection.port),
@@ -59,6 +84,7 @@ function toFormState(connection: ConnectionDto): ConnectionFormState {
 
 export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
   const { data: connections = [], isLoading: connectionsLoading } = useConnections();
+  const { data: databaseEngines } = useDatabaseEngines();
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
   const setActive = useConnectionStore((state) => state.setActive);
 
@@ -112,9 +138,14 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
 
   if (!open) return null;
 
+  const descriptors = databaseEngines ?? [fallbackNetworkEngine];
+  const networkEngines = descriptors.filter((descriptor) => descriptor.connectionMode === 'network');
   const selectedConnection = connections.find((c) => c.id === selectedId) ?? null;
   const selectedReadOnly = selectedConnection?.capabilities.readOnly ?? false;
-  const engineLabel = selectedConnection?.engine === 'sqlite' ? 'SQLite' : 'PostgreSQL';
+  const currentEngine = selectedConnection?.engine ?? form.engine;
+  const currentEngineDescriptor = descriptors.find((descriptor) => descriptor.engine === currentEngine);
+  const engineLabel =
+    currentEngineDescriptor?.label ?? `${currentEngine.charAt(0).toUpperCase()}${currentEngine.slice(1)}`;
 
   function selectConnection(connection: ConnectionDto) {
     setSelectedId(connection.id);
@@ -137,15 +168,27 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
     testConnection.reset();
   }
 
+  function handleEngineChange(engine: DbEngine) {
+    const descriptor = networkEngines.find((candidate) => candidate.engine === engine);
+    setForm((prev) => ({
+      ...prev,
+      engine,
+      port: String(descriptor?.defaultPort ?? prev.port),
+      sslEnabled: descriptor?.sslEnabledByDefault ?? prev.sslEnabled,
+    }));
+    testConnection.reset();
+  }
+
   function handleImport() {
     const result = parseConnectionString(importValue);
     if (!result.ok) {
       setFormError(result.error);
       return;
     }
-    const { host, port, database, username, password, sslEnabled, sslRejectUnauthorized } = result.value;
+    const { engine, host, port, database, username, password, sslEnabled, sslRejectUnauthorized } = result.value;
     setForm((prev) => ({
       ...prev,
+      engine,
       name: prev.name.trim() ? prev.name : database || prev.name,
       host,
       port: String(port),
@@ -182,6 +225,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
     const port = Number(form.port);
     testConnection.mutate({
       id: selectedId ?? undefined,
+      ...(!selectedId ? { engine: form.engine } : {}),
       host: form.host,
       port,
       database: form.database,
@@ -259,6 +303,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
 
     createConnection.mutate(
       {
+        engine: form.engine,
         name: form.name,
         host: form.host,
         port: Number(form.port),
@@ -403,6 +448,22 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                 ) : null}
               </div>
 
+              {!selectedId && networkEngines.length >= 2 ? (
+                <FormField label="Engine">
+                  <select
+                    value={form.engine}
+                    onChange={(event) => handleEngineChange(event.target.value as DbEngine)}
+                    className="h-9 rounded-sm border border-border bg-surface px-sm text-sm text-text focus:border-accent focus:outline-none"
+                  >
+                    {networkEngines.map((descriptor) => (
+                      <option key={descriptor.engine} value={descriptor.engine}>
+                        {descriptor.label}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+              ) : null}
+
               <FormField label="Connection Name">
                 <Input value={form.name} onChange={(event) => updateField('name', event.target.value)} placeholder="My Database" />
               </FormField>
@@ -492,7 +553,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
               {testConnection.data ? (
                 <Badge variant={testConnection.data.ok ? 'success' : 'danger'} className="w-max">
                   {testConnection.data.message}
-                  {testConnection.data.serverVersion ? ` · PostgreSQL ${testConnection.data.serverVersion}` : ''}
+                  {testConnection.data.serverVersion ? ` · ${engineLabel} ${testConnection.data.serverVersion}` : ''}
                 </Badge>
               ) : null}
               {testConnection.isError ? (

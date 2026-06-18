@@ -19,18 +19,20 @@ export interface DriverResult<T extends QueryResultRow = QueryResultRow> {
   /**
    * `dataTypeID` is the engine's native type id (PG OID). Drivers that already know the
    * type name (e.g. SQLite, from prepared-statement column metadata) may also set
-   * `dataTypeName`, letting the query layer skip a catalog round-trip via
-   * `buildResolveTypeNames`.
+   * `dataTypeName`, letting the driver skip a catalog round-trip in
+   * `describeResultColumns`.
    */
   fields: { name: string; dataTypeID: number; dataTypeName?: string }[];
   rowCount: number | null;
   command: string;
+  /** Connection-scoped generated key (MySQL `insertId`); other engines leave it undefined. */
+  lastInsertId?: string | number;
 }
 
 export interface DbCapabilities {
   supportsReturning: boolean;
   supportsSchemas: boolean;
-  parserDialect: 'postgresql' | 'sqlite';
+  parserDialect: 'postgresql' | 'mysql' | 'sqlite';
   /**
    * Optimistic-concurrency basis for row writes: `token` engines expose a per-row version
    * (PG `xmin`); `preimage` engines have none, so writes guard on the edited columns' old values.

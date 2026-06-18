@@ -2,6 +2,7 @@ import { BadRequestException, NotFoundException, ServiceUnavailableException } f
 import { describe, expect, it, vi } from 'vitest';
 import type { ChatRequest } from '@prost/shared-types';
 import type { ConnectionsService } from '../connections/connections.service';
+import type { PoolManager } from '../database/pool-manager.service';
 import type { AiProviderService } from './ai-provider.service';
 import type { DecryptedEndpoint, LlmEndpointService } from './llm-endpoint.service';
 import type { RetrievalService } from './retrieval.service';
@@ -20,12 +21,14 @@ function createService({
   ownershipFails = false,
   endpoint = ENDPOINT,
   endpointThrows = false,
+  engineLabel = 'PostgreSQL',
   providerResponse = 'Here is your answer.\n```sql\nSELECT * FROM users;\n```',
   providerThrows = false,
 }: {
   ownershipFails?: boolean;
   endpoint?: DecryptedEndpoint;
   endpointThrows?: boolean;
+  engineLabel?: string;
   providerResponse?: string;
   providerThrows?: boolean;
 } = {}) {
@@ -53,12 +56,17 @@ function createService({
     buildContext: vi.fn().mockResolvedValue(SAMPLE_CONTEXT),
   } as unknown as RetrievalService;
 
+  const pool = {
+    driverFor: vi.fn().mockResolvedValue({ descriptor: { label: engineLabel } }),
+  } as unknown as PoolManager;
+
   return {
-    service: new AiService(connectionsService, llmEndpointService, provider, retrieval),
+    service: new AiService(connectionsService, llmEndpointService, provider, retrieval, pool),
     connectionsService,
     llmEndpointService,
     provider,
     retrieval,
+    pool,
   };
 }
 
@@ -119,6 +127,28 @@ describe('AiService.chat', () => {
     await service.chat('user-1', 'conn-1', { ...REQ, mode: 'generateSql' });
     const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     expect(opts.systemPrompt).toContain('SQL generator');
+  });
+
+  it.each([
+    ['generateSql', 'You are a SQL generator for a PostgreSQL database.'],
+    ['explain', 'You are a SQL explainer for a PostgreSQL database.'],
+    [undefined, 'You are a PostgreSQL assistant.'],
+  ] as const)('uses PostgreSQL wording for %s mode by default', async (mode, expected) => {
+    const { service, provider } = createService();
+    await service.chat('user-1', 'conn-1', { ...REQ, mode });
+    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(opts.systemPrompt).toContain(expected);
+  });
+
+  it.each([
+    ['generateSql', 'You are a SQL generator for a MySQL database.'],
+    ['explain', 'You are a SQL explainer for a MySQL database.'],
+    [undefined, 'You are a MySQL assistant.'],
+  ] as const)('uses the driver label for %s mode', async (mode, expected) => {
+    const { service, provider } = createService({ engineLabel: 'MySQL' });
+    await service.chat('user-1', 'conn-1', { ...REQ, mode });
+    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(opts.systemPrompt).toContain(expected);
   });
 
   it('returns the assistant message with provider content', async () => {

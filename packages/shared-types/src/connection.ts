@@ -1,5 +1,26 @@
 /** Supported target database engines. SQLite is file-based (the `database` field is a path). */
-export type DbEngine = 'postgres' | 'sqlite';
+export type DbEngine = 'postgres' | 'mysql' | 'sqlite';
+
+export interface DbEngineDescriptor {
+  engine: DbEngine;
+  label: string;
+  connectionMode: 'network' | 'file';
+  defaultPort?: number;
+  uriSchemes: string[];
+  parserDialect: 'postgresql' | 'mysql' | 'sqlite';
+  formatterDialect: 'postgresql' | 'mysql' | 'sqlite';
+  namespaceLabel: string;
+  defaultNamespace?: string;
+  supportsSsl: boolean;
+  sslEnabledByDefault: boolean;
+  ddl: {
+    columnTypes: string[];
+    defaultExamples: string[];
+    indexMethods: string[];
+    supportsAutoIncrement: boolean;
+    supportsUsingExpression: boolean;
+  };
+}
 
 /**
  * Engine/connection capabilities the UI branches on, so behavior stays engine-neutral (a new
@@ -43,7 +64,6 @@ export interface CreateConnectionDto {
 /** All fields optional; an empty/omitted `password` means "keep the stored credential". */
 export interface UpdateConnectionDto {
   name?: string;
-  engine?: DbEngine;
   host?: string;
   port?: number;
   database?: string;

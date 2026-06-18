@@ -16,6 +16,10 @@ describe('extractSingleTable', () => {
     expect(extractSingleTable(parse('SELECT * FROM users'))).toEqual({ schema: 'public', table: 'users' });
   });
 
+  it('resolves an unqualified table against the supplied default schema', () => {
+    expect(extractSingleTable(parse('SELECT * FROM orders'), 'shop')).toEqual({ schema: 'shop', table: 'orders' });
+  });
+
   it('resolves a schema-qualified table', () => {
     expect(extractSingleTable(parse('SELECT * FROM public.users'))).toEqual({ schema: 'public', table: 'users' });
   });

@@ -23,9 +23,18 @@ describe('MetadataService.getSchemas', () => {
         { table_schema: 'public', table_name: 'orders' },
       ]))
       .mockResolvedValueOnce(result([
-        { table_schema: 'public', table_name: 'users', column_name: 'id', data_type: 'integer', is_nullable: 'NO', is_primary_key: true },
-        { table_schema: 'public', table_name: 'users', column_name: 'email', data_type: 'character varying', is_nullable: 'NO', is_primary_key: false },
-        { table_schema: 'public', table_name: 'orders', column_name: 'id', data_type: 'integer', is_nullable: 'NO', is_primary_key: true },
+        {
+          table_schema: 'public', table_name: 'users', column_name: 'id', data_type: 'integer',
+          is_nullable: 'NO', is_primary_key: true, default_value: "nextval('users_id_seq'::regclass)", is_auto_increment: true,
+        },
+        {
+          table_schema: 'public', table_name: 'users', column_name: 'email', data_type: 'character varying',
+          is_nullable: 'NO', is_primary_key: false, default_value: null, is_auto_increment: false,
+        },
+        {
+          table_schema: 'public', table_name: 'orders', column_name: 'id', data_type: 'integer',
+          is_nullable: 'NO', is_primary_key: true, default_value: 0, is_auto_increment: 0,
+        },
       ]));
     const { service } = createService(run);
 
@@ -38,12 +47,33 @@ describe('MetadataService.getSchemas', () => {
     const [usersTable, ordersTable] = schemas[0]!.tables;
     expect(usersTable!.name).toBe('users');
     expect(usersTable!.columns).toHaveLength(2);
-    expect(usersTable!.columns[0]).toEqual({ name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true });
-    expect(usersTable!.columns[1]).toEqual({ name: 'email', dataType: 'character varying', nullable: false, isPrimaryKey: false });
+    expect(usersTable!.columns[0]).toEqual({
+      name: 'id',
+      dataType: 'integer',
+      nullable: false,
+      isPrimaryKey: true,
+      autoIncrement: true,
+      defaultValue: "nextval('users_id_seq'::regclass)",
+    });
+    expect(usersTable!.columns[1]).toEqual({
+      name: 'email',
+      dataType: 'character varying',
+      nullable: false,
+      isPrimaryKey: false,
+      autoIncrement: false,
+      defaultValue: null,
+    });
 
     expect(ordersTable!.name).toBe('orders');
     expect(ordersTable!.columns).toHaveLength(1);
-    expect(ordersTable!.columns[0]).toEqual({ name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true });
+    expect(ordersTable!.columns[0]).toEqual({
+      name: 'id',
+      dataType: 'integer',
+      nullable: false,
+      isPrimaryKey: true,
+      autoIncrement: false,
+      defaultValue: '0',
+    });
   });
 
   it('returns empty columns array for tables with no matching column rows', async () => {
@@ -54,6 +84,33 @@ describe('MetadataService.getSchemas', () => {
 
     const schemas = await service.getSchemas('conn-1');
     expect(schemas[0]!.tables[0]!.columns).toEqual([]);
+  });
+});
+
+describe('MetadataService.getTableColumns', () => {
+  it('maps default values and SQLite numeric auto-increment flags', async () => {
+    const run = vi.fn().mockResolvedValue(result([
+      {
+        column_name: 'id', data_type: 'INTEGER', is_nullable: 'NO', is_primary_key: 1,
+        default_value: null, is_auto_increment: 1,
+      },
+      {
+        column_name: 'name', data_type: 'TEXT', is_nullable: 'YES', is_primary_key: 0,
+        default_value: "''", is_auto_increment: 0,
+      },
+    ]));
+    const { service } = createService(run);
+
+    await expect(service.getTableColumns('conn-1', 'main', 'widgets')).resolves.toEqual([
+      {
+        name: 'id', dataType: 'INTEGER', nullable: false, isPrimaryKey: true,
+        autoIncrement: true, defaultValue: null,
+      },
+      {
+        name: 'name', dataType: 'TEXT', nullable: true, isPrimaryKey: false,
+        autoIncrement: false, defaultValue: "''",
+      },
+    ]);
   });
 });
 
@@ -122,7 +179,7 @@ describe('MetadataService.getTableStructure', () => {
   it('calls getTableColumns and getTableIndexes exactly once each and merges their results', async () => {
     const { service } = createService();
     const colsSpy = vi.spyOn(service, 'getTableColumns').mockResolvedValue([
-      { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true },
+      { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
     ]);
     const idxSpy = vi.spyOn(service, 'getTableIndexes').mockResolvedValue([]);
 

@@ -4,7 +4,7 @@ import type { ColumnMetadata } from '@prost/shared-types';
 import { compileWhere } from './filter';
 
 function col(name: string, dataType: string): ColumnMetadata {
-  return { name, dataType, nullable: true, isPrimaryKey: false };
+  return { name, dataType, nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null };
 }
 
 const TEXT_COL = col('email', 'character varying');
@@ -215,5 +215,43 @@ describe('compileWhere — validation errors', () => {
         COLUMNS, 0,
       ),
     ).toThrow(BadRequestException);
+  });
+});
+
+describe('compileWhere — MySQL type families', () => {
+  it('accepts numeric operators for MySQL integer and floating-point types', () => {
+    expect(() => {
+      for (const dataType of ['tinyint', 'int', 'double']) {
+        compileWhere(
+          { conditions: [{ column: 'value', operator: 'gt', value: 1 }], combinator: 'and' },
+          [col('value', dataType)],
+          0,
+        );
+      }
+    }).not.toThrow();
+  });
+
+  it('accepts datetime operators for MySQL datetime types', () => {
+    expect(() => {
+      for (const dataType of ['datetime', 'year']) {
+        compileWhere(
+          { conditions: [{ column: 'value', operator: 'lt', value: '2026-01-01' }], combinator: 'and' },
+          [col('value', dataType)],
+          0,
+        );
+      }
+    }).not.toThrow();
+  });
+
+  it('accepts text operators for MySQL text types', () => {
+    expect(() => {
+      for (const dataType of ['mediumtext', 'enum']) {
+        compileWhere(
+          { conditions: [{ column: 'value', operator: 'contains', value: 'active' }], combinator: 'and' },
+          [col('value', dataType)],
+          0,
+        );
+      }
+    }).not.toThrow();
   });
 });

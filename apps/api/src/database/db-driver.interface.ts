@@ -1,7 +1,9 @@
 import type {
   AlterTableOperation,
+  ColumnMetadata,
   CreateIndexRequest,
   CreateTableRequest,
+  DbEngineDescriptor,
 } from '@prost/shared-types';
 import type {
   ConnectionParams,
@@ -22,12 +24,15 @@ export const DB_DRIVERS = Symbol('DB_DRIVERS');
 
 export interface DbDriver {
   readonly engine: string;
+  readonly descriptor: DbEngineDescriptor;
   readonly capabilities: DbCapabilities;
 
   // --- connection lifecycle (called by PoolManager) ---
   createPool(params: ConnectionParams): Promise<NativePool>;
   closePool(pool: NativePool): Promise<void>;
   query(pool: NativePool, frag: SqlFragment): Promise<DriverResult>;
+  /** Pin one connection, run `fn`, no automatic transaction. Used by QueryService. */
+  withSession<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T>;
   /**
    * Runs `fn` inside a single transaction: the driver issues `BEGIN` before `fn`, `COMMIT` on
    * success, and `ROLLBACK` if `fn` throws (the error then propagates). All statements `fn` runs
@@ -67,16 +72,45 @@ export interface DbDriver {
     pkValues: unknown[],
     guard: RowUpdateGuard,
   ): SqlFragment;
+  /** Execute an insert and return the persisted row. `q` is the transactional query fn from
+   *  PoolManager.withTransaction. PG/SQLite: one `INSERT ... RETURNING *`. `columns` carries
+   *  PK/AUTO_INCREMENT flags (used by MySQL later; PG/SQLite ignore it). */
+  insertRow(
+    q: DriverQueryFn,
+    ref: TableRef,
+    entries: [string, unknown][],
+    columns: ColumnMetadata[],
+  ): Promise<Record<string, unknown>>;
+  /** Execute a single-column update and return the persisted row. Throws NotFoundException when
+   *  the primary key matches no row. */
+  updateRow(
+    q: DriverQueryFn,
+    ref: TableRef,
+    column: string,
+    value: unknown,
+    primaryKey: string[],
+    primaryKeyValues: unknown[],
+  ): Promise<Record<string, unknown>>;
   buildDeleteRow(ref: TableRef, pkColumns: string[], pkValues: unknown[]): SqlFragment;
 
   // --- ddl builders ---
+  normalizeCreateTable(req: CreateTableRequest): CreateTableRequest;
+  normalizeAlterTable(ref: TableRef, operation: AlterTableOperation, columns: ColumnMetadata[]): AlterTableOperation;
+  normalizeCreateIndex(req: CreateIndexRequest): { request: CreateIndexRequest; name: string; method: string };
   buildCreateTable(req: CreateTableRequest): SqlFragment;
   buildAlterTable(ref: TableRef, op: AlterTableOperation): SqlFragment;
   buildCreateIndex(req: CreateIndexRequest, name: string, method: string): SqlFragment;
   buildDropIndex(ref: TableRef, indexName: string): SqlFragment;
 
   // --- query-editor support ---
-  buildResolveTypeNames(oids: number[]): SqlFragment;
+  /** Resolve result-column types into ColumnMetadata. PG runs a pg_type OID lookup through
+   *  `query`; SQLite returns declared types from field metadata. Async because PG hits the DB. */
+  describeResultColumns(
+    query: DriverQueryFn,
+    fields: { name: string; dataTypeID: number; dataTypeName?: string }[],
+    primaryKey?: string[],
+  ): Promise<ColumnMetadata[]>;
+  formatExplain(rows: Record<string, unknown>[]): string;
 
   /** Inspect a native error; throw the right Nest HTTP exception, or return to let the caller rethrow. */
   mapError(error: unknown, context: DriverErrorContext): void;

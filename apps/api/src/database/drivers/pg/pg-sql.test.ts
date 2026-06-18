@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pgPlaceholder, pgQuoteIdent, pgBuildListColumns, pgBuildListIndexes, pgBuildListTables } from './pg-sql';
+import { pgPlaceholder, pgQuoteIdent, pgBuildListAllColumns, pgBuildListColumns, pgBuildListIndexes, pgBuildListTables } from './pg-sql';
 import { pgBuildSelectRows, pgBuildInsertRow, pgBuildUpdateRow, pgBuildUpdateRowGuarded, pgBuildDeleteRow, pgBuildRowCountEstimate } from './pg-sql';
 import { pgBuildCreateTable, pgBuildAlterTable, pgBuildCreateIndex, pgBuildDropIndex, pgBuildResolveTypeNames } from './pg-sql';
 
@@ -23,9 +23,17 @@ describe('pg-sql metadata builders', () => {
   it('builds column query bound to schema+table', () => {
     const { sql, params } = pgBuildListColumns({ namespace: 'public', name: 'users' });
     expect(sql).toContain('information_schema.columns');
+    expect(sql).toContain('c.column_default AS default_value');
+    expect(sql).toContain("(c.is_identity = 'YES' OR c.column_default LIKE 'nextval(%') AS is_auto_increment");
     expect(sql).toContain('$1');
     expect(sql).toContain('$2');
     expect(params).toEqual(['public', 'users']);
+  });
+  it('includes defaults and auto-increment metadata when listing all columns', () => {
+    const { sql, params } = pgBuildListAllColumns();
+    expect(sql).toContain('c.column_default AS default_value');
+    expect(sql).toContain("(c.is_identity = 'YES' OR c.column_default LIKE 'nextval(%') AS is_auto_increment");
+    expect(params).toEqual([]);
   });
   it('builds index query via pg_index bound to schema+table', () => {
     const { sql, params } = pgBuildListIndexes({ namespace: 'public', name: 'users' });

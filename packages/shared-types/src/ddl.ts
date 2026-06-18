@@ -3,6 +3,7 @@ export interface NewColumn {
   type: string;
   nullable: boolean;
   isPrimaryKey: boolean;
+  autoIncrement?: boolean;
   default?: string;
 }
 
@@ -70,5 +71,15 @@ export interface DropIndexRequest {
 export interface DropIndexResult {
   schema: string;
   index: string;
+  sql: string;
+}
+
+export type DdlPreviewRequest =
+  | { kind: 'createTable'; request: CreateTableRequest }
+  | { kind: 'alterTable'; request: AlterTableRequest }
+  | { kind: 'createIndex'; request: CreateIndexRequest }
+  | { kind: 'dropIndex'; request: DropIndexRequest };
+
+export interface DdlPreviewResult {
   sql: string;
 }

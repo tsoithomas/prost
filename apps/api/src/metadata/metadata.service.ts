@@ -26,6 +26,8 @@ interface ColumnRow {
   data_type: string;
   is_nullable: 'YES' | 'NO';
   is_primary_key: boolean;
+  default_value: string | null;
+  is_auto_increment: boolean | number;
 }
 
 interface AllColumnsRow extends ColumnRow {
@@ -57,7 +59,14 @@ export class MetadataService {
     for (const col of colRows) {
       const key = `${col.table_schema}.${col.table_name}`;
       const list = colMap.get(key) ?? [];
-      list.push({ name: col.column_name, dataType: col.data_type, nullable: col.is_nullable === 'YES', isPrimaryKey: Boolean(col.is_primary_key) });
+      list.push({
+        name: col.column_name,
+        dataType: col.data_type,
+        nullable: col.is_nullable === 'YES',
+        isPrimaryKey: Boolean(col.is_primary_key),
+        autoIncrement: Boolean(col.is_auto_increment),
+        defaultValue: col.default_value == null ? null : String(col.default_value),
+      });
       colMap.set(key, list);
     }
 
@@ -82,6 +91,8 @@ export class MetadataService {
       dataType: row.data_type,
       nullable: row.is_nullable === 'YES',
       isPrimaryKey: Boolean(row.is_primary_key),
+      autoIncrement: Boolean(row.is_auto_increment),
+      defaultValue: row.default_value == null ? null : String(row.default_value),
     }));
   }
 

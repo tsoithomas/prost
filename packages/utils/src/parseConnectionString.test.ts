@@ -7,6 +7,7 @@ describe('parseConnectionString', () => {
     expect(result).toEqual({
       ok: true,
       value: {
+        engine: 'postgres',
         host: 'host',
         port: 5433,
         database: 'mydb',
@@ -23,6 +24,7 @@ describe('parseConnectionString', () => {
     expect(result).toEqual({
       ok: true,
       value: {
+        engine: 'postgres',
         host: 'host',
         port: 5432,
         database: 'db',
@@ -38,6 +40,14 @@ describe('parseConnectionString', () => {
     const result = parseConnectionString('postgres://user:pass@host/db');
     expect(result.ok).toBe(true);
     expect(result.ok && result.value.port).toBe(5432);
+  });
+
+  it('identifies postgres and postgresql schemes as postgres', () => {
+    const postgres = parseConnectionString('postgres://user:pass@host/db');
+    const postgresql = parseConnectionString('postgresql://user:pass@host/db');
+
+    expect(postgres.ok && postgres.value.engine).toBe('postgres');
+    expect(postgresql.ok && postgresql.value.engine).toBe('postgres');
   });
 
   it('percent-decodes the username and password', () => {
@@ -95,6 +105,57 @@ describe('parseConnectionString', () => {
     expect(result.ok && result.value.database).toBe('');
   });
 
+  it('parses mysql and defaults its port to 3306', () => {
+    const result = parseConnectionString('mysql://user:pass@host/db');
+
+    expect(result).toEqual({
+      ok: true,
+      value: {
+        engine: 'mysql',
+        host: 'host',
+        port: 3306,
+        database: 'db',
+        username: 'user',
+        password: 'pass',
+        sslEnabled: true,
+        sslRejectUnauthorized: false,
+      },
+    });
+  });
+
+  it.each([
+    ['DISABLED', false, false],
+    ['PREFERRED', true, false],
+    ['REQUIRED', true, false],
+    ['VERIFY_CA', true, true],
+    ['VERIFY_IDENTITY', true, true],
+  ])(
+    'maps mysql ssl-mode=%s to sslEnabled=%s and sslRejectUnauthorized=%s',
+    (sslMode, sslEnabled, sslRejectUnauthorized) => {
+      const result = parseConnectionString(`mysql://user:pass@host/db?ssl-mode=${sslMode}`);
+
+      expect(result.ok).toBe(true);
+      expect(result.ok && result.value.sslEnabled).toBe(sslEnabled);
+      expect(result.ok && result.value.sslRejectUnauthorized).toBe(sslRejectUnauthorized);
+    },
+  );
+
+  it('reads the mysql ssl-mode query parameter case-insensitively', () => {
+    const result = parseConnectionString('mysql://user:pass@host/db?SSL-MODE=verify_ca');
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.sslEnabled).toBe(true);
+    expect(result.ok && result.value.sslRejectUnauthorized).toBe(true);
+  });
+
+  it('defaults mysql SSL to encrypted without certificate verification', () => {
+    const result = parseConnectionString('mysql://user:pass@host/db');
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.sslEnabled).toBe(true);
+    expect(result.ok && result.value.sslRejectUnauthorized).toBe(false);
+  });
+
   it('rejects a connection string with no host', () => {
     const result = parseConnectionString('postgres://');
     expect(result).toEqual({
@@ -103,11 +164,11 @@ describe('parseConnectionString', () => {
     });
   });
 
-  it('rejects a non-Postgres scheme without throwing', () => {
-    const result = parseConnectionString('mysql://user:pass@host:3306/db');
+  it('rejects an unsupported scheme without throwing', () => {
+    const result = parseConnectionString('http://user:pass@host:3306/db');
     expect(result).toEqual({
       ok: false,
-      error: 'Connection string must start with postgres:// or postgresql://',
+      error: 'Connection string must start with postgres://, postgresql://, or mysql://',
     });
   });
 

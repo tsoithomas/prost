@@ -11,7 +11,7 @@ import type {
 } from 'ag-grid-community';
 import { Bookmark, Play, Plus, Save, Trash2, WandSparkles, X } from 'lucide-react';
 import { format } from 'sql-formatter';
-import type { ExecuteQueryResponse } from '@prost/shared-types';
+import type { DbEngineDescriptor, ExecuteQueryResponse } from '@prost/shared-types';
 import {
   Badge,
   Button,
@@ -26,6 +26,7 @@ import {
   resolveColorMode,
 } from '@prost/ui';
 import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
+import { useEngineDescriptor } from '../api/databaseEngines';
 import { useMetadata } from '../api/metadata';
 import { useExecuteQuery } from '../api/query';
 import { useCreateSnippet } from '../api/snippets';
@@ -37,6 +38,7 @@ import { useConnectionStore } from '../stores/connectionStore';
 import { useThemeStore } from '../stores/themeStore';
 import { INITIAL_SQL, useWorkspaceStore } from '../stores/workspaceStore';
 import { PlanPanel, StatementResultPanel } from './StatementResultPanel';
+import { statementAtOffset } from './statementRanges';
 import { useMonacoCompletions } from './useMonacoCompletions';
 
 /** `sourceTable` is `schema.table` (see `editability.ts`) — split it back for the Phase 2 mutation hooks. */
@@ -47,8 +49,15 @@ function splitSourceTable(sourceTable: string | undefined): { schema: string; ta
   return { schema: sourceTable.slice(0, dot), table: sourceTable.slice(dot + 1) };
 }
 
+export function formatterLanguage(
+  descriptor?: DbEngineDescriptor,
+): 'postgresql' | 'mysql' | 'sqlite' {
+  return descriptor?.formatterDialect ?? 'postgresql';
+}
+
 export function SqlEditorView() {
   const connectionId = useConnectionStore((state) => state.activeConnectionId);
+  const descriptor = useEngineDescriptor(connectionId);
   const colorMode = useThemeStore((state) => state.colorMode);
   const accentColor = useThemeStore((state) => state.accentColor);
   const pendingQuerySql = useWorkspaceStore((state) => state.pendingQuerySql);
@@ -64,6 +73,8 @@ export function SqlEditorView() {
   const monacoRef = useRef<Monaco | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const gridApiRef = useRef<GridApi | null>(null);
+  const formatterDialectRef = useRef<'postgresql' | 'mysql' | 'sqlite'>('postgresql');
+  formatterDialectRef.current = formatterLanguage(descriptor);
   const [monacoInstance, setMonacoInstance] = useState<Monaco | null>(null);
 
   const sql = activeTab?.sql ?? INITIAL_SQL;
@@ -140,33 +151,63 @@ export function SqlEditorView() {
     clearPendingQuerySql();
   }, [pendingQuerySql, clearPendingQuerySql, activeTabId, setTabSql]);
 
-  const runQuery = useCallback(() => {
-    const trimmed = sql.trim();
-    if (!connectionId || !trimmed || executeQuery.isPending) return;
+  const runSql = useCallback(
+    (sqlToRun: string) => {
+      const trimmed = sqlToRun.trim();
+      if (!connectionId || !trimmed || executeQuery.isPending) return;
 
-    setPendingInsert(null);
-    setSelectedRows([]);
-    gridApiRef.current?.deselectAll();
+      setPendingInsert(null);
+      setSelectedRows([]);
+      gridApiRef.current?.deselectAll();
 
-    executeQuery.mutate(
-      { sql: trimmed, transactional },
-      {
-        onSuccess: (data) => {
-          setResponse(data);
-          const resultStatements = data.statements;
-          const resultSingle = resultStatements.length === 1 ? resultStatements[0]! : null;
-          setRowData(resultSingle?.kind === 'rows' ? resultSingle.rows : []);
-          setTabResult(activeTabId, data);
-          queryClient.invalidateQueries({ queryKey: ['history', connectionId] });
+      executeQuery.mutate(
+        { sql: trimmed, transactional },
+        {
+          onSuccess: (data) => {
+            setResponse(data);
+            const resultStatements = data.statements;
+            const resultSingle = resultStatements.length === 1 ? resultStatements[0]! : null;
+            setRowData(resultSingle?.kind === 'rows' ? resultSingle.rows : []);
+            setTabResult(activeTabId, data);
+            queryClient.invalidateQueries({ queryKey: ['history', connectionId] });
+          },
         },
-      },
-    );
-  }, [connectionId, executeQuery, sql, transactional, queryClient, activeTabId, setTabResult]);
+      );
+    },
+    [connectionId, executeQuery, transactional, queryClient, activeTabId, setTabResult],
+  );
 
-  // Monaco's Cmd/Ctrl+Enter command is registered once in `onMount`, so route it through a
-  // ref to always call the latest `runQuery` (current `sql`/`connectionId`).
-  const runQueryRef = useRef(runQuery);
-  runQueryRef.current = runQuery;
+  // Cmd/Ctrl+Enter: run the selected text if any, otherwise the statement under the cursor.
+  const runActiveStatement = useCallback(() => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+    if (!editor || !model) {
+      runSql(sql);
+      return;
+    }
+    const selection = editor.getSelection();
+    if (selection && !selection.isEmpty()) {
+      runSql(model.getValueInRange(selection));
+      return;
+    }
+    const position = editor.getPosition();
+    const text = model.getValue();
+    const offset = position ? model.getOffsetAt(position) : text.length;
+    runSql(statementAtOffset(text, offset) ?? text);
+  }, [runSql, sql]);
+
+  // Cmd/Ctrl+Shift+Enter: run the whole tab.
+  const runAll = useCallback(() => {
+    const text = editorRef.current?.getModel()?.getValue() ?? sql;
+    runSql(text);
+  }, [runSql, sql]);
+
+  // Monaco commands are registered once in `onMount`, so route them through refs to always
+  // call the latest closures (current `sql`/`connectionId`/`transactional`).
+  const runActiveStatementRef = useRef(runActiveStatement);
+  runActiveStatementRef.current = runActiveStatement;
+  const runAllRef = useRef(runAll);
+  runAllRef.current = runAll;
 
   const onGridReady = useCallback((event: GridReadyEvent) => {
     gridApiRef.current = event.api;
@@ -296,10 +337,20 @@ export function SqlEditorView() {
             editorRef.current = editor;
             monacoRef.current = monaco;
             setMonacoInstance(monaco);
-            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => runQueryRef.current());
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () =>
+              runActiveStatementRef.current(),
+            );
+            editor.addCommand(
+              monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
+              () => runAllRef.current(),
+            );
             monaco.languages.registerDocumentFormattingEditProvider('sql', {
               provideDocumentFormattingEdits(model) {
-                const formatted = format(model.getValue(), { language: 'postgresql', tabWidth: 2, keywordCase: 'upper' });
+                const formatted = format(model.getValue(), {
+                  language: formatterDialectRef.current,
+                  tabWidth: 2,
+                  keywordCase: 'upper',
+                });
                 return [{ range: model.getFullModelRange(), text: formatted }];
               },
             });
@@ -322,9 +373,10 @@ export function SqlEditorView() {
           <Button
             variant="primary"
             size="sm"
-            onClick={runQuery}
+            onClick={runActiveStatement}
             disabled={!connectionId || !sql.trim() || executeQuery.isPending}
             className="shrink-0"
+            title="Run the selected text, or the statement under the cursor (Cmd/Ctrl+Enter). Cmd/Ctrl+Shift+Enter runs all."
           >
             <Play size={12} />
             {executeQuery.isPending ? 'Running…' : 'Run'}
