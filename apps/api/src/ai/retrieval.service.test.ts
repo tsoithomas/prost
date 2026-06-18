@@ -14,9 +14,9 @@ const MOCK_SCHEMAS = [
 
 const USERS_STRUCTURE = {
   columns: [
-    { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true },
-    { name: 'email', dataType: 'text', nullable: false, isPrimaryKey: false },
-    { name: 'name', dataType: 'text', nullable: true, isPrimaryKey: false },
+    { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+    { name: 'email', dataType: 'text', nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+    { name: 'name', dataType: 'text', nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
   ],
   indexes: [
     { name: 'users_pkey', columns: ['id'], isUnique: true, isPrimary: true, method: 'btree', definition: '' },
@@ -26,9 +26,9 @@ const USERS_STRUCTURE = {
 
 const ORDERS_STRUCTURE = {
   columns: [
-    { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true },
-    { name: 'user_id', dataType: 'integer', nullable: false, isPrimaryKey: false },
-    { name: 'total', dataType: 'numeric', nullable: true, isPrimaryKey: false },
+    { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+    { name: 'user_id', dataType: 'integer', nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+    { name: 'total', dataType: 'numeric', nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
   ],
   indexes: [
     { name: 'orders_pkey', columns: ['id'], isUnique: true, isPrimary: true, method: 'btree', definition: '' },

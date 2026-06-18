@@ -38,12 +38,33 @@ describe('MetadataService.getSchemas', () => {
     const [usersTable, ordersTable] = schemas[0]!.tables;
     expect(usersTable!.name).toBe('users');
     expect(usersTable!.columns).toHaveLength(2);
-    expect(usersTable!.columns[0]).toEqual({ name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true });
-    expect(usersTable!.columns[1]).toEqual({ name: 'email', dataType: 'character varying', nullable: false, isPrimaryKey: false });
+    expect(usersTable!.columns[0]).toEqual({
+      name: 'id',
+      dataType: 'integer',
+      nullable: false,
+      isPrimaryKey: true,
+      autoIncrement: false,
+      defaultValue: null,
+    });
+    expect(usersTable!.columns[1]).toEqual({
+      name: 'email',
+      dataType: 'character varying',
+      nullable: false,
+      isPrimaryKey: false,
+      autoIncrement: false,
+      defaultValue: null,
+    });
 
     expect(ordersTable!.name).toBe('orders');
     expect(ordersTable!.columns).toHaveLength(1);
-    expect(ordersTable!.columns[0]).toEqual({ name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true });
+    expect(ordersTable!.columns[0]).toEqual({
+      name: 'id',
+      dataType: 'integer',
+      nullable: false,
+      isPrimaryKey: true,
+      autoIncrement: false,
+      defaultValue: null,
+    });
   });
 
   it('returns empty columns array for tables with no matching column rows', async () => {
@@ -122,7 +143,7 @@ describe('MetadataService.getTableStructure', () => {
   it('calls getTableColumns and getTableIndexes exactly once each and merges their results', async () => {
     const { service } = createService();
     const colsSpy = vi.spyOn(service, 'getTableColumns').mockResolvedValue([
-      { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true },
+      { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
     ]);
     const idxSpy = vi.spyOn(service, 'getTableIndexes').mockResolvedValue([]);
 

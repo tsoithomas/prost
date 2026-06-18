@@ -8,9 +8,9 @@ import type { MetadataService } from '../metadata/metadata.service';
 import { DdlService } from './ddl.service';
 
 const DEFAULT_COLUMNS: ColumnMetadata[] = [
-  { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true },
-  { name: 'email', dataType: 'text', nullable: false, isPrimaryKey: false },
-  { name: 'note', dataType: 'text', nullable: true, isPrimaryKey: false },
+  { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+  { name: 'email', dataType: 'text', nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+  { name: 'note', dataType: 'text', nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
 ];
 
 const DEFAULT_INDEXES: IndexMetadata[] = [

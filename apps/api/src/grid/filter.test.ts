@@ -4,7 +4,7 @@ import type { ColumnMetadata } from '@prost/shared-types';
 import { compileWhere } from './filter';
 
 function col(name: string, dataType: string): ColumnMetadata {
-  return { name, dataType, nullable: true, isPrimaryKey: false };
+  return { name, dataType, nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null };
 }
 
 const TEXT_COL = col('email', 'character varying');

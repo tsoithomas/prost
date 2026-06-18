@@ -84,7 +84,9 @@ function makeRowsResult(overrides: Partial<RowsStatementResult> = {}): RowsState
   return {
     kind: 'rows',
     sql: 'SELECT 1',
-    columns: [{ name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false }],
+    columns: [
+      { name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+    ],
     rows: [{ id: 1 }],
     totalRows: 1,
     executionTimeMs: 5,

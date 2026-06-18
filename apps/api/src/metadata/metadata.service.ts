@@ -57,7 +57,14 @@ export class MetadataService {
     for (const col of colRows) {
       const key = `${col.table_schema}.${col.table_name}`;
       const list = colMap.get(key) ?? [];
-      list.push({ name: col.column_name, dataType: col.data_type, nullable: col.is_nullable === 'YES', isPrimaryKey: Boolean(col.is_primary_key) });
+      list.push({
+        name: col.column_name,
+        dataType: col.data_type,
+        nullable: col.is_nullable === 'YES',
+        isPrimaryKey: Boolean(col.is_primary_key),
+        autoIncrement: false,
+        defaultValue: null,
+      });
       colMap.set(key, list);
     }
 
@@ -82,6 +89,8 @@ export class MetadataService {
       dataType: row.data_type,
       nullable: row.is_nullable === 'YES',
       isPrimaryKey: Boolean(row.is_primary_key),
+      autoIncrement: false,
+      defaultValue: null,
     }));
   }
 

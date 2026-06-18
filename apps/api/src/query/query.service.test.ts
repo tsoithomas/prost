@@ -10,11 +10,13 @@ import { QUERY_PAGE_SIZE } from './paging';
 import { QueryService } from './query.service';
 
 const USERS_COLUMNS: ColumnMetadata[] = [
-  { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true },
-  { name: 'email', dataType: 'character varying', nullable: false, isPrimaryKey: false },
+  { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+  { name: 'email', dataType: 'character varying', nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
 ];
 
-const NO_PK_COLUMNS: ColumnMetadata[] = [{ name: 'value', dataType: 'integer', nullable: false, isPrimaryKey: false }];
+const NO_PK_COLUMNS: ColumnMetadata[] = [
+  { name: 'value', dataType: 'integer', nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+];
 
 function result<T extends Record<string, unknown>>(rows: T[], overrides: Partial<DriverResult> = {}): DriverResult {
   return { rows, fields: [], rowCount: rows.length, command: 'SELECT', ...overrides } as DriverResult;
@@ -93,8 +95,8 @@ describe('QueryService.execute — single statement, SELECT', () => {
       sql: 'SELECT * FROM users',
       rows: [{ id: 1, email: 'a@x.com' }],
       columns: [
-        { name: 'id', dataType: 'int4', nullable: true, isPrimaryKey: true },
-        { name: 'email', dataType: 'varchar', nullable: true, isPrimaryKey: false },
+        { name: 'id', dataType: 'int4', nullable: true, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+        { name: 'email', dataType: 'varchar', nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
       ],
       totalRows: 1,
       truncated: false,

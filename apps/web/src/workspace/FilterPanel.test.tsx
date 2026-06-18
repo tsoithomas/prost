@@ -6,7 +6,7 @@ import { FilterPanel, operatorsForColumn } from './FilterPanel';
 import { renderWithProviders } from '../test/renderWithProviders';
 
 function col(name: string, dataType: string): ColumnMetadata {
-  return { name, dataType, nullable: true, isPrimaryKey: false };
+  return { name, dataType, nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null };
 }
 
 const COLUMNS: ColumnMetadata[] = [

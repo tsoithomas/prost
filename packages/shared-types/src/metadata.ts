@@ -3,6 +3,8 @@ export interface ColumnMetadata {
   dataType: string;
   nullable: boolean;
   isPrimaryKey: boolean;
+  autoIncrement: boolean;
+  defaultValue: string | null;
 }
 
 export interface TableMetadata {

@@ -270,6 +270,8 @@ export class QueryService {
       dataType: field.dataTypeName ?? typeNames.get(field.dataTypeID) ?? 'unknown',
       nullable: true,
       isPrimaryKey: primaryKeySet.has(field.name),
+      autoIncrement: false,
+      defaultValue: null,
     }));
   }
 }

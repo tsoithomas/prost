@@ -3,6 +3,7 @@ export interface NewColumn {
   type: string;
   nullable: boolean;
   isPrimaryKey: boolean;
+  autoIncrement?: boolean;
   default?: string;
 }
 

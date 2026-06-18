@@ -12,14 +12,23 @@ const SCHEMA: SchemaMetadata[] = [
         schema: 'public',
         name: 'users',
         columns: [
-          { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true },
-          { name: 'email', dataType: 'character varying', nullable: false, isPrimaryKey: false },
+          { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+          {
+            name: 'email',
+            dataType: 'character varying',
+            nullable: false,
+            isPrimaryKey: false,
+            autoIncrement: false,
+            defaultValue: null,
+          },
         ],
       },
       {
         schema: 'public',
         name: 'orders',
-        columns: [{ name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true }],
+        columns: [
+          { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+        ],
       },
     ],
   },

@@ -14,12 +14,12 @@ import type { DriverResult } from '../database/types';
 import { PgDriver } from '../database/drivers/pg/pg-driver';
 
 const COLUMNS: ColumnMetadata[] = [
-  { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true },
-  { name: 'email', dataType: 'character varying', nullable: false, isPrimaryKey: false },
+  { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+  { name: 'email', dataType: 'character varying', nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
 ];
 
 const NO_PK_COLUMNS: ColumnMetadata[] = [
-  { name: 'email', dataType: 'character varying', nullable: false, isPrimaryKey: false },
+  { name: 'email', dataType: 'character varying', nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
 ];
 
 function result<T extends Record<string, unknown>>(rows: T[]): DriverResult {
