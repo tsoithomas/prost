@@ -73,3 +73,13 @@ export interface DropIndexResult {
   index: string;
   sql: string;
 }
+
+export type DdlPreviewRequest =
+  | { kind: 'createTable'; request: CreateTableRequest }
+  | { kind: 'alterTable'; request: AlterTableRequest }
+  | { kind: 'createIndex'; request: CreateIndexRequest }
+  | { kind: 'dropIndex'; request: DropIndexRequest };
+
+export interface DdlPreviewResult {
+  sql: string;
+}

@@ -540,3 +540,99 @@ describe('DdlService.dropIndex', () => {
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
   });
 });
+
+describe('DdlService.preview', () => {
+  it('previews createTable without executing SQL', async () => {
+    const { service, runParameterized } = createService();
+
+    const result = await service.preview('conn-1', {
+      kind: 'createTable',
+      request: {
+        schema: 'public',
+        table: 'widgets',
+        columns: [{ name: 'id', type: 'integer', nullable: false, isPrimaryKey: true }],
+      },
+    });
+
+    expect(result.sql).toContain('CREATE TABLE "public"."widgets"');
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('previews alterTable addColumn without executing SQL', async () => {
+    const { service, runParameterized } = createService();
+
+    const result = await service.preview('conn-1', {
+      kind: 'alterTable',
+      request: {
+        schema: 'public',
+        table: 'users',
+        operation: {
+          kind: 'addColumn',
+          column: { name: 'score', type: 'integer', nullable: true, isPrimaryKey: false },
+        },
+      },
+    });
+
+    expect(result.sql).toBe('ALTER TABLE "public"."users" ADD COLUMN "score" integer');
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('previews createIndex without executing SQL', async () => {
+    const { service, runParameterized } = createService();
+
+    const result = await service.preview('conn-1', {
+      kind: 'createIndex',
+      request: { schema: 'public', table: 'users', columns: ['email'], unique: false },
+    });
+
+    expect(result.sql).toBe('CREATE INDEX "users_email_idx" ON "public"."users" USING btree ("email")');
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('previews dropIndex without executing SQL', async () => {
+    const { service, runParameterized } = createService();
+
+    const result = await service.preview('conn-1', {
+      kind: 'dropIndex',
+      request: { schema: 'public', table: 'users', index: 'users_email_idx' },
+    });
+
+    expect(result.sql).toBe('DROP INDEX "public"."users_email_idx"');
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unsupported createTable type without executing SQL', async () => {
+    const { service, runParameterized } = createService();
+
+    await expect(
+      service.preview('conn-1', {
+        kind: 'createTable',
+        request: {
+          schema: 'public',
+          table: 'widgets',
+          columns: [{ name: 'payload', type: 'evil; DROP TABLE', nullable: true, isPrimaryKey: false }],
+        },
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('rejects addColumn when the column already exists without executing SQL', async () => {
+    const { service, runParameterized } = createService();
+
+    await expect(
+      service.preview('conn-1', {
+        kind: 'alterTable',
+        request: {
+          schema: 'public',
+          table: 'users',
+          operation: {
+            kind: 'addColumn',
+            column: { name: 'email', type: 'text', nullable: true, isPrimaryKey: false },
+          },
+        },
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+});
