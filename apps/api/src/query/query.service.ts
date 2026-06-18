@@ -130,7 +130,7 @@ export class QueryService {
     if (isSelect || isUnparsedSelect) {
       return this.executeRows(connectionId, driver, statementText, ast, isOnlyStatement, run);
     }
-    return this.executeCommand(statementText, run);
+    return this.executeCommand(connectionId, driver, statementText, run);
   }
 
   /** `node-sql-parser` throws on input it can't parse — return `null` and let the caller fall back. */
@@ -161,7 +161,7 @@ export class QueryService {
       try {
         queryResult = await run({ sql: pagedSql, params });
       } catch {
-        return this.executeCommand(statementText, run);
+        return this.executeCommand(connectionId, driver, statementText, run);
       }
     } else {
       // astify-confirmed SELECT — a failure here is a real error.
@@ -191,9 +191,33 @@ export class QueryService {
     return result;
   }
 
-  private async executeCommand(statementText: string, run: RunFn): Promise<StatementResult> {
+  private async executeCommand(
+    connectionId: string,
+    driver: DbDriver,
+    statementText: string,
+    run: RunFn,
+  ): Promise<StatementResult> {
     const start = Date.now();
-    const { rowCount, command } = await run({ sql: statementText, params: [] });
+    const { rows, fields, rowCount, command } = await run({ sql: statementText, params: [] });
+
+    // A statement that wasn't classified as SELECT/EXPLAIN but still returns columns is a result
+    // set (e.g. DESCRIBE/SHOW on MySQL, PRAGMA on SQLite) — render it as a read-only grid rather
+    // than an affected-rows summary. Engine-neutral: any driver that returns `fields` qualifies.
+    if (fields.length > 0) {
+      const columns = await this.mapColumns(connectionId, driver, fields);
+      const result: RowsStatementResult = {
+        kind: 'rows',
+        sql: statementText,
+        rows,
+        columns,
+        totalRows: rows.length,
+        truncated: false,
+        editable: false,
+        executionTimeMs: Date.now() - start,
+      };
+      return result;
+    }
+
     const result: CommandStatementResult = {
       kind: 'command',
       sql: statementText,

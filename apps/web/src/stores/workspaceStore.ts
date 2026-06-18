@@ -37,7 +37,8 @@ interface WorkspaceState {
   setCursorPosition: (position: CursorPosition) => void;
 }
 
-export const INITIAL_SQL = '-- Press Cmd/Ctrl+Enter to run\nSELECT * FROM users;';
+export const INITIAL_SQL =
+  '-- Cmd/Ctrl+Enter: run statement at cursor · Cmd/Ctrl+Shift+Enter: run all\nSELECT * FROM users;';
 
 const initialTabs: WorkspaceTab[] = [
   { id: 'query-1', label: 'Query 1', kind: 'query', sql: INITIAL_SQL, result: null },

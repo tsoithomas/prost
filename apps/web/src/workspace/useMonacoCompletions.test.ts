@@ -38,6 +38,7 @@ interface Suggestion {
   label: string;
   kind: number;
   detail?: string;
+  range: { startColumn: number; endColumn: number; startLineNumber: number; endLineNumber: number };
 }
 
 interface CapturedProvider {
@@ -62,8 +63,16 @@ function makeMonaco() {
 
   function invoke(textBefore: string): { suggestions: Suggestion[] } {
     if (!capturedProvider) throw new Error('provider not registered');
-    const model = { getValueInRange: vi.fn().mockReturnValue(textBefore) };
     const position = { lineNumber: 1, column: textBefore.length + 1 };
+    const trailingWord = /(\w*)$/.exec(textBefore)?.[1] ?? '';
+    const model = {
+      getValueInRange: vi.fn().mockReturnValue(textBefore),
+      getWordUntilPosition: vi.fn().mockReturnValue({
+        word: trailingWord,
+        startColumn: position.column - trailingWord.length,
+        endColumn: position.column,
+      }),
+    };
     return capturedProvider.provideCompletionItems(model, position);
   }
 
@@ -100,6 +109,15 @@ describe('useMonacoCompletions', () => {
     expect(labels).toContain('email');
     // 'id' appears in both tables but should be deduped to one suggestion
     expect(labels.filter((l) => l === 'id')).toHaveLength(1);
+  });
+
+  it('ranges suggestions over the typed word so Monaco replaces the prefix', () => {
+    const { monaco, invoke } = makeMonaco();
+    renderHook(() => useMonacoCompletions(monaco, SCHEMA));
+    // 'SELECT us' — cursor at column 10, the word 'us' spans columns 8–10.
+    const { suggestions } = invoke('SELECT us');
+    const users = suggestions.find((s) => s.label === 'users');
+    expect(users?.range).toMatchObject({ startColumn: 8, endColumn: 10 });
   });
 
   it("table. → returns only that table's columns", () => {

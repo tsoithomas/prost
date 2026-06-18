@@ -15,11 +15,14 @@ export function useMonacoCompletions(monaco: Monaco | null, schema: SchemaMetada
       triggerCharacters: ['.'],
       provideCompletionItems(model, position) {
         const data = schemaRef.current ?? [];
+        // Range must span the word being typed so Monaco filters by (and replaces) that prefix;
+        // a collapsed range at the cursor breaks both filtering and insertion.
+        const word = model.getWordUntilPosition(position);
         const range = {
           startLineNumber: position.lineNumber,
           endLineNumber: position.lineNumber,
-          startColumn: position.column,
-          endColumn: position.column,
+          startColumn: word.startColumn,
+          endColumn: word.endColumn,
         };
         const textBefore = model.getValueInRange({
           startLineNumber: position.lineNumber,
