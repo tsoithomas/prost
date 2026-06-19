@@ -352,11 +352,22 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
             </IconButton>
           </div>
           <div className="flex-1 space-y-1 overflow-y-auto px-xs py-xs">
+            {/* Synthetic entry for the in-progress new connection — selected when no saved
+                connection is, so it's clear the form creates a new one rather than editing. */}
+            <button
+              type="button"
+              onClick={startNewConnection}
+              className={clsx(
+                'flex w-full items-center gap-sm rounded-sm border border-transparent p-sm text-left transition-colors',
+                selectedId === null ? 'bg-accent-muted text-accent' : 'text-text hover:bg-surface-hover',
+              )}
+            >
+              <Plus size={16} className={clsx('shrink-0', selectedId === null ? 'text-accent' : 'text-text-faint')} />
+              <span className="truncate text-sm">New Connection</span>
+            </button>
             {connectionsLoading ? (
               <p className="px-sm py-2 text-xs italic text-text-faint">Loading connections…</p>
-            ) : connections.length === 0 ? (
-              <p className="px-sm py-2 text-xs italic text-text-faint">No saved connections yet.</p>
-            ) : (
+            ) : connections.length === 0 ? null : (
               connections.map((connection) => {
                 const isSelected = connection.id === selectedId;
                 const isActiveConnection = connection.id === activeConnectionId;

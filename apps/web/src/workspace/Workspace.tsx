@@ -11,6 +11,11 @@ export function Workspace() {
   const activeTabId = useWorkspaceStore((state) => state.activeTabId);
   const selectTab = useWorkspaceStore((state) => state.selectTab);
   const closeTab = useWorkspaceStore((state) => state.closeTab);
+  const closeOtherTabs = useWorkspaceStore((state) => state.closeOtherTabs);
+  const closeTabsToLeft = useWorkspaceStore((state) => state.closeTabsToLeft);
+  const closeTabsToRight = useWorkspaceStore((state) => state.closeTabsToRight);
+  const closeAllTableTabs = useWorkspaceStore((state) => state.closeAllTableTabs);
+  const reorderTab = useWorkspaceStore((state) => state.reorderTab);
   const newQueryTab = useWorkspaceStore((state) => state.newQueryTab);
   const setTabViewMode = useWorkspaceStore((state) => state.setTabViewMode);
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
@@ -27,7 +32,18 @@ export function Workspace() {
   return (
     <>
       <Breadcrumbs segments={breadcrumbSegments} />
-      <WorkspaceTabBar tabs={tabs} activeTabId={activeTabId} onSelect={selectTab} onClose={closeTab} onNewTab={newQueryTab} />
+      <WorkspaceTabBar
+        tabs={tabs}
+        activeTabId={activeTabId}
+        onSelect={selectTab}
+        onClose={closeTab}
+        onNewTab={newQueryTab}
+        onReorder={reorderTab}
+        onCloseOthers={closeOtherTabs}
+        onCloseToLeft={closeTabsToLeft}
+        onCloseToRight={closeTabsToRight}
+        onCloseAllTables={closeAllTableTabs}
+      />
       {activeTab?.kind === 'table' && activeTab.schema && activeTab.table && activeConnectionId ? (
         <TableView
           connectionId={activeConnectionId}

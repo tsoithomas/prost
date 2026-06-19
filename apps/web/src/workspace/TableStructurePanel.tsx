@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import type { ColumnMetadata } from '@prost/shared-types';
 import { Badge, Button, IconButton } from '@prost/ui';
+import { ColumnTypePill } from '../grid/columnDefs';
 import { useDropIndex } from '../api/ddl';
 import { AddColumnModal } from '../ddl/AddColumnModal';
 import { CreateIndexModal } from '../ddl/CreateIndexModal';
@@ -94,7 +95,7 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
                 className={`group flex items-center gap-sm px-md py-sm text-sm ${i < data.columns.length - 1 ? 'border-b border-border' : ''}`}
               >
                 <span className="min-w-0 flex-1 font-medium text-text">{col.name}</span>
-                <span className="shrink-0 font-mono text-xs text-text-faint">{col.dataType}</span>
+                <ColumnTypePill dataType={col.dataType} />
                 {col.isPrimaryKey ? <Badge variant="accent">PK</Badge> : null}
                 {!col.nullable && !col.isPrimaryKey ? <Badge variant="neutral">NOT NULL</Badge> : null}
                 {writable ? (

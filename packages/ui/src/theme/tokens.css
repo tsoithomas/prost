@@ -63,6 +63,7 @@
   --color-data-number: #0969da;
   --color-data-string: #1a7f37;
   --color-data-decimal: #bc4c00;
+  --color-data-boolean: #8250df;
   --color-data-temporal: #59636e;
   --color-data-null: #59636e;
 }
@@ -97,6 +98,7 @@
   --color-data-number: #acc7ff;
   --color-data-string: #74dd7e;
   --color-data-decimal: #ffb68b;
+  --color-data-boolean: #d2a8ff;
   --color-data-temporal: #8b909f;
   --color-data-null: #8b909f;
 }
@@ -126,4 +128,16 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background-color: var(--color-text-faint);
+}
+
+/*
+ * Opt-out for elements that scroll but must not show a scrollbar (e.g. the workspace tab strip).
+ * Defined here as plain (unlayered) CSS so it overrides the unlayered `*` rule above — a Tailwind
+ * arbitrary utility (`[scrollbar-width:none]`) lives in @layer utilities and would lose to it.
+ */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }

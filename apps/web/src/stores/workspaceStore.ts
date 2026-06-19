@@ -28,6 +28,11 @@ interface WorkspaceState {
   setTabViewMode: (id: string, viewMode: 'rows' | 'structure') => void;
   selectTab: (id: string) => void;
   closeTab: (id: string) => void;
+  closeOtherTabs: (id: string) => void;
+  closeTabsToLeft: (id: string) => void;
+  closeTabsToRight: (id: string) => void;
+  closeAllTableTabs: () => void;
+  reorderTab: (draggedId: string, targetId: string) => void;
   newQueryTab: () => void;
   setTabSql: (id: string, sql: string) => void;
   setTabResult: (id: string, result: ExecuteQueryResponse | null) => void;
@@ -43,6 +48,27 @@ export const INITIAL_SQL =
 const initialTabs: WorkspaceTab[] = [
   { id: 'query-1', label: 'Query 1', kind: 'query', sql: INITIAL_SQL, result: null },
 ];
+
+/**
+ * Closes every tab except those `keep` returns true for, while preserving the invariant that
+ * at least one query tab always remains (if the kept set has none, the first query tab is
+ * retained). Repoints `activeTabId` to a surviving tab when the active one was closed.
+ */
+function applyClose(
+  tabs: WorkspaceTab[],
+  activeTabId: string,
+  keep: (tab: WorkspaceTab, index: number) => boolean,
+): { tabs: WorkspaceTab[]; activeTabId: string } {
+  let next = tabs.filter(keep);
+  if (!next.some((tab) => tab.kind === 'query')) {
+    const firstQuery = tabs.find((tab) => tab.kind === 'query');
+    if (firstQuery) next = tabs.filter((tab, i) => keep(tab, i) || tab.id === firstQuery.id);
+  }
+  const nextActive = next.some((tab) => tab.id === activeTabId)
+    ? activeTabId
+    : next[next.length - 1]?.id ?? activeTabId;
+  return { tabs: next, activeTabId: nextActive };
+}
 
 export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   tabs: initialTabs,
@@ -79,6 +105,38 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
       const activeTabId =
         id === state.activeTabId ? tabs[tabs.length - 1]?.id ?? tabs[0]?.id ?? id : state.activeTabId;
       return { tabs, activeTabId };
+    }),
+
+  closeOtherTabs: (id) =>
+    set((state) => applyClose(state.tabs, state.activeTabId, (tab) => tab.id === id)),
+
+  closeTabsToLeft: (id) =>
+    set((state) => {
+      const idx = state.tabs.findIndex((tab) => tab.id === id);
+      if (idx === -1) return state;
+      return applyClose(state.tabs, state.activeTabId, (_tab, i) => i >= idx);
+    }),
+
+  closeTabsToRight: (id) =>
+    set((state) => {
+      const idx = state.tabs.findIndex((tab) => tab.id === id);
+      if (idx === -1) return state;
+      return applyClose(state.tabs, state.activeTabId, (_tab, i) => i <= idx);
+    }),
+
+  closeAllTableTabs: () =>
+    set((state) => applyClose(state.tabs, state.activeTabId, (tab) => tab.kind === 'query')),
+
+  reorderTab: (draggedId, targetId) =>
+    set((state) => {
+      if (draggedId === targetId) return state;
+      const from = state.tabs.findIndex((tab) => tab.id === draggedId);
+      const to = state.tabs.findIndex((tab) => tab.id === targetId);
+      if (from === -1 || to === -1) return state;
+      const tabs = [...state.tabs];
+      const [moved] = tabs.splice(from, 1);
+      tabs.splice(to, 0, moved!);
+      return { tabs };
     }),
 
   newQueryTab: () =>

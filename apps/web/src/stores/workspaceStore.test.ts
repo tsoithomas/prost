@@ -128,3 +128,72 @@ describe('workspaceStore — closeTab with multiple query tabs', () => {
     expect(state.activeTabId).toBe('query-1');
   });
 });
+
+describe('workspaceStore — reorderTab', () => {
+  it('moves a tab to the target position, preserving the active tab', () => {
+    const store = useWorkspaceStore.getState();
+    store.openTable('public', 'users'); // table:public.users
+    store.newQueryTab(); // a 3rd tab
+    const ids = useWorkspaceStore.getState().tabs.map((t) => t.id);
+    expect(ids).toEqual(['query-1', 'table:public.users', ids[2]]);
+
+    // Drag the last tab onto the first position.
+    useWorkspaceStore.getState().reorderTab(ids[2]!, 'query-1');
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual([ids[2], 'query-1', 'table:public.users']);
+    expect(useWorkspaceStore.getState().activeTabId).toBe(ids[2]); // unchanged
+  });
+
+  it('is a no-op when dragged onto itself or an unknown id', () => {
+    useWorkspaceStore.getState().openTable('public', 'users');
+    const before = useWorkspaceStore.getState().tabs.map((t) => t.id);
+    useWorkspaceStore.getState().reorderTab('query-1', 'query-1');
+    useWorkspaceStore.getState().reorderTab('nope', 'query-1');
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(before);
+  });
+});
+
+describe('workspaceStore — bulk close', () => {
+  // newQueryTab generates a `query-<uuid>` id (only the label is "Query 2"), so capture it.
+  function seed() {
+    const store = useWorkspaceStore.getState();
+    store.openTable('public', 'a'); // table:public.a
+    store.openTable('public', 'b'); // table:public.b
+    store.newQueryTab();
+    const ids = useWorkspaceStore.getState().tabs.map((t) => t.id); // [query-1, t:a, t:b, query-<uuid>]
+    return { ids, query2: ids[3]! };
+  }
+
+  it('closeOtherTabs keeps only the target (and a surviving query tab)', () => {
+    seed();
+    useWorkspaceStore.getState().closeOtherTabs('table:public.a');
+    // Target table tab kept; since no query tab would survive, the first query tab is retained.
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(['query-1', 'table:public.a']);
+  });
+
+  it('closeTabsToLeft removes tabs before the target', () => {
+    const { query2 } = seed();
+    useWorkspaceStore.getState().closeTabsToLeft('table:public.b');
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(['table:public.b', query2]);
+  });
+
+  it('closeTabsToRight removes tabs after the target', () => {
+    seed();
+    useWorkspaceStore.getState().closeTabsToRight('table:public.a');
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(['query-1', 'table:public.a']);
+  });
+
+  it('closeAllTableTabs removes every table tab but keeps all query tabs', () => {
+    const { query2 } = seed();
+    useWorkspaceStore.getState().closeAllTableTabs();
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(['query-1', query2]);
+  });
+
+  it('repoints activeTabId when the active tab is closed', () => {
+    const { query2 } = seed();
+    useWorkspaceStore.getState().selectTab('table:public.b');
+    useWorkspaceStore.getState().closeAllTableTabs();
+    const state = useWorkspaceStore.getState();
+    expect(state.tabs.some((t) => t.id === state.activeTabId)).toBe(true);
+    expect(state.activeTabId).toBe(query2);
+  });
+});
