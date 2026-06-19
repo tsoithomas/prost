@@ -87,13 +87,13 @@ async function openImportForm() {
 }
 
 describe('ConnectionModal — connection-string import', () => {
-  it('sets the default port when the engine picker changes to MySQL', async () => {
+  it('sets the default port when the engine radio changes to MySQL', async () => {
     renderModal();
 
-    const engineSelect = screen.getByRole('combobox', { name: 'Engine' });
-    await userEvent.selectOptions(engineSelect, 'mysql');
+    const mysqlRadio = screen.getByRole('radio', { name: 'MySQL' });
+    await userEvent.click(mysqlRadio);
 
-    expect(engineSelect).toHaveValue('mysql');
+    expect(mysqlRadio).toBeChecked();
     expect(screen.getByDisplayValue('3306')).toBeInTheDocument();
   });
 
@@ -143,9 +143,9 @@ describe('ConnectionModal — connection-string import', () => {
     await userEvent.click(screen.getByRole('button', { name: /parse/i }));
 
     expect(screen.getByPlaceholderText('localhost')).toHaveValue('host');
-    const [databaseInput] = screen.getAllByPlaceholderText('postgres') as HTMLInputElement[];
-    expect(databaseInput).toHaveValue('db');
-    expect(screen.getByRole('combobox', { name: 'Engine' })).toHaveValue('mysql');
+    // After selecting MySQL the database field's placeholder switches to the MySQL hint.
+    expect(screen.getByPlaceholderText('mydb')).toHaveValue('db');
+    expect(screen.getByRole('radio', { name: 'MySQL' })).toBeChecked();
     expect(screen.getByDisplayValue('3307')).toBeInTheDocument();
   });
 
