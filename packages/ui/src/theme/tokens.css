@@ -105,3 +105,25 @@ body {
   background-color: var(--color-bg);
   color: var(--color-text);
 }
+
+/* Themed scrollbars — colors come from the active theme's tokens (light + .dark). */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-border-strong);
+  border: 2px solid transparent; /* transparent padding so the thumb reads as inset on any surface */
+  background-clip: padding-box;
+  border-radius: var(--radius-lg);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--color-text-faint);
+}

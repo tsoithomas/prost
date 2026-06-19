@@ -192,7 +192,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
                         isActive ? 'bg-accent-muted text-accent' : 'text-text hover:bg-surface-hover',
                       )}
                     >
-                      <Plug size={16} className={isActive ? 'text-accent' : 'text-text-faint'} />
+                      <Plug size={16} className={clsx('shrink-0', isActive ? 'text-accent' : 'text-text-faint')} />
                       <div className="flex min-w-0 flex-col">
                         <span className="truncate text-sm">{connection.name}</span>
                         <span className="truncate font-mono text-xs text-text-faint">

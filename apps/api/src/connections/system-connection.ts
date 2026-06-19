@@ -9,7 +9,7 @@ import type { ConnectionParams } from '../database/types';
  * `readonly`); the boundary holds because the handle never writes and never borrows Prisma.
  */
 export const SYSTEM_CONNECTION_ID = '__app_db__';
-export const SYSTEM_CONNECTION_NAME = 'Prost App Database';
+export const SYSTEM_CONNECTION_NAME = 'App Database';
 
 export function isSystemConnectionId(id: string): boolean {
   return id === SYSTEM_CONNECTION_ID;

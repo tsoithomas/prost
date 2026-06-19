@@ -74,7 +74,7 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
         availableColumns={data.columns}
       />
 
-      <div className="flex-1 space-y-lg overflow-y-auto p-lg">
+      <div className="h-full space-y-lg overflow-y-auto p-lg">
         <section>
           <div className="mb-sm flex items-center justify-between">
             <h2 className="text-xs font-medium uppercase tracking-wider text-text-faint">
