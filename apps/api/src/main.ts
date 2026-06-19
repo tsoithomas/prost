@@ -8,10 +8,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import type { Request, Response, NextFunction } from 'express';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/all-exceptions.filter';
-
-// Top-level route prefixes owned by the API. Anything else is treated as a client-side
-// SPA route and falls back to index.html (see serveSpa below).
-const API_ROUTE_PREFIXES = ['auth', 'connections', 'preferences', 'llm-endpoints', 'snippets', 'health'];
+import { isApiRoute } from './spa-route';
 
 /**
  * When a built frontend bundle is present (production container), serve it from the same
@@ -34,9 +31,7 @@ function serveSpa(app: NestExpressApplication): void {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       return next();
     }
-    const path = req.path.replace(/^\/+/, '');
-    const isApiRoute = API_ROUTE_PREFIXES.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
-    if (isApiRoute) {
+    if (isApiRoute(req.path)) {
       return next();
     }
     return res.sendFile(indexHtml);

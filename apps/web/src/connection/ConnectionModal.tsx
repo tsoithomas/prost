@@ -47,6 +47,14 @@ const blankForm: ConnectionFormState = {
   sslRejectUnauthorized: true,
 };
 
+// Per-engine placeholder hints for the host/database/user fields, swapped when the engine
+// radio changes so the examples match the selected engine's conventions.
+const enginePlaceholders: Record<DbEngine, { host: string; database: string; username: string }> = {
+  postgres: { host: 'localhost', database: 'postgres', username: 'postgres' },
+  mysql: { host: 'localhost', database: 'mydb', username: 'root' },
+  sqlite: { host: '', database: '', username: '' },
+};
+
 const fallbackNetworkEngine: DbEngineDescriptor = {
   engine: 'postgres',
   label: 'PostgreSQL',
@@ -146,6 +154,8 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
   const currentEngineDescriptor = descriptors.find((descriptor) => descriptor.engine === currentEngine);
   const engineLabel =
     currentEngineDescriptor?.label ?? `${currentEngine.charAt(0).toUpperCase()}${currentEngine.slice(1)}`;
+  const placeholders = enginePlaceholders[form.engine] ?? enginePlaceholders.postgres;
+  const showEnginePicker = !selectedReadOnly && !selectedId && networkEngines.length >= 2;
 
   function selectConnection(connection: ConnectionDto) {
     setSelectedId(connection.id);
@@ -401,8 +411,29 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
             <span className="text-sm font-semibold text-text">
               {selectedReadOnly ? 'Connection' : selectedId ? 'Edit Connection' : 'New Connection'}
             </span>
-            <div className="flex items-center gap-sm">
-              <Badge variant="accent">{engineLabel}</Badge>
+            <div className="flex items-center gap-md">
+              {showEnginePicker ? (
+                <fieldset className="flex items-center gap-md" aria-label="Engine">
+                  {networkEngines.map((descriptor) => (
+                    <label
+                      key={descriptor.engine}
+                      className="flex cursor-pointer items-center gap-xs text-xs font-medium text-text"
+                    >
+                      <input
+                        type="radio"
+                        name="engine"
+                        value={descriptor.engine}
+                        checked={form.engine === descriptor.engine}
+                        onChange={() => handleEngineChange(descriptor.engine)}
+                        className="h-4 w-4 cursor-pointer accent-[var(--color-accent)]"
+                      />
+                      {descriptor.label}
+                    </label>
+                  ))}
+                </fieldset>
+              ) : (
+                <Badge variant="accent">{engineLabel}</Badge>
+              )}
               <IconButton aria-label="Close" onClick={onClose}>
                 <X size={16} />
               </IconButton>
@@ -448,22 +479,6 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                 ) : null}
               </div>
 
-              {!selectedId && networkEngines.length >= 2 ? (
-                <FormField label="Engine">
-                  <select
-                    value={form.engine}
-                    onChange={(event) => handleEngineChange(event.target.value as DbEngine)}
-                    className="h-9 rounded-sm border border-border bg-surface px-sm text-sm text-text focus:border-accent focus:outline-none"
-                  >
-                    {networkEngines.map((descriptor) => (
-                      <option key={descriptor.engine} value={descriptor.engine}>
-                        {descriptor.label}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-              ) : null}
-
               <FormField label="Connection Name">
                 <Input value={form.name} onChange={(event) => updateField('name', event.target.value)} placeholder="My Database" />
               </FormField>
@@ -476,7 +491,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                     className="font-mono"
                     value={form.host}
                     onChange={(event) => updateField('host', event.target.value)}
-                    placeholder="localhost"
+                    placeholder={placeholders.host}
                   />
                 </FormField>
                 <FormField label="Port">
@@ -494,7 +509,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                   className="font-mono"
                   value={form.database}
                   onChange={(event) => updateField('database', event.target.value)}
-                  placeholder="postgres"
+                  placeholder={placeholders.database}
                 />
               </FormField>
 
@@ -506,7 +521,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                     className="font-mono"
                     value={form.username}
                     onChange={(event) => updateField('username', event.target.value)}
-                    placeholder="postgres"
+                    placeholder={placeholders.username}
                   />
                 </FormField>
                 <FormField label="Password">
