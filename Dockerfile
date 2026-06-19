@@ -37,6 +37,10 @@ RUN pnpm --filter @prost/api exec prisma generate
 # Build the SPA against a same-origin (empty) API base URL, then build everything.
 # Vite reads VITE_API_URL from .env.production at the monorepo root (its envDir).
 RUN printf 'VITE_API_URL=\n' > .env.production
+# The released semver to display in the StatusBar — the .git dir is excluded from the build
+# context, so vite.config can't `git describe`; CI passes it as a build arg (--build-arg APP_VERSION).
+ARG APP_VERSION
+ENV APP_VERSION=$APP_VERSION
 RUN pnpm -w build
 
 # Extract ONLY the API's production dependency closure into /prod (excludes web's

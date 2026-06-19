@@ -96,8 +96,12 @@ driver conformance suite (`*-driver.contract.test.ts`) runs against both live en
 ## Commit messages
 
 Conventional Commits, `type(scope): subject` — enforced by `.releaserc.json` /
-`.github/workflows/release.yml` (semantic-release), which bumps `package.json`'s version
-on every push to `main`:
+`.github/workflows/ci.yml`'s `release` job (semantic-release). This is **tag-only**: it
+creates a git tag + GitHub Release on every push to `main` but does **not** bump
+`package.json` (frozen at `1.0.0`) or write a `CHANGELOG.md`. The git tag is the version of
+truth; `apps/web/vite.config.ts` injects it into the StatusBar at build time (via the
+`APP_VERSION` build arg in CI/Docker, or `git describe` locally). The commit type drives the
+bump:
 
 - `feat: ...` → minor bump (`0.x.0`)
 - `fix: ...` / `perf: ...` → patch bump (`0.x.y`)
