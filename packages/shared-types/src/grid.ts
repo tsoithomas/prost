@@ -113,6 +113,24 @@ export interface ExecuteQueryBody {
   transactional?: boolean;
 }
 
+/**
+ * Body for `POST /connections/:id/query/page` — fetches the next page of a single SELECT
+ * (the editor's "Load more"). `sql` must be exactly one SELECT statement; mutations are rejected.
+ */
+export interface FetchQueryPageBody {
+  sql: string;
+  offset: number;
+  limit?: number;
+}
+
+/** Response for `POST /connections/:id/query/page` — just the next page of rows. */
+export interface FetchQueryPageResponse {
+  rows: Record<string, unknown>[];
+  /** `true` when still more rows exist beyond this page. */
+  truncated: boolean;
+  executionTimeMs: number;
+}
+
 export interface RowUpdateRequest {
   connectionId: string;
   schema: string;

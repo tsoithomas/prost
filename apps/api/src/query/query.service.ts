@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Parser } from 'node-sql-parser';
 import type {
   ColumnMetadata,
   CommandStatementResult,
   ErrorStatementResult,
   ExecuteQueryResponse,
+  FetchQueryPageResponse,
   PlanStatementResult,
   RowsStatementResult,
   StatementResult,
@@ -72,6 +73,37 @@ export class QueryService {
     await this.historyService.record({ userId, connectionId, sql });
 
     return { statements, transactional, statementCount: statementTexts.length };
+  }
+
+  /**
+   * Fetches the next page of a single `SELECT` (the editor's "Load more"). A lean read path —
+   * no history record, no editability/column resolution (the client already has those from the
+   * initial execute). `sql` must be exactly one statement that classifies as a SELECT; anything
+   * else (multiple statements, INSERT/UPDATE/DDL, EXPLAIN) is rejected **before** any execution,
+   * so "Load more" can never re-run a mutation.
+   */
+  async fetchPage(connectionId: string, sql: string, offset: number, limit = QUERY_PAGE_SIZE): Promise<FetchQueryPageResponse> {
+    const statementTexts = splitStatements(sql);
+    if (statementTexts.length !== 1) {
+      throw new BadRequestException('Only a single SELECT statement can be paged');
+    }
+
+    const driver = await this.pool.driverFor(connectionId);
+    const statementText = statementTexts[0]!;
+    const ast = this.tryAstifyOne(driver, statementText);
+    const isSelect = ast?.type === 'select';
+    const isUnparsedSelect = ast === null && looksLikeSingleSelect(statementText);
+    if (EXPLAIN_RE.test(statementText) || (!isSelect && !isUnparsedSelect)) {
+      throw new BadRequestException('Only SELECT statements can be paged');
+    }
+
+    const { sql: pagedSql, params } = buildPagedQuery(statementText, driver.placeholder, limit, offset);
+    const start = Date.now();
+    const { rows } = await this.pool.run(connectionId, { sql: pagedSql, params });
+    const executionTimeMs = Date.now() - start;
+
+    const truncated = rows.length > limit;
+    return { rows: truncated ? rows.slice(0, limit) : rows, truncated, executionTimeMs };
   }
 
   /** Each statement runs (and commits) independently — a failure doesn't stop the rest (honest partial success, principle §8). */

@@ -7,6 +7,7 @@ import type {
   GetRowIdParams,
   GridApi,
   GridReadyEvent,
+  IDatasource,
   SelectionChangedEvent,
 } from 'ag-grid-community';
 import { Bookmark, Play, Plus, Save, Trash2, WandSparkles, X } from 'lucide-react';
@@ -37,9 +38,13 @@ import { ApiError, apiErrorDetail, apiErrorMessage } from '../lib/apiClient';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useThemeStore } from '../stores/themeStore';
 import { INITIAL_SQL, useWorkspaceStore } from '../stores/workspaceStore';
+import { createQueryPageDatasource } from './queryPageDatasource';
 import { PlanPanel, StatementResultPanel } from './StatementResultPanel';
 import { statementAtOffset } from './statementRanges';
 import { useMonacoCompletions } from './useMonacoCompletions';
+
+/** AG Grid infinite-model block size for editor query results (matches the server page size). */
+const PAGE_SIZE = 100;
 
 /** `sourceTable` is `schema.table` (see `editability.ts`) — split it back for the Phase 2 mutation hooks. */
 function splitSourceTable(sourceTable: string | undefined): { schema: string; table: string } | null {
@@ -81,9 +86,9 @@ export function SqlEditorView() {
   const transactional = activeTab?.transactional ?? false;
   const [saveSnippetName, setSaveSnippetName] = useState<string | null>(null);
   const [response, setResponse] = useState<ExecuteQueryResponse | null>(activeTab?.result ?? null);
-  const initialStatements = activeTab?.result?.statements ?? [];
-  const initialSingle = initialStatements.length === 1 ? initialStatements[0] : null;
-  const [rowData, setRowData] = useState<Record<string, unknown>[]>(initialSingle?.kind === 'rows' ? initialSingle.rows : []);
+  // Bumped on every run / tab switch so the infinite grid rebuilds its datasource + cache for
+  // the new result (used in the grid `key`).
+  const [resultEpoch, setResultEpoch] = useState(0);
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
@@ -119,6 +124,20 @@ export function SqlEditorView() {
 
   const pinnedTopRowData = useMemo(() => (pendingInsert ? [pendingInsert] : undefined), [pendingInsert]);
 
+  // Infinite-scroll datasource: each block re-runs the single SELECT at its offset via
+  // `/query/page`. Rebuilt whenever the result changes (`resultEpoch`) so the grid `key` swap
+  // gets a fresh datasource + cache.
+  const datasource = useMemo<IDatasource | undefined>(() => {
+    if (!connectionId || editableResult === null) return undefined;
+    return createQueryPageDatasource({
+      connectionId,
+      sql: editableResult.sql,
+      onError: (error) => pushToast('danger', apiErrorDetail(error, 'Failed to load more rows.')),
+    });
+    // `resultEpoch` is an intentional dependency: a re-run of the same SQL must rebuild the datasource.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionId, editableResult?.sql, resultEpoch, pushToast]);
+
   // `defineProstMonacoThemes` snapshots the current CSS variable values, so it must be
   // re-run whenever the color mode or accent color changes to keep Monaco in sync.
   useEffect(() => {
@@ -134,9 +153,7 @@ export function SqlEditorView() {
     const storedResponse = activeTab?.result ?? null;
     editorRef.current?.setValue(storedSql);
     setResponse(storedResponse);
-    const storedStatements = storedResponse?.statements ?? [];
-    const storedSingle = storedStatements.length === 1 ? storedStatements[0]! : null;
-    setRowData(storedSingle?.kind === 'rows' ? storedSingle.rows : []);
+    setResultEpoch((e) => e + 1);
     setPendingInsert(null);
     setSelectedRows([]);
     setSaveSnippetName(null);
@@ -165,9 +182,7 @@ export function SqlEditorView() {
         {
           onSuccess: (data) => {
             setResponse(data);
-            const resultStatements = data.statements;
-            const resultSingle = resultStatements.length === 1 ? resultStatements[0]! : null;
-            setRowData(resultSingle?.kind === 'rows' ? resultSingle.rows : []);
+            setResultEpoch((e) => e + 1);
             setTabResult(activeTabId, data);
             queryClient.invalidateQueries({ queryKey: ['history', connectionId] });
           },
@@ -261,9 +276,9 @@ export function SqlEditorView() {
     insertRow.mutate(
       { values },
       {
-        onSuccess: (row) => {
+        onSuccess: () => {
           setPendingInsert(null);
-          setRowData((prev) => [row, ...prev]);
+          gridApiRef.current?.refreshInfiniteCache();
         },
         onError: (error) => pushToast('danger', apiErrorDetail(error, 'Failed to insert row.')),
       },
@@ -285,15 +300,10 @@ export function SqlEditorView() {
       selectedRows.map((row) => {
         const primaryKeyValues: Record<string, unknown> = {};
         for (const pkColumn of primaryKey) primaryKeyValues[pkColumn] = row[pkColumn];
-        return deleteRow.mutateAsync({ primaryKey: primaryKeyValues }).then(() => row);
+        return deleteRow.mutateAsync({ primaryKey: primaryKeyValues });
       }),
     ).then((results) => {
-      const deleted = new Set<Record<string, unknown>>();
-      const failed: PromiseRejectedResult[] = [];
-      for (const settled of results) {
-        if (settled.status === 'fulfilled') deleted.add(settled.value);
-        else failed.push(settled);
-      }
+      const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
       if (failed.length > 0) {
         const message =
           failed.length === 1
@@ -301,9 +311,9 @@ export function SqlEditorView() {
             : `Failed to delete ${failed.length} of ${selectedRows.length} rows.`;
         pushToast('danger', message);
       }
-      setRowData((prev) => prev.filter((row) => !deleted.has(row)));
       setSelectedRows([]);
       gridApiRef.current?.deselectAll();
+      gridApiRef.current?.refreshInfiniteCache();
     });
   }
 
@@ -460,9 +470,11 @@ export function SqlEditorView() {
             {single?.kind === 'rows' ? (
               <>
                 <Badge variant={editable ? 'success' : 'neutral'}>{editable ? 'Editable' : 'Read-only'}</Badge>
-                {single.truncated ? <Badge variant="warning">Truncated</Badge> : null}
                 <span>
-                  {rowData.length} row{rowData.length === 1 ? '' : 's'} · {single.executionTimeMs} ms
+                  {single.truncated
+                    ? `${single.rows.length}+ rows`
+                    : `${single.rows.length} row${single.rows.length === 1 ? '' : 's'}`}{' '}
+                  · {single.executionTimeMs} ms
                 </span>
               </>
             ) : null}
@@ -500,9 +512,13 @@ export function SqlEditorView() {
           ) : single ? (
             single.kind === 'rows' ? (
               <AgGridReact
+                key={`${activeTabId}.${resultEpoch}`}
                 theme={prostGridTheme}
                 columnDefs={columnDefs}
-                rowData={rowData}
+                rowModelType="infinite"
+                datasource={datasource}
+                cacheBlockSize={PAGE_SIZE}
+                maxBlocksInCache={10}
                 getRowId={getRowId}
                 pinnedTopRowData={pinnedTopRowData}
                 rowSelection={editable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: false } : undefined}

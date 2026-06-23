@@ -1,9 +1,10 @@
 import { Body, Controller, Param, Post, Req } from '@nestjs/common';
-import type { ExecuteQueryResponse } from '@prost/shared-types';
+import type { ExecuteQueryResponse, FetchQueryPageResponse } from '@prost/shared-types';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import type { RequestWithCorrelationId } from '../common/correlation-id.middleware';
 import { ConnectionsService } from '../connections/connections.service';
 import { ExecuteQueryDto } from './dto/execute-query.dto';
+import { FetchQueryPageDto } from './dto/fetch-query-page.dto';
 import { QueryService } from './query.service';
 
 @Controller('connections')
@@ -22,5 +23,16 @@ export class QueryController {
   ): Promise<ExecuteQueryResponse> {
     await this.connectionsService.assertOwnership(user.userId, id);
     return this.queryService.execute(id, dto.sql, user.userId, req.correlationId, dto.transactional ?? false);
+  }
+
+  /** Fetches the next page of a single SELECT result (the editor's "Load more"). */
+  @Post(':id/query/page')
+  async page(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: FetchQueryPageDto,
+  ): Promise<FetchQueryPageResponse> {
+    await this.connectionsService.assertOwnership(user.userId, id);
+    return this.queryService.fetchPage(id, dto.sql, dto.offset, dto.limit);
   }
 }

@@ -15,7 +15,9 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email },
-    update: {},
+    // Re-sync the password from .env on every seed run, so editing ADMIN_PASSWORD
+    // (or rotating it) actually takes effect for an already-existing admin user.
+    update: { passwordHash },
     create: {
       email,
       passwordHash,

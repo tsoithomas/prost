@@ -425,6 +425,64 @@ describe('QueryService.execute — EXPLAIN', () => {
   });
 });
 
+describe('QueryService.fetchPage', () => {
+  it('pages a single SELECT at the given offset, without recording history', async () => {
+    const run = vi.fn().mockResolvedValueOnce(result([{ id: 5 }, { id: 6 }]));
+    const { service, record } = createService(run);
+
+    const page = await service.fetchPage('conn-1', 'SELECT * FROM users', 100);
+
+    const [connectionId, frag] = run.mock.calls[0]!;
+    expect(connectionId).toBe('conn-1');
+    expect(frag.sql).toBe('SELECT * FROM (SELECT * FROM users) AS __prost_query LIMIT $1 OFFSET $2');
+    expect(frag.params).toEqual([QUERY_PAGE_SIZE + 1, 100]);
+    expect(page).toMatchObject({ rows: [{ id: 5 }, { id: 6 }], truncated: false });
+    expect(page.executionTimeMs).toBeGreaterThanOrEqual(0);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('caps rows at the page size and signals truncation', async () => {
+    const rows = Array.from({ length: QUERY_PAGE_SIZE + 1 }, (_, i) => ({ value: i }));
+    const run = vi.fn().mockResolvedValueOnce(result(rows));
+    const { service } = createService(run);
+
+    const page = await service.fetchPage('conn-1', 'SELECT * FROM big_table', QUERY_PAGE_SIZE);
+
+    expect(page.rows).toHaveLength(QUERY_PAGE_SIZE);
+    expect(page.truncated).toBe(true);
+  });
+
+  it('rejects a multi-statement script without executing anything', async () => {
+    const run = vi.fn();
+    const { service } = createService(run);
+
+    await expect(service.fetchPage('conn-1', 'SELECT 1; SELECT 2', 100)).rejects.toThrow(
+      'Only a single SELECT statement can be paged',
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-SELECT statement before any mutation runs', async () => {
+    const run = vi.fn();
+    const { service } = createService(run);
+
+    await expect(service.fetchPage('conn-1', "UPDATE users SET email = 'x'", 100)).rejects.toThrow(
+      'Only SELECT statements can be paged',
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('rejects EXPLAIN (it is not a pageable result set)', async () => {
+    const run = vi.fn();
+    const { service } = createService(run);
+
+    await expect(service.fetchPage('conn-1', 'EXPLAIN SELECT * FROM users', 100)).rejects.toThrow(
+      'Only SELECT statements can be paged',
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+});
+
 describe('QueryService.execute — empty input', () => {
   it('returns an empty result without executing or recording history', async () => {
     const run = vi.fn();

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Box, ChevronDown, ChevronRight, Plus, Rows3, StretchHorizontal, Table2 } from 'lucide-react';
+import { Box, ChevronDown, ChevronRight, Plus, Rows3, Search, StretchHorizontal, Table2, X } from 'lucide-react';
 import clsx from 'clsx';
 import type { SchemaMetadata, TableSummary } from '@prost/shared-types';
+import { Input } from '@prost/ui';
 
 export interface SchemaTreeProps {
   schemas: SchemaMetadata[];
@@ -33,6 +34,11 @@ export function SchemaTree({
 }: SchemaTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [filter, setFilter] = useState('');
+
+  const query = filter.trim().toLowerCase();
+  const matchesQuery = (table: TableSummary) =>
+    query === '' || table.name.toLowerCase().includes(query);
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -81,12 +87,16 @@ export function SchemaTree({
 
   // Engines without a schema layer (SQLite) render a single flat list of tables.
   if (!hasSchemas) {
-    const tables = schemas.flatMap((schema) => schema.tables);
+    const allTables = schemas.flatMap((schema) => schema.tables);
+    const tables = allTables.filter(matchesQuery);
     return (
       <div>
+        {renderFilterBox()}
         <div className="mb-2 px-sm text-xs font-medium uppercase tracking-wider text-text-faint">Tables</div>
-        {tables.length === 0 ? (
+        {allTables.length === 0 ? (
           <p className="px-sm py-1 text-xs italic text-text-faint">No tables</p>
+        ) : tables.length === 0 ? (
+          <p className="px-sm py-1 text-xs italic text-text-faint">No tables match "{filter.trim()}"</p>
         ) : (
           <div className="flex flex-col gap-0.5">{tables.map(renderTableButton)}</div>
         )}
@@ -95,11 +105,23 @@ export function SchemaTree({
     );
   }
 
+  const visibleSchemas =
+    query === ''
+      ? schemas
+      : schemas
+          .map((schema) => ({ ...schema, tables: schema.tables.filter(matchesQuery) }))
+          .filter((schema) => schema.tables.length > 0);
+
   return (
     <div>
+      {renderFilterBox()}
       <div className="mb-2 px-sm text-xs font-medium uppercase tracking-wider text-text-faint">Schemas</div>
-      {schemas.map((schema) => {
-        const isCollapsed = collapsed.has(schema.name);
+      {query !== '' && visibleSchemas.length === 0 ? (
+        <p className="px-sm py-1 text-xs italic text-text-faint">No tables match "{filter.trim()}"</p>
+      ) : null}
+      {visibleSchemas.map((schema) => {
+        // While filtering, matching schemas are force-expanded regardless of the collapsed set.
+        const isCollapsed = query === '' && collapsed.has(schema.name);
         return (
           <div key={schema.name} className="group/schema">
             <div className="flex items-center">
@@ -136,6 +158,34 @@ export function SchemaTree({
       {renderContextMenu()}
     </div>
   );
+
+  function renderFilterBox() {
+    return (
+      <div className="sticky top-0 z-10 -mt-1 mb-2 bg-surface-sunken pb-1 pt-1">
+        <div className="relative">
+          <Search size={13} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-text-faint" />
+          <Input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter tables…"
+            aria-label="Filter tables"
+            className="h-7 w-full pl-7 pr-7 text-xs"
+          />
+          {filter ? (
+            <button
+              type="button"
+              aria-label="Clear filter"
+              onClick={() => setFilter('')}
+              className="absolute right-1.5 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-sm text-text-faint hover:bg-surface-hover hover:text-text"
+            >
+              <X size={12} />
+            </button>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
 
   function renderContextMenu() {
     if (!contextMenu) return null;

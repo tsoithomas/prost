@@ -287,6 +287,22 @@ describe('SqlEditorView — multi-statement results', () => {
   });
 });
 
+describe('SqlEditorView — row count', () => {
+  it('shows an exact count for a complete result', async () => {
+    simulateQuery(makeResponse([makeRowsResult({ rows: [{ id: 1 }], truncated: false })]));
+    renderWithProviders(<SqlEditorView />);
+    await userEvent.click(screen.getByRole('button', { name: /run/i }));
+    expect(screen.getByText(/^1 row\b/)).toBeInTheDocument();
+  });
+
+  it('shows a "N+" count for a truncated result (more rows load on scroll)', async () => {
+    simulateQuery(makeResponse([makeRowsResult({ rows: [{ id: 1 }], truncated: true })]));
+    renderWithProviders(<SqlEditorView />);
+    await userEvent.click(screen.getByRole('button', { name: /run/i }));
+    expect(screen.getByText(/^1\+ rows\b/)).toBeInTheDocument();
+  });
+});
+
 describe('SqlEditorView — transaction toggle', () => {
   it('is unchecked by default and is passed to executeQuery.mutate when checked', async () => {
     simulateQuery(makeResponse([makeCommandResult()]));
