@@ -29,6 +29,7 @@
     "conventional-changelog-conventionalcommits": "^9.3.1",
     "eslint": "^9",
     "eslint-config-prettier": "^9",
+    "eslint-plugin-react-hooks": "^5",
     "globals": "^15",
     "prettier": "^3",
     "semantic-release": "^25.0.5",
