@@ -49,11 +49,14 @@ model QueryHistory {
   userId       String
   connectionId String
   sql          String
+  starred      Boolean  @default(false)
+  label        String?
   executedAt   DateTime @default(now())
 
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   connection Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
 
+  @@index([userId, executedAt])
   @@map("query_history")
 }
 

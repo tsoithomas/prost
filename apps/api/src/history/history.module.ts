@@ -1,11 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConnectionsModule } from '../connections/connections.module';
-import { HistoryController } from './history.controller';
+import { HistoryController, HistoryManagementController } from './history.controller';
 import { HistoryService } from './history.service';
 
 @Module({
   imports: [ConnectionsModule],
-  controllers: [HistoryController],
+  controllers: [HistoryController, HistoryManagementController],
   providers: [HistoryService],
   exports: [HistoryService],
 })

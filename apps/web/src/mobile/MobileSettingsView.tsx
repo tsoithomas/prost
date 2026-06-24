@@ -2,7 +2,6 @@ import { LogOut, Plug } from 'lucide-react';
 import { Button, Surface } from '@prost/ui';
 import { useConnections } from '../api/connections';
 import { connectionEndpoint } from '../connection/connectionDisplay';
-import { useQueryHistory } from '../api/history';
 import { QueryHistoryList } from '../explorer/QueryHistoryList';
 import { SnippetList } from '../explorer/SnippetList';
 import { ThemeSettings } from '../layout/ThemeSettings';
@@ -19,7 +18,6 @@ export interface MobileSettingsViewProps {
 export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, onSelectSnippet }: MobileSettingsViewProps) {
   const { data: connections = [] } = useConnections();
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
-  const { data: history, isLoading: isHistoryLoading, isError: isHistoryError } = useQueryHistory(activeConnectionId);
   const loadQuery = useWorkspaceStore((state) => state.loadQuery);
   const clearAuth = useAuthStore((state) => state.clear);
 
@@ -65,17 +63,10 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, 
           </Button>
         </section>
 
-        {activeConnectionId !== null ? (
-          <section>
-            <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">Recent Queries</h2>
-            <QueryHistoryList
-              items={history}
-              isLoading={isHistoryLoading}
-              isError={isHistoryError}
-              onSelect={handleSelectHistory}
-            />
-          </section>
-        ) : null}
+        <section>
+          <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">Recent Queries</h2>
+          <QueryHistoryList connectionId={activeConnectionId} onSelect={handleSelectHistory} />
+        </section>
 
         <section>
           <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">Snippets</h2>

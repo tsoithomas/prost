@@ -5,7 +5,6 @@ import type { ConnectionDto } from '@prost/shared-types';
 import { Badge, Button, IconButton } from '@prost/ui';
 import { useActiveConnection, useConnections, useDeleteConnection } from '../api/connections';
 import { connectionEndpoint } from '../connection/connectionDisplay';
-import { useQueryHistory } from '../api/history';
 import { useMetadata } from '../api/metadata';
 import { CreateTableModal } from '../ddl/CreateTableModal';
 import { QueryHistoryList } from '../explorer/QueryHistoryList';
@@ -49,7 +48,6 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
   const deleteConnection = useDeleteConnection();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const { data: schemas, isLoading, isError } = useMetadata(activeConnectionId);
-  const { data: history, isLoading: isHistoryLoading, isError: isHistoryError } = useQueryHistory(activeConnectionId);
   const workspaceTabs = useWorkspaceStore((state) => state.tabs);
   const activeWorkspaceTabId = useWorkspaceStore((state) => state.activeTabId);
   const openTable = useWorkspaceStore((state) => state.openTable);
@@ -163,18 +161,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
             />
           )
         ) : activeTab === 'history' ? (
-          activeConnectionId === null ? (
-            <p className="px-sm py-2 text-xs italic text-text-faint">
-              No active connection. Use "New Connection" to get started.
-            </p>
-          ) : (
-            <QueryHistoryList
-              items={history}
-              isLoading={isHistoryLoading}
-              isError={isHistoryError}
-              onSelect={loadQuery}
-            />
-          )
+          <QueryHistoryList connectionId={activeConnectionId} onSelect={loadQuery} />
         ) : activeTab === 'connections' ? (
           connections.length === 0 ? (
             <p className="px-sm py-2 text-xs italic text-text-faint">No saved connections yet.</p>
