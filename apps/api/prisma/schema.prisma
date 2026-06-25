@@ -98,6 +98,18 @@ model UserPreference {
   colorMode   String @default("system")
   accentColor String @default("#498fff")
 
+  // FontSize ('sm' | 'md' | 'lg') / GridDensity ('compact' | 'normal' | 'comfortable').
+  fontSize    String @default("md")
+  gridDensity String @default("normal")
+
+  // SQLite has no JSON type — these hold JSON-stringified structures (see @prost/shared-types):
+  //   keybindings         -> KeybindingMap                          (actionId -> chord, overrides only)
+  //   customPalettes      -> CustomPalette[]
+  //   connectionOverrides -> Record<connectionId, ConnectionThemeOverride>
+  keybindings         String @default("{}")
+  customPalettes      String @default("[]")
+  connectionOverrides String @default("{}")
+
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_preferences")

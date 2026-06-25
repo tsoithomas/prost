@@ -28,6 +28,15 @@
   --radius-md: 4px;
   --radius-lg: 8px;
 
+  /*
+   * Data-grid density (defaults = "normal"). `applyGridDensity` overrides these inline on
+   * `<html>`; the AG Grid theme reads them via `var(--grid-*)` so it re-resolves with no JS.
+   * `spacing` is AG Grid's density knob — row/header height auto-derive from it, keeping cell
+   * text vertically centered (don't hard-set rowHeight, per AG Grid's guidance).
+   */
+  --grid-spacing: 4px;
+  --grid-font-size: 12px;
+
   /* Surfaces */
   --color-bg: #ffffff;
   --color-surface: #f6f8fa;

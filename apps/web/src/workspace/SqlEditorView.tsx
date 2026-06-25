@@ -34,6 +34,7 @@ import { useCreateSnippet } from '../api/snippets';
 import { buildColumnDefs } from '../grid/columnDefs';
 import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
+import { matchesChord, resolveBinding } from '../keybindings';
 import { ApiError, apiErrorDetail, apiErrorMessage } from '../lib/apiClient';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useThemeStore } from '../stores/themeStore';
@@ -217,12 +218,39 @@ export function SqlEditorView() {
     runSql(text);
   }, [runSql, sql]);
 
-  // Monaco commands are registered once in `onMount`, so route them through refs to always
-  // call the latest closures (current `sql`/`connectionId`/`transactional`).
+  // Editor key handlers route through refs to always call the latest closures
+  // (current `sql`/`connectionId`/`transactional`).
   const runActiveStatementRef = useRef(runActiveStatement);
   runActiveStatementRef.current = runActiveStatement;
   const runAllRef = useRef(runAll);
   runAllRef.current = runAll;
+
+  // Remappable editor shortcuts: re-bound whenever the keybinding map changes (a global keydown
+  // command can't be removed, so we match chords in `onKeyDown` and dispose on cleanup).
+  const keybindings = useThemeStore((state) => state.keybindings);
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !monacoInstance) return;
+    const runStatementChord = resolveBinding('run-statement', keybindings);
+    const runAllChord = resolveBinding('run-all', keybindings);
+    const formatChord = resolveBinding('format-sql', keybindings);
+    const disposable = editor.onKeyDown((e) => {
+      if (matchesChord(e.browserEvent, runStatementChord)) {
+        e.preventDefault();
+        e.stopPropagation();
+        runActiveStatementRef.current();
+      } else if (matchesChord(e.browserEvent, runAllChord)) {
+        e.preventDefault();
+        e.stopPropagation();
+        runAllRef.current();
+      } else if (matchesChord(e.browserEvent, formatChord)) {
+        e.preventDefault();
+        e.stopPropagation();
+        void editor.getAction('editor.action.formatDocument')?.run();
+      }
+    });
+    return () => disposable.dispose();
+  }, [monacoInstance, keybindings]);
 
   const onGridReady = useCallback((event: GridReadyEvent) => {
     gridApiRef.current = event.api;
@@ -347,13 +375,8 @@ export function SqlEditorView() {
             editorRef.current = editor;
             monacoRef.current = monaco;
             setMonacoInstance(monaco);
-            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () =>
-              runActiveStatementRef.current(),
-            );
-            editor.addCommand(
-              monaco.KeyMod.CtrlCmd | monaco.KeyMod.Shift | monaco.KeyCode.Enter,
-              () => runAllRef.current(),
-            );
+            // Run/format shortcuts are bound in a keybindings-aware effect (see above) so they
+            // stay remappable; the formatting provider below supplies the actual format edits.
             monaco.languages.registerDocumentFormattingEditProvider('sql', {
               provideDocumentFormattingEdits(model) {
                 const formatted = format(model.getValue(), {

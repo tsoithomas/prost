@@ -18,9 +18,10 @@ export const prostGridTheme = themeQuartz.withParams({
   borderColor: 'var(--color-border)',
   wrapperBorderRadius: 'var(--radius-md)',
   fontFamily: 'var(--font-mono)',
-  fontSize: 12,
-  cellHorizontalPadding: 8,
-  rowHeight: 24,
-  headerHeight: 24,
+  // Density is driven by `spacing` (not a hardcoded rowHeight): AG Grid auto-calculates row +
+  // header height from spacing/font, which keeps cell text vertically centered at every density.
+  // Both are CSS vars (set by `applyGridDensity`) so the grid re-resolves on change with no JS.
+  spacing: 'var(--grid-spacing)',
+  fontSize: 'var(--grid-font-size)',
   accentColor: 'var(--color-accent)',
 });

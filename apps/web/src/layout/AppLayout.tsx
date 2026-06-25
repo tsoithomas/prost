@@ -3,9 +3,11 @@ import type { ReactNode } from 'react';
 import { usePreferences } from '../api/preferences';
 import { ConnectionModal } from '../connection/ConnectionModal';
 import { useIsMobile } from '../hooks/useMediaQuery';
+import { matchesChord, resolveBinding } from '../keybindings';
 import { MobileShell } from '../mobile/MobileShell';
 import { CommandPalette } from '../search/CommandPalette';
 import { useCommandPaletteStore } from '../stores/commandPaletteStore';
+import { useConnectionStore } from '../stores/connectionStore';
 import { useThemeStore } from '../stores/themeStore';
 import { TopBar } from './TopBar';
 import { Sidebar } from './Sidebar';
@@ -22,18 +24,20 @@ export function AppLayout({ children }: AppLayoutProps) {
   const openConnectionModal = () => setConnectionModalOpen(true);
   const connectionModal = <ConnectionModal open={connectionModalOpen} onClose={() => setConnectionModalOpen(false)} />;
 
-  // Global ⌘K / Ctrl+K toggles the command palette (both shells).
+  // Global command-palette shortcut (remappable; defaults to ⌘K / Ctrl+K), both shells.
   const togglePalette = useCommandPaletteStore((s) => s.toggle);
+  const keybindings = useThemeStore((s) => s.keybindings);
   useEffect(() => {
+    const chord = resolveBinding('command-palette', keybindings);
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if (matchesChord(e, chord)) {
         e.preventDefault();
         togglePalette();
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [togglePalette]);
+  }, [togglePalette, keybindings]);
 
   // Server preferences win over localStorage once authenticated — reconciles the device
   // with a saved choice exactly once per session, without clobbering later user edits.
@@ -42,10 +46,26 @@ export function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     if (!preferences || hydratedRef.current) return;
     hydratedRef.current = true;
-    const { colorMode, accentColor, setColorMode, setAccentColor } = useThemeStore.getState();
-    if (preferences.colorMode !== colorMode) setColorMode(preferences.colorMode);
-    if (preferences.accentColor !== accentColor) setAccentColor(preferences.accentColor);
+    const store = useThemeStore.getState();
+    if (preferences.colorMode !== store.colorMode) store.setColorMode(preferences.colorMode);
+    if (preferences.accentColor !== store.accentColor) store.setAccentColor(preferences.accentColor);
+    if (preferences.fontSize && preferences.fontSize !== store.fontSize) store.setFontSize(preferences.fontSize);
+    if (preferences.gridDensity && preferences.gridDensity !== store.gridDensity) {
+      store.setGridDensity(preferences.gridDensity);
+    }
+    store.setCustomPalettes(preferences.customPalettes ?? []);
+    store.setKeybindings(preferences.keybindings ?? {});
+    store.setConnectionOverrides(preferences.connectionOverrides ?? {});
   }, [preferences]);
+
+  // Apply the active connection's theme override (or revert to the global theme) on switch,
+  // and re-resolve once overrides arrive from the server.
+  const activeConnectionId = useConnectionStore((s) => s.activeConnectionId);
+  const connectionOverrides = useThemeStore((s) => s.connectionOverrides);
+  const applyConnectionTheme = useThemeStore((s) => s.applyConnectionTheme);
+  useEffect(() => {
+    applyConnectionTheme(activeConnectionId);
+  }, [activeConnectionId, connectionOverrides, applyConnectionTheme]);
 
   if (isMobile) {
     return (

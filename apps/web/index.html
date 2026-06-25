@@ -13,6 +13,7 @@
           var colorMode = (state && state.colorMode) || 'system';
           var accentColor = (state && state.accentColor) || '#498fff';
           var accentFg = (state && state.accentFg) || '#00285b';
+          var fontSize = (state && state.fontSize) || 'md';
 
           var isDark =
             colorMode === 'dark' ||
@@ -21,6 +22,10 @@
           if (isDark) document.documentElement.classList.add('dark');
           document.documentElement.style.setProperty('--color-accent', accentColor);
           document.documentElement.style.setProperty('--color-accent-fg', accentFg);
+
+          // Apply font scale before first paint to avoid a reflow (Tailwind text-* are rem-based).
+          var fontPx = { sm: '14px', md: '16px', lg: '18px' }[fontSize] || '16px';
+          document.documentElement.style.fontSize = fontPx;
         } catch (e) {
           /* ignore - falls back to default light theme */
         }
