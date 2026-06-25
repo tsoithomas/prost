@@ -19,6 +19,7 @@
     "ag-grid-community": "^33",
     "ag-grid-react": "^33",
     "clsx": "^2",
+    "fuse.js": "^7",
     "lucide-react": "*",
     "react": "^19",
     "react-dom": "^19",

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import clsx from 'clsx';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import type { ColumnMetadata } from '@prost/shared-types';
 import { Badge, Button, IconButton } from '@prost/ui';
@@ -9,6 +10,7 @@ import { CreateIndexModal } from '../ddl/CreateIndexModal';
 import { EditColumnModal } from '../ddl/EditColumnModal';
 import { useConfirm } from '../hooks/useConfirm';
 import { useTableStructure } from '../api/metadata';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
 export interface TableStructurePanelProps {
   connectionId: string;
@@ -24,9 +26,26 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
   const [addColumnOpen, setAddColumnOpen] = useState(false);
   const [editingColumn, setEditingColumn] = useState<ColumnMetadata | null>(null);
   const [createIndexOpen, setCreateIndexOpen] = useState(false);
+  const [highlightedColumn, setHighlightedColumn] = useState<string | null>(null);
+  const columnsRef = useRef<HTMLDivElement>(null);
 
   const dropIndex = useDropIndex(connectionId, schema, table);
   const { confirm, dialog: confirmDialog } = useConfirm();
+
+  const revealColumn = useWorkspaceStore((state) => state.revealColumn);
+  const clearRevealColumn = useWorkspaceStore((state) => state.clearRevealColumn);
+
+  // When global search asks to reveal a column in *this* table, scroll to it and briefly highlight.
+  useEffect(() => {
+    if (!data || !revealColumn || revealColumn.schema !== schema || revealColumn.table !== table) return;
+    const target = revealColumn.column;
+    clearRevealColumn();
+    const node = columnsRef.current?.querySelector<HTMLElement>(`[data-column="${CSS.escape(target)}"]`);
+    node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setHighlightedColumn(target);
+    const timer = setTimeout(() => setHighlightedColumn(null), 2000);
+    return () => clearTimeout(timer);
+  }, [data, revealColumn, schema, table, clearRevealColumn]);
 
   async function handleDropIndex(indexName: string) {
     const ok = await confirm({
@@ -88,11 +107,16 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
               </Button>
             ) : null}
           </div>
-          <div className="overflow-hidden rounded-md border border-border">
+          <div ref={columnsRef} className="overflow-hidden rounded-md border border-border">
             {data.columns.map((col, i) => (
               <div
                 key={col.name}
-                className={`group flex items-center gap-sm px-md py-sm text-sm ${i < data.columns.length - 1 ? 'border-b border-border' : ''}`}
+                data-column={col.name}
+                className={clsx(
+                  'group flex items-center gap-sm px-md py-sm text-sm transition-colors',
+                  i < data.columns.length - 1 && 'border-b border-border',
+                  highlightedColumn === col.name && 'bg-accent-muted',
+                )}
               >
                 <span className="min-w-0 flex-1 font-medium text-text">{col.name}</span>
                 <ColumnTypePill dataType={col.dataType} />

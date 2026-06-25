@@ -19,12 +19,22 @@ export interface CursorPosition {
   column: number;
 }
 
+export interface RevealColumnTarget {
+  schema: string;
+  table: string;
+  column: string;
+}
+
 interface WorkspaceState {
   tabs: WorkspaceTab[];
   activeTabId: string;
   pendingQuerySql: string | null;
   cursorPosition: CursorPosition | null;
+  /** A column the structure panel should scroll to + highlight (set by global search). */
+  revealColumn: RevealColumnTarget | null;
   openTable: (schema: string, table: string, viewMode?: 'rows' | 'structure') => void;
+  revealTableColumn: (schema: string, table: string, column: string) => void;
+  clearRevealColumn: () => void;
   setTabViewMode: (id: string, viewMode: 'rows' | 'structure') => void;
   selectTab: (id: string) => void;
   closeTab: (id: string) => void;
@@ -75,6 +85,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   activeTabId: initialTabs[0]!.id,
   pendingQuerySql: null,
   cursorPosition: null,
+  revealColumn: null,
 
   openTable: (schema, table, viewMode = 'rows') => {
     const id = `table:${schema}.${table}`;
@@ -91,6 +102,22 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
       };
     });
   },
+
+  revealTableColumn: (schema, table, column) => {
+    const id = `table:${schema}.${table}`;
+    set((state) => {
+      const exists = state.tabs.some((tab) => tab.id === id);
+      return {
+        revealColumn: { schema, table, column },
+        activeTabId: id,
+        tabs: exists
+          ? state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode: 'structure' } : tab))
+          : [...state.tabs, { id, label: table, kind: 'table', schema, table, viewMode: 'structure' }],
+      };
+    });
+  },
+
+  clearRevealColumn: () => set({ revealColumn: null }),
 
   setTabViewMode: (id, viewMode) =>
     set((state) => ({

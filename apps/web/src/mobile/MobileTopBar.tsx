@@ -1,7 +1,8 @@
-import { Database, Network } from 'lucide-react';
+import { Database, Network, Search } from 'lucide-react';
 import { IconButton } from '@prost/ui';
 import { useActiveConnection } from '../api/connections';
 import { connectionEndpoint } from '../connection/connectionDisplay';
+import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import type { MobileTab } from './MobileShell';
 
 export interface MobileTopBarProps {
@@ -12,6 +13,7 @@ export interface MobileTopBarProps {
 
 export function MobileTopBar({ activeTab, onOpenConnections, onShowExplorer }: MobileTopBarProps) {
   const activeConnection = useActiveConnection();
+  const openPalette = useCommandPaletteStore((s) => s.openPalette);
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-sm border-b border-border bg-surface px-md">
@@ -28,6 +30,9 @@ export function MobileTopBar({ activeTab, onOpenConnections, onShowExplorer }: M
           'No connection'
         )}
       </h1>
+      <IconButton aria-label="Search" onClick={openPalette}>
+        <Search size={18} />
+      </IconButton>
       <IconButton
         aria-label="Schema explorer"
         variant={activeTab === 'explorer' ? 'active' : 'ghost'}

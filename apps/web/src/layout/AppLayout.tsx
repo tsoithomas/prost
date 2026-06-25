@@ -4,6 +4,8 @@ import { usePreferences } from '../api/preferences';
 import { ConnectionModal } from '../connection/ConnectionModal';
 import { useIsMobile } from '../hooks/useMediaQuery';
 import { MobileShell } from '../mobile/MobileShell';
+import { CommandPalette } from '../search/CommandPalette';
+import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { useThemeStore } from '../stores/themeStore';
 import { TopBar } from './TopBar';
 import { Sidebar } from './Sidebar';
@@ -19,6 +21,19 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isMobile = useIsMobile();
   const openConnectionModal = () => setConnectionModalOpen(true);
   const connectionModal = <ConnectionModal open={connectionModalOpen} onClose={() => setConnectionModalOpen(false)} />;
+
+  // Global ⌘K / Ctrl+K toggles the command palette (both shells).
+  const togglePalette = useCommandPaletteStore((s) => s.toggle);
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        togglePalette();
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [togglePalette]);
 
   // Server preferences win over localStorage once authenticated — reconciles the device
   // with a saved choice exactly once per session, without clobbering later user edits.
@@ -37,6 +52,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <>
         <MobileShell onOpenConnections={openConnectionModal} />
         {connectionModal}
+        <CommandPalette />
       </>
     );
   }
@@ -51,6 +67,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       </div>
       <StatusBar />
       {connectionModal}
+      <CommandPalette />
     </div>
   );
 }
