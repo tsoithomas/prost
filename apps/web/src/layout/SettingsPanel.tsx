@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
+import { LogOut } from 'lucide-react';
 import { Surface } from '@prost/ui';
+import { useAuthStore } from '../stores/authStore';
 import { ThemeSettings } from './ThemeSettings';
 
 export interface SettingsPanelProps {
@@ -8,6 +10,8 @@ export interface SettingsPanelProps {
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const ref = useRef<HTMLDivElement>(null);
+  const user = useAuthStore((state) => state.user);
+  const clearAuth = useAuthStore((state) => state.clear);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -34,6 +38,24 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       className="absolute right-0 top-full z-50 mt-1 w-64 rounded-md p-md shadow-lg"
     >
       <ThemeSettings />
+      <div className="mt-md flex flex-col gap-xs border-t border-border pt-md">
+        {user ? (
+          <p className="truncate text-xs text-text-faint">
+            Signed in as <span className="text-text-muted">{user.email}</span>
+          </p>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => {
+            clearAuth();
+            onClose();
+          }}
+          className="inline-flex cursor-pointer items-center justify-center gap-xs text-xs text-danger hover:underline"
+        >
+          <LogOut size={14} />
+          Sign Out
+        </button>
+      </div>
     </Surface>
   );
 }

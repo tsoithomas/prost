@@ -29,8 +29,10 @@ function parseChord(chord: string): ParsedChord | null {
   const mods = tokens.slice(0, -1);
   const parsed: ParsedChord = { ctrl: false, meta: false, shift: false, alt: false, key };
   for (const mod of mods) {
-    if (mod === 'mod') (isMac ? (parsed.meta = true) : (parsed.ctrl = true));
-    else if (mod === 'ctrl') parsed.ctrl = true;
+    if (mod === 'mod') {
+      if (isMac) parsed.meta = true;
+      else parsed.ctrl = true;
+    } else if (mod === 'ctrl') parsed.ctrl = true;
     else if (mod === 'cmd') parsed.meta = true;
     else if (mod === 'shift') parsed.shift = true;
     else if (mod === 'alt') parsed.alt = true;

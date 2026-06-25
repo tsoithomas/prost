@@ -48,9 +48,9 @@ export function LoginPage() {
         }}
       />
       <Surface level="raised" bordered className="relative z-10 flex w-full max-w-96 flex-col gap-lg rounded-lg p-lg shadow-2xl">
-        <div className="flex items-center gap-sm">
-          <img src={logo} alt="" className="h-8 w-8" />
+        <div className="flex flex-col items-center gap-sm">
           <span className="text-lg font-bold text-accent">Prost</span>
+          <img src={logo} alt="" className="h-24 w-24" />
         </div>
         <div>
           <h1 className="text-lg font-semibold text-text">Sign in</h1>
