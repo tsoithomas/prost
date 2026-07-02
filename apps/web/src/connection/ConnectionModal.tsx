@@ -67,6 +67,7 @@ const fallbackNetworkEngine: DbEngineDescriptor = {
   defaultNamespace: 'public',
   supportsSsl: true,
   sslEnabledByDefault: true,
+  supportsCursors: true,
   ddl: {
     columnTypes: [],
     defaultExamples: [],

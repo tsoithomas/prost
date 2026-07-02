@@ -5,7 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { buildSystemConnectionParams, isSystemConnectionId } from '../connections/system-connection';
 import { DbDriverRegistry } from './db-driver.registry';
 import type { DbDriver } from './db-driver.interface';
-import type { ConnectionParams, DriverQueryFn, DriverResult, NativePool, SqlFragment, TestConnectionResult } from './types';
+import type { ConnectionParams, DriverCursor, DriverQueryFn, DriverResult, NativePool, SqlFragment, TestConnectionResult } from './types';
 
 @Injectable()
 export class PoolManager implements OnModuleInit, OnModuleDestroy {
@@ -13,6 +13,8 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
   private readonly pools = new Map<string, Promise<NativePool>>();
   private readonly poolLastUsed = new Map<string, number>();
   private readonly poolEngine = new Map<string, string>();
+  /** Count of open streaming cursors per connection — a held cursor pins a pooled client, so its pool must not be idle/LRU-evicted out from under it (architecture principle §12). */
+  private readonly activeCursors = new Map<string, number>();
   private sweepInterval?: ReturnType<typeof setInterval>;
 
   private readonly poolIdleMs: number;
@@ -55,6 +57,44 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
     const { driver, pool } = await this.resolve(connectionId);
     this.poolLastUsed.set(connectionId, Date.now());
     return driver.withSession(pool, fn);
+  }
+
+  /**
+   * Open a forward-only streaming cursor on the connection's pool. The returned handle pins a
+   * pooled client (PG/MySQL) or a statement iterator (SQLite) until `close()`; the count of open
+   * cursors keeps the pool from being idle/LRU-evicted while one is live. The caller (the
+   * cursor-session manager) is responsible for always closing it.
+   */
+  async openCursor(connectionId: string, frag: SqlFragment): Promise<DriverCursor> {
+    const { driver, pool } = await this.resolve(connectionId);
+    this.poolLastUsed.set(connectionId, Date.now());
+    const cursor = await driver.openCursor(pool, frag);
+    this.activeCursors.set(connectionId, (this.activeCursors.get(connectionId) ?? 0) + 1);
+    this.logger.log(`cursor opened connectionId=${connectionId} active=${this.activeCursors.get(connectionId)}`);
+
+    let released = false;
+    const releaseAccounting = (): void => {
+      if (released) return;
+      released = true;
+      const remaining = (this.activeCursors.get(connectionId) ?? 1) - 1;
+      if (remaining <= 0) this.activeCursors.delete(connectionId);
+      else this.activeCursors.set(connectionId, remaining);
+    };
+
+    return {
+      fetch: (n) => {
+        this.poolLastUsed.set(connectionId, Date.now());
+        return cursor.fetch(n);
+      },
+      columns: () => cursor.columns(),
+      close: async () => {
+        try {
+          await cursor.close();
+        } finally {
+          releaseAccounting();
+        }
+      },
+    };
   }
 
   async withTransaction<T>(connectionId: string, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
@@ -142,17 +182,25 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  /** A pool with live streaming cursors must not be torn down — its clients are still checked out. */
+  private hasActiveCursors(connectionId: string): boolean {
+    return (this.activeCursors.get(connectionId) ?? 0) > 0;
+  }
+
   private readonly sweep = (): void => {
     const now = Date.now();
     for (const [connectionId, lastUsed] of [...this.poolLastUsed.entries()].sort((a, b) => a[1] - b[1])) {
-      if (now - lastUsed > this.poolIdleMs) {
+      if (now - lastUsed > this.poolIdleMs && !this.hasActiveCursors(connectionId)) {
         this.logger.log(`pool idle sweep evicting connectionId=${connectionId} idleMs=${now - lastUsed}`);
         void this.evictPool(connectionId);
       }
     }
-    const active = [...this.pools.keys()];
-    if (active.length > this.poolMax) {
-      const lru = [...this.poolLastUsed.entries()].sort((a, b) => a[1] - b[1]).slice(0, active.length - this.poolMax);
+    const evictable = [...this.pools.keys()].filter((id) => !this.hasActiveCursors(id));
+    if (evictable.length > this.poolMax) {
+      const lru = [...this.poolLastUsed.entries()]
+        .filter(([id]) => !this.hasActiveCursors(id))
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, evictable.length - this.poolMax);
       for (const [connectionId] of lru) {
         this.logger.log(`pool LRU cap evicting connectionId=${connectionId}`);
         void this.evictPool(connectionId);

@@ -1,6 +1,7 @@
 import { ConflictException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Client, Pool } from 'pg';
+import { Client, Pool, type FieldDef, type PoolClient } from 'pg';
+import Cursor from 'pg-cursor';
 import type {
   AlterTableOperation,
   ColumnMetadata,
@@ -10,11 +11,20 @@ import type {
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
-  ConnectionParams, DbCapabilities, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
+  ConnectionParams, DbCapabilities, DriverCursor, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
 } from '../../types';
 import * as sql from './pg-sql';
 
 const CONNECT_TIMEOUT_MS = 5000;
+
+/** The slice of `pg-cursor`'s instance API the driver uses, pinned locally so the code doesn't depend on the exact `@types/pg-cursor` callback shape. */
+interface PgReadableCursor {
+  read(
+    rowCount: number,
+    callback: (error: Error | undefined, rows: Record<string, unknown>[], result?: { fields?: FieldDef[] }) => void,
+  ): void;
+  close(callback: (error?: Error) => void): void;
+}
 
 function describeConnectionError(error: unknown): string {
   if (error instanceof AggregateError) {
@@ -41,6 +51,7 @@ export class PgDriver implements DbDriver {
     defaultNamespace: 'public',
     supportsSsl: true,
     sslEnabledByDefault: false,
+    supportsCursors: true,
     ddl: {
       columnTypes: [
         'integer', 'bigint', 'smallint', 'serial', 'bigserial',
@@ -55,7 +66,7 @@ export class PgDriver implements DbDriver {
       supportsUsingExpression: true,
     },
   };
-  readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: true, parserDialect: 'postgresql', concurrency: 'token' };
+  readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: true, parserDialect: 'postgresql', concurrency: 'token', supportsCursors: true };
 
   private readonly logger = new Logger(PgDriver.name);
   private readonly statementTimeoutMs: number;
@@ -129,6 +140,57 @@ export class PgDriver implements DbDriver {
     } finally {
       client.release();
     }
+  }
+
+  async openCursor(pool: NativePool, frag: SqlFragment): Promise<DriverCursor> {
+    // Hold a pooled client inside a read transaction for the cursor's whole lifetime. The client is
+    // released only by close() — on completion, abandonment, budget, or reap (cursor-session manager).
+    const client: PoolClient = await (pool as Pool).connect();
+    // Cast the cursor's read/close to a local shape so the code is independent of the exact
+    // `@types/pg-cursor` callback arity across versions.
+    let cursor: PgReadableCursor;
+    try {
+      await client.query('BEGIN');
+      cursor = client.query(new Cursor(frag.sql, frag.params as unknown[])) as unknown as PgReadableCursor;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      client.release();
+      throw error;
+    }
+
+    let fields: { name: string; dataTypeID: number }[] = [];
+    let closed = false;
+
+    const readBlock = (n: number) =>
+      new Promise<{ rows: Record<string, unknown>[]; fields?: FieldDef[] }>((resolve, reject) => {
+        cursor.read(n, (error, rows, result) => {
+          if (error) reject(error);
+          else resolve({ rows, fields: result?.fields });
+        });
+      });
+
+    const close = async (): Promise<void> => {
+      if (closed) return;
+      closed = true;
+      await new Promise<void>((resolve) => cursor.close(() => resolve())).catch(() => undefined);
+      await client.query('ROLLBACK').catch(() => undefined);
+      client.release();
+    };
+
+    return {
+      async fetch(n) {
+        const { rows, fields: blockFields } = await readBlock(n);
+        if (fields.length === 0 && blockFields) {
+          fields = blockFields.map((field) => ({ name: field.name, dataTypeID: field.dataTypeID }));
+        }
+        // pg-cursor returns fewer rows than requested only once the cursor is exhausted.
+        const complete = rows.length < n;
+        if (complete) await close();
+        return { rows, complete };
+      },
+      columns: () => fields,
+      close,
+    };
   }
 
   async testConnection(params: ConnectionParams): Promise<TestConnectionResult> {

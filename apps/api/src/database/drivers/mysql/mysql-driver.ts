@@ -23,10 +23,12 @@ import {
   type ResultSetHeader,
   type RowDataPacket,
 } from 'mysql2/promise';
+import type { Readable } from 'node:stream';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
   ConnectionParams,
   DbCapabilities,
+  DriverCursor,
   DriverQueryFn,
   DriverResult,
   NativePool,
@@ -38,6 +40,18 @@ import type {
   WhereDialect,
 } from '../../types';
 import * as sql from './mysql-sql';
+
+/**
+ * The streaming surface of mysql2's core (callback) connection, reached through the promise
+ * `PoolConnection.connection`. `query(...).stream()` reads rows off the wire incrementally rather
+ * than buffering the whole result — the basis for the forward-only cursor.
+ */
+interface CoreStreamingConnection {
+  query(options: { sql: string; values: unknown[] }): {
+    on(event: 'fields', listener: (fields: FieldPacket[]) => void): unknown;
+    stream(options?: { highWaterMark?: number }): Readable;
+  };
+}
 
 const CONNECT_TIMEOUT_MS = 5000;
 
@@ -130,6 +144,7 @@ export class MysqlDriver implements DbDriver {
     parserDialect: 'mysql',
     // MySQL exposes no per-row version token, so writes guard on the edited columns' pre-image.
     concurrency: 'preimage',
+    supportsCursors: true,
   };
   readonly descriptor: DbEngineDescriptor = {
     engine: 'mysql',
@@ -142,6 +157,7 @@ export class MysqlDriver implements DbDriver {
     namespaceLabel: 'Database',
     supportsSsl: true,
     sslEnabledByDefault: false,
+    supportsCursors: true,
     ddl: {
       columnTypes: [
         'int',
@@ -254,6 +270,67 @@ export class MysqlDriver implements DbDriver {
     } finally {
       connection.release();
     }
+  }
+
+  async openCursor(pool: NativePool, frag: SqlFragment): Promise<DriverCursor> {
+    // Pin a pooled connection and stream rows off the wire (no full-result buffering). The stream's
+    // async iterator gives natural backpressure: each fetch pulls N rows then the protocol pauses.
+    const connection = await (pool as Pool).getConnection();
+    const core = (connection as unknown as { connection: CoreStreamingConnection }).connection;
+    let fields: { name: string; dataTypeID: number; dataTypeName?: string }[] = [];
+
+    const queryStream = core.query({ sql: frag.sql, values: frag.params });
+    queryStream.on('fields', (packets) => {
+      if (fields.length === 0 && Array.isArray(packets)) {
+        fields = packets.map((field) => ({
+          name: field.name,
+          dataTypeID: (field.columnType ?? field.type) as number,
+          dataTypeName: undefined,
+        }));
+      }
+    });
+    const stream = queryStream.stream({ highWaterMark: 256 });
+    const iterator = stream[Symbol.asyncIterator]();
+    let ended = false;
+    let closed = false;
+
+    const close = async (): Promise<void> => {
+      if (closed) return;
+      closed = true;
+      if (ended) {
+        // Result fully drained — the connection is clean and reusable.
+        connection.release();
+      } else {
+        // Abandoned mid-result: drop the connection rather than return a busy one to the pool.
+        stream.destroy();
+        connection.destroy();
+      }
+    };
+
+    return {
+      async fetch(n) {
+        const rows: Record<string, unknown>[] = [];
+        let complete = false;
+        for (let i = 0; i < n; i += 1) {
+          const next = await iterator.next();
+          if (next.done) {
+            ended = true;
+            complete = true;
+            break;
+          }
+          rows.push(next.value as Record<string, unknown>);
+        }
+        // Defensive: if the 'fields' event never landed, fall back to name-only columns.
+        const sample = rows[0];
+        if (fields.length === 0 && sample) {
+          fields = Object.keys(sample).map((name) => ({ name, dataTypeID: 0, dataTypeName: undefined }));
+        }
+        if (complete) await close();
+        return { rows, complete };
+      },
+      columns: () => fields,
+      close,
+    };
   }
 
   async testConnection(params: ConnectionParams): Promise<TestConnectionResult> {

@@ -17,7 +17,7 @@ vi.mock('../api/ddlPreview', () => ({ useDdlPreview: mockPreview }));
 const MYSQL: DbEngineDescriptor = {
   engine: 'mysql', label: 'MySQL', connectionMode: 'network', defaultPort: 3306,
   uriSchemes: ['mysql'], parserDialect: 'mysql', formatterDialect: 'mysql',
-  namespaceLabel: 'Database', supportsSsl: true, sslEnabledByDefault: false,
+  namespaceLabel: 'Database', supportsSsl: true, sslEnabledByDefault: false, supportsCursors: true,
   ddl: {
     columnTypes: ['int'],
     defaultExamples: ['CURRENT_TIMESTAMP'],

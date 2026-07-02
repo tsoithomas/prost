@@ -35,12 +35,12 @@ passes **and** it violates none of the architecture principles.
 | [19](./phase-19-history-management.md) | Query history management (edit/star/delete, search, export) | ✅ Complete |
 | [20](./phase-20-global-search.md) | Global search (command-palette overlay) | ✅ Complete |
 | [21](./phase-21-preferences-theming.md) | Preferences & theming expansion | 📋 Planned |
-| [22](./phase-22-streaming-results.md) | Streaming / cursor-based large result sets | 📋 Planned |
+| [22](./phase-22-streaming-results.md) | Streaming / cursor-based large result sets | ✅ Complete |
 
 Phases 0–5 are the **MVP** (complete). Phases 6–10 are the **first post-MVP wave** drawn from
 [`../future-features.md`](../future-features.md) (all complete). Phases 11–22 are the **second
 post-MVP wave** — two "strengthening" phases (11, 12) that harden already-built features, then the
-remaining backlog (13–22). Phases 11–20 are complete; **21–22 remain**. Their sequencing,
+remaining backlog (13–22). Phases 11–20 and 22 are complete; **21 remains**. Their sequencing,
 dependencies, and rationale live in [`roadmap-phase-11-22.md`](./roadmap-phase-11-22.md).
 
 ## Sequencing notes

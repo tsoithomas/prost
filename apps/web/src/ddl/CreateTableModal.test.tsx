@@ -38,6 +38,7 @@ const POSTGRES_DESCRIPTOR: DbEngineDescriptor = {
   defaultNamespace: 'public',
   supportsSsl: true,
   sslEnabledByDefault: false,
+  supportsCursors: true,
   ddl: {
     columnTypes: ['integer', 'text', 'jsonb'],
     defaultExamples: ['now()', 'gen_random_uuid()'],

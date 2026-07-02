@@ -8,6 +8,7 @@ import type {
 import type {
   ConnectionParams,
   DbCapabilities,
+  DriverCursor,
   DriverQueryFn,
   DriverResult,
   NativePool,
@@ -33,6 +34,13 @@ export interface DbDriver {
   query(pool: NativePool, frag: SqlFragment): Promise<DriverResult>;
   /** Pin one connection, run `fn`, no automatic transaction. Used by QueryService. */
   withSession<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T>;
+  /**
+   * Open a forward-only server-side cursor over a single SELECT (`frag`), holding its pinned
+   * resource across requests for streamed paging of large results (architecture principle §7).
+   * Only engines whose `capabilities.supportsCursors` is true implement this. The returned handle
+   * is owned by the cursor-session manager, which always `close()`s it.
+   */
+  openCursor(pool: NativePool, frag: SqlFragment): Promise<DriverCursor>;
   /**
    * Runs `fn` inside a single transaction: the driver issues `BEGIN` before `fn`, `COMMIT` on
    * success, and `ROLLBACK` if `fn` throws (the error then propagates). All statements `fn` runs

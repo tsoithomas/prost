@@ -163,6 +163,7 @@ function makeDescriptor(
     namespaceLabel: 'Schema',
     supportsSsl: engine !== 'sqlite',
     sslEnabledByDefault: false,
+    supportsCursors: true,
     ddl: {
       columnTypes: [],
       defaultExamples: [],

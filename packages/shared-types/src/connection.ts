@@ -13,6 +13,8 @@ export interface DbEngineDescriptor {
   defaultNamespace?: string;
   supportsSsl: boolean;
   sslEnabledByDefault: boolean;
+  /** Whether the engine supports forward-only server-side cursors for streaming large editor results. */
+  supportsCursors: boolean;
   ddl: {
     columnTypes: string[];
     defaultExamples: string[];

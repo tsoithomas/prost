@@ -357,6 +357,44 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       expect(mapped).toBeInstanceOf(ConflictException);
     });
 
+    it('streams forward blocks through a cursor and closes on completion', async (ctx) => {
+      skipIfUnreachable(ctx);
+      if (!driver.capabilities.supportsCursors) {
+        (ctx as TestContext & { skip: (note?: string) => void }).skip('engine does not support cursors');
+        return;
+      }
+      const ids = [200, 201, 202, 203, 204];
+      for (const id of ids) {
+        await driver.query(pool!, driver.buildInsertRow(ref, [['id', id], ['name', `cursor-${id}`]]));
+      }
+      const { quoteIdent, placeholder } = driver.whereDialect;
+      const qualified = supportsSchemas ? `${driver.quoteIdent(schema)}.${driver.quoteIdent(ref.name)}` : driver.quoteIdent(ref.name);
+      const sql = `SELECT ${quoteIdent('id')} FROM ${qualified} WHERE ${quoteIdent('id')} >= ${placeholder(1)} ORDER BY ${quoteIdent('id')}`;
+
+      const cursor = await driver.openCursor(pool!, { sql, params: [200] });
+      try {
+        const first = await cursor.fetch(2);
+        expect(first.rows.map((r) => Number(r.id))).toEqual([200, 201]);
+        expect(first.complete).toBe(false);
+        // Fields are known after the first fetch.
+        expect(cursor.columns().some((field) => field.name === 'id')).toBe(true);
+
+        const second = await cursor.fetch(2);
+        expect(second.rows.map((r) => Number(r.id))).toEqual([202, 203]);
+        expect(second.complete).toBe(false);
+
+        // The final partial block signals completion (fewer rows than requested).
+        const third = await cursor.fetch(2);
+        expect(third.rows.map((r) => Number(r.id))).toEqual([204]);
+        expect(third.complete).toBe(true);
+      } finally {
+        await cursor.close();
+        for (const id of ids) {
+          await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [id])).catch(() => undefined);
+        }
+      }
+    });
+
     it('inserts into an auto-increment primary key', async (ctx) => {
       skipIfUnreachable(ctx);
       if (!driver.descriptor.ddl.supportsAutoIncrement) {

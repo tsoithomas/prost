@@ -20,7 +20,7 @@ vi.mock('../api/databaseEngines', () => ({ useEngineDescriptor: () => descriptor
 const MYSQL: DbEngineDescriptor = {
   engine: 'mysql', label: 'MySQL', connectionMode: 'network', defaultPort: 3306,
   uriSchemes: ['mysql'], parserDialect: 'mysql', formatterDialect: 'mysql',
-  namespaceLabel: 'Database', supportsSsl: true, sslEnabledByDefault: false,
+  namespaceLabel: 'Database', supportsSsl: true, sslEnabledByDefault: false, supportsCursors: true,
   ddl: {
     columnTypes: ['int', 'bigint', 'varchar(255)'],
     defaultExamples: ['CURRENT_TIMESTAMP'],

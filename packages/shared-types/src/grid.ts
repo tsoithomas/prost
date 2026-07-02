@@ -131,6 +131,44 @@ export interface FetchQueryPageResponse {
   executionTimeMs: number;
 }
 
+/**
+ * Body for `POST /connections/:id/query/cursor` — opens a forward-only server-side cursor for a
+ * single SELECT (the streaming alternative to growing-OFFSET paging, used for large editor
+ * results). `sql` must be exactly one SELECT statement; mutations and EXPLAIN are rejected.
+ */
+export interface OpenCursorBody {
+  sql: string;
+}
+
+/**
+ * Response for `POST /connections/:id/query/cursor`. Carries the first block plus the
+ * `GridResponse` metadata (columns/editability) so the grid renders identically to the offset
+ * path. `sessionId` addresses the held cursor for subsequent fetches; when `complete` is already
+ * `true` the result fit in the first block and the cursor is closed (a small result).
+ */
+export interface OpenCursorResponse extends GridResponse {
+  sessionId: string;
+  /** The first block exhausted the result and the cursor is already closed. */
+  complete: boolean;
+  /** The server-side total-row budget was hit; no more rows will be served (architecture principle §7/§11). */
+  truncated?: boolean;
+}
+
+/** Body for `POST /connections/:id/query/cursor/:sessionId/fetch` — pull the next forward block. */
+export interface FetchCursorBody {
+  limit?: number;
+}
+
+/** Response for a cursor fetch — the next block plus end-of-stream / truncation signalling. */
+export interface FetchCursorResponse {
+  rows: Record<string, unknown>[];
+  /** No more rows remain; the cursor is closed. */
+  complete: boolean;
+  /** The total-row budget was hit; the cursor is closed with rows left unserved. */
+  truncated?: boolean;
+  executionTimeMs: number;
+}
+
 export interface RowUpdateRequest {
   connectionId: string;
   schema: string;

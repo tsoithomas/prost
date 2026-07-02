@@ -38,6 +38,24 @@ export interface DbCapabilities {
    * (PG `xmin`); `preimage` engines have none, so writes guard on the edited columns' old values.
    */
   concurrency: RowConcurrency;
+  /** Whether `openCursor` is implemented (forward-only streaming of large editor results). */
+  supportsCursors: boolean;
+}
+
+/**
+ * A held, forward-only server-side cursor over a single SELECT. Unlike `withSession`/`withTransaction`
+ * (whose callback form releases the pinned resource on return), a `DriverCursor` keeps its resource —
+ * a pooled client (PG/MySQL) or a statement iterator (SQLite) — alive across HTTP requests until
+ * `close()`. The owning driver is the only code that knows the concrete resource. Always closed by
+ * the cursor-session manager (on completion, abandonment, budget, or reap).
+ */
+export interface DriverCursor {
+  /** Fetch up to `n` rows forward. `complete` is `true` once the stream is exhausted (cursor then closed). */
+  fetch(n: number): Promise<{ rows: Record<string, unknown>[]; complete: boolean }>;
+  /** Result-column fields, available after the first `fetch`; fed to `describeResultColumns`. */
+  columns(): { name: string; dataTypeID: number; dataTypeName?: string }[];
+  /** Release the pinned resource. Idempotent. */
+  close(): Promise<void>;
 }
 
 /**

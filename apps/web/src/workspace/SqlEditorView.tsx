@@ -39,6 +39,7 @@ import { ApiError, apiErrorDetail, apiErrorMessage } from '../lib/apiClient';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useThemeStore } from '../stores/themeStore';
 import { INITIAL_SQL, useWorkspaceStore } from '../stores/workspaceStore';
+import { createCursorDatasource } from './cursorDatasource';
 import { createQueryPageDatasource } from './queryPageDatasource';
 import { PlanPanel, StatementResultPanel } from './StatementResultPanel';
 import { statementAtOffset } from './statementRanges';
@@ -92,6 +93,10 @@ export function SqlEditorView() {
   const [resultEpoch, setResultEpoch] = useState(0);
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
+  // When a streamed result hits the server-side row budget, the count of rows actually delivered.
+  const [streamTruncatedAt, setStreamTruncatedAt] = useState<number | null>(null);
+  // The streaming cursor expired mid-scroll and the grid fell back to offset paging.
+  const [streamReaped, setStreamReaped] = useState(false);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const createSnippet = useCreateSnippet();
@@ -125,11 +130,22 @@ export function SqlEditorView() {
 
   const pinnedTopRowData = useMemo(() => (pendingInsert ? [pendingInsert] : undefined), [pendingInsert]);
 
-  // Infinite-scroll datasource: each block re-runs the single SELECT at its offset via
-  // `/query/page`. Rebuilt whenever the result changes (`resultEpoch`) so the grid `key` swap
-  // gets a fresh datasource + cache.
+  // Infinite-scroll datasource. Small/normal results keep the offset path (`/query/page`); a
+  // *truncated* result on a cursor-capable engine streams via a forward-only server cursor
+  // (`createCursorDatasource`) so deep scrolling doesn't re-scan with a growing OFFSET. Rebuilt
+  // whenever the result changes (`resultEpoch`) so the grid `key` swap gets a fresh datasource + cache.
+  const useCursor = (editableResult?.truncated ?? false) && (descriptor?.supportsCursors ?? false);
   const datasource = useMemo<IDatasource | undefined>(() => {
     if (!connectionId || editableResult === null) return undefined;
+    if (useCursor) {
+      return createCursorDatasource({
+        connectionId,
+        sql: editableResult.sql,
+        onError: (error) => pushToast('danger', apiErrorDetail(error, 'Failed to load more rows.')),
+        onTruncated: (rowsServed) => setStreamTruncatedAt(rowsServed),
+        onReaped: () => setStreamReaped(true),
+      });
+    }
     return createQueryPageDatasource({
       connectionId,
       sql: editableResult.sql,
@@ -137,7 +153,7 @@ export function SqlEditorView() {
     });
     // `resultEpoch` is an intentional dependency: a re-run of the same SQL must rebuild the datasource.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId, editableResult?.sql, resultEpoch, pushToast]);
+  }, [connectionId, editableResult?.sql, useCursor, resultEpoch, pushToast]);
 
   // `defineProstMonacoThemes` snapshots the current CSS variable values, so it must be
   // re-run whenever the color mode or accent color changes to keep Monaco in sync.
@@ -158,6 +174,8 @@ export function SqlEditorView() {
     setPendingInsert(null);
     setSelectedRows([]);
     setSaveSnippetName(null);
+    setStreamTruncatedAt(null);
+    setStreamReaped(false);
   }, [activeTabId]);
 
   // Loading a query from history sets `pendingQuerySql` (see `workspaceStore.loadQuery`);
@@ -184,6 +202,8 @@ export function SqlEditorView() {
           onSuccess: (data) => {
             setResponse(data);
             setResultEpoch((e) => e + 1);
+            setStreamTruncatedAt(null);
+            setStreamReaped(false);
             setTabResult(activeTabId, data);
             queryClient.invalidateQueries({ queryKey: ['history', connectionId] });
           },
@@ -493,6 +513,10 @@ export function SqlEditorView() {
             {single?.kind === 'rows' ? (
               <>
                 <Badge variant={editable ? 'success' : 'neutral'}>{editable ? 'Editable' : 'Read-only'}</Badge>
+                {streamTruncatedAt !== null ? (
+                  <Badge variant="warning">truncated at {streamTruncatedAt.toLocaleString()}</Badge>
+                ) : null}
+                {streamReaped ? <Badge variant="neutral">paged</Badge> : null}
                 <span>
                   {single.truncated
                     ? `${single.rows.length}+ rows`
@@ -542,6 +566,7 @@ export function SqlEditorView() {
                 datasource={datasource}
                 cacheBlockSize={PAGE_SIZE}
                 maxBlocksInCache={10}
+                maxConcurrentDatasourceRequests={1}
                 getRowId={getRowId}
                 pinnedTopRowData={pinnedTopRowData}
                 rowSelection={editable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: false } : undefined}

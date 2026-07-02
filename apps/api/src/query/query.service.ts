@@ -106,6 +106,41 @@ export class QueryService {
     return { rows: truncated ? rows.slice(0, limit) : rows, truncated, executionTimeMs };
   }
 
+  /**
+   * Validates that `sql` is exactly one streamable SELECT and returns its statement text. Shared by
+   * the cursor-session manager so a streamed read can never run a multi-statement script, a mutation,
+   * or an EXPLAIN. Mirrors the guard in `fetchPage`.
+   */
+  async resolveSingleSelect(connectionId: string, sql: string): Promise<string> {
+    const statementTexts = splitStatements(sql);
+    if (statementTexts.length !== 1) {
+      throw new BadRequestException('Only a single SELECT statement can be streamed');
+    }
+    const driver = await this.pool.driverFor(connectionId);
+    const statementText = statementTexts[0]!;
+    const ast = this.tryAstifyOne(driver, statementText);
+    const isSelect = ast?.type === 'select';
+    const isUnparsedSelect = ast === null && looksLikeSingleSelect(statementText);
+    if (EXPLAIN_RE.test(statementText) || (!isSelect && !isUnparsedSelect)) {
+      throw new BadRequestException('Only SELECT statements can be streamed');
+    }
+    return statementText;
+  }
+
+  /** Resolve the editability of a single SELECT statement (same analysis the initial execute uses). */
+  async analyzeSelectEditability(connectionId: string, statementText: string): Promise<EditabilityResult> {
+    const driver = await this.pool.driverFor(connectionId);
+    const ast = this.tryAstifyOne(driver, statementText);
+    if (ast?.type !== 'select') return { editable: false };
+    return this.resolveEditability(connectionId, [ast]);
+  }
+
+  /** Resolve result-column metadata from a cursor's fields (reuses the driver's `describeResultColumns`). */
+  async describeColumns(connectionId: string, fields: FieldInfo[], primaryKey: string[] = []): Promise<ColumnMetadata[]> {
+    const driver = await this.pool.driverFor(connectionId);
+    return this.mapColumns(connectionId, driver, fields, primaryKey);
+  }
+
   /** Each statement runs (and commits) independently — a failure doesn't stop the rest (honest partial success, principle §8). */
   private async executeAutocommit(connectionId: string, driver: DbDriver, statementTexts: string[], correlationId: string): Promise<StatementResult[]> {
     const results: StatementResult[] = [];

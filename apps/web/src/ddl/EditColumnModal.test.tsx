@@ -18,7 +18,7 @@ vi.mock('../api/databaseEngines', () => ({ useEngineDescriptor: () => descriptor
 const BASE: DbEngineDescriptor = {
   engine: 'postgres', label: 'PostgreSQL', connectionMode: 'network', defaultPort: 5432,
   uriSchemes: ['postgresql'], parserDialect: 'postgresql', formatterDialect: 'postgresql',
-  namespaceLabel: 'Schema', supportsSsl: true, sslEnabledByDefault: false,
+  namespaceLabel: 'Schema', supportsSsl: true, sslEnabledByDefault: false, supportsCursors: true,
   ddl: {
     columnTypes: ['integer', 'text'],
     defaultExamples: ['now()'],

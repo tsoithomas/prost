@@ -10,7 +10,7 @@ import type {
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
-  ConnectionParams, DbCapabilities, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
+  ConnectionParams, DbCapabilities, DriverCursor, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
 } from '../../types';
 import * as sql from './sqlite-sql';
 
@@ -43,6 +43,7 @@ export class SqliteDriver implements DbDriver {
     defaultNamespace: 'main',
     supportsSsl: false,
     sslEnabledByDefault: false,
+    supportsCursors: true,
     ddl: {
       columnTypes: ['INTEGER', 'TEXT', 'REAL', 'BLOB', 'NUMERIC'],
       defaultExamples: ['0', "''", 'CURRENT_TIMESTAMP', 'null'],
@@ -51,7 +52,7 @@ export class SqliteDriver implements DbDriver {
       supportsUsingExpression: false,
     },
   };
-  readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: false, parserDialect: 'sqlite', concurrency: 'preimage' };
+  readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: false, parserDialect: 'sqlite', concurrency: 'preimage', supportsCursors: true };
 
   private readonly busyTimeoutMs: number;
 
@@ -125,6 +126,46 @@ export class SqliteDriver implements DbDriver {
       }
       throw error;
     }
+  }
+
+  async openCursor(pool: NativePool, frag: SqlFragment): Promise<DriverCursor> {
+    // In-process and synchronous: the cursor is a prepared-statement iterator (no pooled client to
+    // hold). better-sqlite3 keeps the statement busy until the iterator is exhausted or `.return()`d,
+    // so close() must always run — that is what releases the read lock.
+    const db = pool as Db;
+    const stmt = db.prepare(frag.sql);
+    if (!stmt.reader) {
+      throw new UnprocessableEntityException('Only SELECT statements can be streamed');
+    }
+    const params = frag.params.map(normalizeBind);
+    const fields = stmt.columns().map((c) => ({ name: c.name, dataTypeID: 0, dataTypeName: c.type ?? undefined }));
+    const iter = stmt.iterate(...params) as IterableIterator<Record<string, unknown>>;
+    let closed = false;
+
+    const close = async (): Promise<void> => {
+      if (closed) return;
+      closed = true;
+      iter.return?.();
+    };
+
+    return {
+      async fetch(n) {
+        const rows: Record<string, unknown>[] = [];
+        let complete = false;
+        for (let i = 0; i < n; i += 1) {
+          const next = iter.next();
+          if (next.done) {
+            complete = true;
+            break;
+          }
+          rows.push(next.value);
+        }
+        if (complete) await close();
+        return { rows, complete };
+      },
+      columns: () => fields,
+      close,
+    };
   }
 
   async testConnection(params: ConnectionParams): Promise<TestConnectionResult> {
