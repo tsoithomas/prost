@@ -104,6 +104,9 @@ importers:
       pg:
         specifier: ^8
         version: 8.21.0
+      pg-cursor:
+        specifier: ^2.12.0
+        version: 2.21.0(pg@8.21.0)
       prisma:
         specifier: ^6
         version: 6.19.3(typescript@5.9.3)
@@ -132,6 +135,9 @@ importers:
       '@types/pg':
         specifier: ^8
         version: 8.20.0
+      '@types/pg-cursor':
+        specifier: ^2.7.2
+        version: 2.7.2
       dotenv-cli:
         specifier: ^7
         version: 7.4.4
@@ -1734,6 +1740,9 @@ packages:
 
   '@types/pegjs@0.10.6':
     resolution: {integrity: sha512-eLYXDbZWXh2uxf+w8sXS8d6KSoXTswfps6fvCUuVAGN8eRpfe7h9eSRydxiSJvo9Bf+GzifsDOr9TMQlmJdmkw==}
+
+  '@types/pg-cursor@2.7.2':
+    resolution: {integrity: sha512-m3xT8bVFCvx98LuzbvXyuCdT/Hjdd/v8ml4jL4K1QF70Y8clOfCFdgoaEB1FWdcSwcpoFYZTJQaMD9/GQ27efQ==}
 
   '@types/pg@8.20.0':
     resolution: {integrity: sha512-bEPFOaMAHTEP1EzpvHTbmwR8UsFyHSKsRisLIHVMXnpNefSbGA1bD6CVy+qKjGSqmZqNqBDV2azOBo8TgkcVow==}
@@ -3896,6 +3905,11 @@ packages:
 
   pg-connection-string@2.13.0:
     resolution: {integrity: sha512-EMnU9E2fSULdsbErBbMaXJvFeD9B4+nPcM3f+4lsiCR0BHLPrLVjv3DbyM2hgQQviKJaTWIRRTjKjWlHg3p2ig==}
+
+  pg-cursor@2.21.0:
+    resolution: {integrity: sha512-IYvk/j+Suhtbo/C3uOf4JLsLK/gWxOTUOmYbDsbKnLaVJDq+KwhwK6ngpRfiCk8eDMS3AmGQABZCv0cREEzHQw==}
+    peerDependencies:
+      pg: ^8
 
   pg-int8@1.0.1:
     resolution: {integrity: sha512-WCtabS6t3c8SkpDBUlb1kjOs7l66xsGdKpIPZsg4wR+B3+u9UAum2odSsF9tnvxg80h4ZxLWMy4pRjOsFIqQpw==}
@@ -6312,6 +6326,11 @@ snapshots:
 
   '@types/pegjs@0.10.6': {}
 
+  '@types/pg-cursor@2.7.2':
+    dependencies:
+      '@types/node': 22.19.21
+      '@types/pg': 8.20.0
+
   '@types/pg@8.20.0':
     dependencies:
       '@types/node': 22.19.21
@@ -8451,6 +8470,10 @@ snapshots:
     optional: true
 
   pg-connection-string@2.13.0: {}
+
+  pg-cursor@2.21.0(pg@8.21.0):
+    dependencies:
+      pg: 8.21.0
 
   pg-int8@1.0.1: {}
 
