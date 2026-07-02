@@ -224,6 +224,37 @@ export function sqliteBuildRowCountEstimate(ref: TableRef): SqlFragment {
   return { sql: `SELECT COUNT(*) AS reltuples FROM ${qualify(ref)}`, params: [] };
 }
 
+/**
+ * SQLite has no cheap row estimate or on-disk size, so those come back `NULL` (rendered "—").
+ * Column/index counts use the correlated pragma table-valued functions, same idiom as
+ * `sqliteBuildListAllColumns`. `namespace` is irrelevant (single database) and ignored.
+ */
+export function sqliteBuildSchemaTableStats(_namespace: string): SqlFragment {
+  return {
+    sql: `SELECT m.name AS table_name,
+           NULL AS row_estimate,
+           NULL AS size_bytes,
+           (SELECT COUNT(*) FROM pragma_table_info(m.name)) AS column_count,
+           (SELECT COUNT(*) FROM pragma_index_list(m.name)) AS index_count,
+           NULL AS engine,
+           NULL AS collation,
+           NULL AS comment
+         FROM sqlite_master m
+         WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'
+         ORDER BY m.name`,
+    params: [],
+  };
+}
+
+export function sqliteBuildDropTable(ref: TableRef): SqlFragment {
+  return { sql: `DROP TABLE ${qualify(ref)}`, params: [] };
+}
+
+/** SQLite has no TRUNCATE; `DELETE FROM` (no WHERE) is the equivalent "empty the table". */
+export function sqliteBuildTruncateTable(ref: TableRef): SqlFragment {
+  return { sql: `DELETE FROM ${qualify(ref)}`, params: [] };
+}
+
 export function sqliteBuildInsertRow(ref: TableRef, entries: [string, unknown][]): SqlFragment {
   if (entries.length === 0) {
     return { sql: `INSERT INTO ${qualify(ref)} DEFAULT VALUES RETURNING *`, params: [] };

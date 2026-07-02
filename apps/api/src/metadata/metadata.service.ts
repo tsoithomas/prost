@@ -1,6 +1,25 @@
 import { Injectable } from '@nestjs/common';
-import type { ColumnMetadata, IndexMetadata, SchemaMetadata, TableMetadata, TableStructure } from '@prost/shared-types';
+import type {
+  ColumnMetadata,
+  IndexMetadata,
+  SchemaMetadata,
+  SchemaOverview,
+  TableMetadata,
+  TableOverview,
+  TableStructure,
+} from '@prost/shared-types';
 import { PoolManager } from '../database/pool-manager.service';
+
+/** A number the source may leave null; coerce to a non-negative integer, preserving null. */
+function toCountOrNull(value: unknown): number | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.max(0, Math.round(n)) : null;
+}
+
+function toStringOrNull(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
+}
 
 /** Index `columns` arrive as a real array (PG) or a JSON-encoded array string (SQLite). */
 function toColumnArray(value: unknown): string[] {
@@ -42,6 +61,17 @@ interface IndexRow {
   method: string;
   definition: string;
   columns: string[];
+}
+
+interface TableStatsRow {
+  table_name: string;
+  row_estimate: number | string | null;
+  size_bytes: number | string | null;
+  column_count: number | string | null;
+  index_count: number | string | null;
+  engine: string | null;
+  collation: string | null;
+  comment: string | null;
 }
 
 @Injectable()
@@ -118,5 +148,36 @@ export class MetadataService {
       this.getTableIndexes(connectionId, schema, table),
     ]);
     return { columns, indexes };
+  }
+
+  async getSchemaOverview(connectionId: string, schema: string): Promise<SchemaOverview> {
+    const driver = await this.pool.driverFor(connectionId);
+    const { rows } = (await this.pool.run(connectionId, driver.buildSchemaTableStats(schema))) as unknown as {
+      rows: TableStatsRow[];
+    };
+
+    const tables: TableOverview[] = rows.map((row) => ({
+      schema,
+      name: row.table_name,
+      rowEstimate: toCountOrNull(row.row_estimate),
+      sizeBytes: toCountOrNull(row.size_bytes),
+      columnCount: toCountOrNull(row.column_count) ?? 0,
+      indexCount: toCountOrNull(row.index_count) ?? 0,
+      engine: toStringOrNull(row.engine),
+      collation: toStringOrNull(row.collation),
+      comment: toStringOrNull(row.comment),
+    }));
+
+    const sumOrNull = (pick: (t: TableOverview) => number | null): number | null => {
+      const present = tables.map(pick).filter((v): v is number => v !== null);
+      return present.length > 0 ? present.reduce((a, b) => a + b, 0) : null;
+    };
+
+    return {
+      schema,
+      tables,
+      totalRowEstimate: sumOrNull((t) => t.rowEstimate),
+      totalSizeBytes: sumOrNull((t) => t.sizeBytes),
+    };
   }
 }

@@ -2,6 +2,7 @@ import { Breadcrumbs } from './Breadcrumbs';
 import { WorkspaceTabBar } from './WorkspaceTabBar';
 import { TableView } from './TableView';
 import { SqlEditorView } from './SqlEditorView';
+import { DatabaseOverview } from './DatabaseOverview';
 import { useActiveConnection } from '../api/connections';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -24,10 +25,13 @@ export function Workspace() {
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
   const connectionLabel = activeConnection?.name ?? 'No connection';
+  const writable = !activeConnection?.capabilities.readOnly;
   const breadcrumbSegments =
     activeTab?.kind === 'table' && activeTab.schema
       ? [connectionLabel, activeTab.schema, activeTab.label]
-      : [connectionLabel];
+      : activeTab?.kind === 'overview' && activeTab.schema
+        ? [connectionLabel, activeTab.schema]
+        : [connectionLabel];
 
   return (
     <>
@@ -52,6 +56,9 @@ export function Workspace() {
           viewMode={activeTab.viewMode ?? 'rows'}
           onViewModeChange={(vm) => setTabViewMode(activeTab.id, vm)}
         />
+      ) : null}
+      {activeTab?.kind === 'overview' && activeTab.schema && activeConnectionId ? (
+        <DatabaseOverview connectionId={activeConnectionId} schema={activeTab.schema} writable={writable} />
       ) : null}
       {activeTab?.kind === 'query' ? <SqlEditorView /> : null}
       {!activeTab ? (

@@ -374,6 +374,7 @@ export class MysqlDriver implements DbDriver {
   buildListAllColumns = sql.mysqlBuildListAllColumns;
   buildListColumns = (ref: TableRef) => sql.mysqlBuildListColumns(ref);
   buildListIndexes = (ref: TableRef) => sql.mysqlBuildListIndexes(ref);
+  buildSchemaTableStats = (namespace: string) => sql.mysqlBuildSchemaTableStats(namespace);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.mysqlBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, whereClause: string, params: unknown[]) =>
     sql.mysqlBuildFilteredRowCount(ref, whereClause, params);
@@ -450,6 +451,8 @@ export class MysqlDriver implements DbDriver {
   buildCreateIndex = (request: CreateIndexRequest, name: string, method: string) =>
     sql.mysqlBuildCreateIndex(request, name, method);
   buildDropIndex = (ref: TableRef, indexName: string) => sql.mysqlBuildDropIndex(ref, indexName);
+  buildDropTable = (ref: TableRef) => sql.mysqlBuildDropTable(ref);
+  buildTruncateTable = (ref: TableRef) => sql.mysqlBuildTruncateTable(ref);
 
   async describeResultColumns(
     _query: DriverQueryFn,

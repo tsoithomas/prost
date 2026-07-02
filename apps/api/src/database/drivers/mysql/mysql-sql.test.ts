@@ -13,6 +13,9 @@ import {
   mysqlBuildListIndexes,
   mysqlBuildListTables,
   mysqlBuildRowCountEstimate,
+  mysqlBuildSchemaTableStats,
+  mysqlBuildDropTable,
+  mysqlBuildTruncateTable,
   mysqlBuildSelectByPk,
   mysqlBuildSelectRows,
   mysqlBuildUpdateRow,
@@ -135,6 +138,23 @@ describe('mysql grid builders', () => {
     expect(frag.sql).toContain('TABLE_ROWS AS reltuples');
     expect(frag.sql).toContain('TABLE_SCHEMA = ? AND TABLE_NAME = ?');
     expect(frag.params).toEqual(['app_db', 'users']);
+  });
+
+  it('builds schema table stats bound to the database with expected aliases', () => {
+    const frag = mysqlBuildSchemaTableStats('app_db');
+    expect(frag.params).toEqual(['app_db']);
+    expect(frag.sql).toContain('t.TABLE_SCHEMA = ?');
+    expect(frag.sql).not.toContain("'app_db'"); // parameterized, never interpolated
+    for (const alias of ['table_name', 'row_estimate', 'size_bytes', 'column_count', 'index_count', 'engine', 'collation', 'comment']) {
+      expect(frag.sql).toContain(alias);
+    }
+    expect(frag.sql).toContain('t.ENGINE');
+    expect(frag.sql).toContain('TABLE_COLLATION');
+  });
+
+  it('drops and truncates a table with backtick-quoted identifiers', () => {
+    expect(mysqlBuildDropTable(ref)).toEqual({ sql: 'DROP TABLE `app_db`.`users`', params: [] });
+    expect(mysqlBuildTruncateTable(ref)).toEqual({ sql: 'TRUNCATE TABLE `app_db`.`users`', params: [] });
   });
 
   it('inserts bound values without RETURNING', () => {

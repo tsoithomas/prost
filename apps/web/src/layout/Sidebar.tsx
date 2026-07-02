@@ -51,6 +51,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
   const workspaceTabs = useWorkspaceStore((state) => state.tabs);
   const activeWorkspaceTabId = useWorkspaceStore((state) => state.activeTabId);
   const openTable = useWorkspaceStore((state) => state.openTable);
+  const openOverview = useWorkspaceStore((state) => state.openOverview);
   const loadQuery = useWorkspaceStore((state) => state.loadQuery);
 
   const [createTableState, setCreateTableState] = useState<{ open: boolean; schema: string }>({
@@ -139,7 +140,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-sm py-1">
+      <div className="flex-1 overflow-y-auto px-sm pb-1">
         {collapsed ? null : activeTab === 'explorer' ? (
           activeConnectionId === null ? (
             <p className="px-sm py-2 text-xs italic text-text-faint">
@@ -156,6 +157,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
               onSelectTable={(table) => openTable(table.schema, table.name, 'rows')}
               onOpenStructure={(table) => openTable(table.schema, table.name, 'structure')}
               onNewTable={(schema) => setCreateTableState({ open: true, schema })}
+              onOpenOverview={(schema) => openOverview(schema)}
               hasSchemas={activeConnection?.capabilities.hasSchemas ?? true}
               writable={!activeConnection?.capabilities.readOnly}
             />

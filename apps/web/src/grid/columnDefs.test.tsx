@@ -1,4 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { ComponentType } from 'react';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ValueFormatterParams } from 'ag-grid-community';
 import type { ColumnMetadata } from '@prost/shared-types';
 import {
@@ -129,5 +132,61 @@ describe('buildColumnDefs render overrides', () => {
     // A non-overridden column keeps its editor.
     expect(byField.price!.editable).toBe(true);
     expect(byField.price!.cellEditor).toBe('agNumberCellEditor');
+  });
+});
+
+describe('ColumnHeader — click to sort', () => {
+  // Minimal AG Grid Column stub: only the members ColumnHeader touches.
+  function makeColumn(initial: 'asc' | 'desc' | null) {
+    return {
+      getSort: () => initial,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+  }
+
+  function renderHeader(
+    column: ReturnType<typeof makeColumn>,
+    props: { progressSort?: () => void; enableSorting?: boolean } = {},
+  ) {
+    const def = buildColumnDefs([col('email', 'character varying')], false)[0]!;
+    const Header = def.headerComponent as ComponentType<Record<string, unknown>>;
+    return render(
+      <Header
+        {...(def.headerComponentParams as Record<string, unknown>)}
+        displayName="email"
+        column={column}
+        enableSorting={props.enableSorting ?? true}
+        progressSort={props.progressSort ?? (() => {})}
+      />,
+    );
+  }
+
+  it('calls progressSort when a sortable header is clicked', async () => {
+    const progressSort = vi.fn();
+    renderHeader(makeColumn(null), { progressSort });
+    await userEvent.click(screen.getByText('email'));
+    expect(progressSort).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not sort when sorting is disabled', async () => {
+    const progressSort = vi.fn();
+    renderHeader(makeColumn(null), { progressSort, enableSorting: false });
+    await userEvent.click(screen.getByText('email'));
+    expect(progressSort).not.toHaveBeenCalled();
+  });
+
+  it('renders the arrow matching the column sort direction (none when unsorted)', () => {
+    const asc = renderHeader(makeColumn('asc'));
+    expect(asc.container.querySelector('[aria-label="sorted ascending"]')).not.toBeNull();
+    asc.unmount();
+
+    const desc = renderHeader(makeColumn('desc'));
+    expect(desc.container.querySelector('[aria-label="sorted descending"]')).not.toBeNull();
+    desc.unmount();
+
+    const none = renderHeader(makeColumn(null));
+    expect(none.container.querySelector('[aria-label="sorted ascending"]')).toBeNull();
+    expect(none.container.querySelector('[aria-label="sorted descending"]')).toBeNull();
   });
 });

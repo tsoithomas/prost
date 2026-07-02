@@ -61,6 +61,12 @@ export interface DbDriver {
   buildListAllColumns(): SqlFragment;
   buildListColumns(ref: TableRef): SqlFragment;
   buildListIndexes(ref: TableRef): SqlFragment;
+  /**
+   * Per-schema table stats for the overview page — one row per base table with columns aliased
+   * `table_name, row_estimate, size_bytes, column_count, index_count, engine, collation, comment`.
+   * `namespace` is bound (schema for PG, database for MySQL, ignored/`'main'` for SQLite).
+   */
+  buildSchemaTableStats(namespace: string): SqlFragment;
 
   // --- grid builders ---
   buildSelectRows(ref: TableRef, opts: SelectRowsOptions): SqlFragment;
@@ -109,6 +115,9 @@ export interface DbDriver {
   buildAlterTable(ref: TableRef, op: AlterTableOperation): SqlFragment;
   buildCreateIndex(req: CreateIndexRequest, name: string, method: string): SqlFragment;
   buildDropIndex(ref: TableRef, indexName: string): SqlFragment;
+  buildDropTable(ref: TableRef): SqlFragment;
+  /** Empty a table (PG/MySQL `TRUNCATE`; SQLite has no TRUNCATE → `DELETE FROM`). */
+  buildTruncateTable(ref: TableRef): SqlFragment;
 
   // --- query-editor support ---
   /** Resolve result-column types into ColumnMetadata. PG runs a pg_type OID lookup through
@@ -125,7 +134,7 @@ export interface DbDriver {
 }
 
 export interface DriverErrorContext {
-  operation: 'createTable' | 'alterTable' | 'createIndex' | 'dropIndex';
+  operation: 'createTable' | 'alterTable' | 'createIndex' | 'dropIndex' | 'dropTable' | 'truncateTable';
   ref?: TableRef;
   detail?: string;
 }

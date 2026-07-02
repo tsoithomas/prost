@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { SchemaMetadata, TableStructure } from '@prost/shared-types';
+import type { SchemaMetadata, SchemaOverview, TableStructure } from '@prost/shared-types';
 import { apiFetch } from '../lib/apiClient';
 
 export function useMetadata(connectionId: string | null) {
@@ -7,6 +7,15 @@ export function useMetadata(connectionId: string | null) {
     queryKey: ['metadata', connectionId],
     queryFn: () => apiFetch<SchemaMetadata[]>(`/connections/${connectionId}/metadata`),
     enabled: connectionId !== null,
+  });
+}
+
+export function useSchemaOverview(connectionId: string | null, schema: string) {
+  return useQuery({
+    queryKey: ['schema-overview', connectionId, schema],
+    queryFn: () =>
+      apiFetch<SchemaOverview>(`/connections/${connectionId}/schemas/${encodeURIComponent(schema)}/overview`),
+    enabled: connectionId !== null && schema !== '',
   });
 }
 

@@ -74,11 +74,33 @@ export interface DropIndexResult {
   sql: string;
 }
 
+export interface DropTableRequest {
+  schema: string;
+  table: string;
+}
+export interface DropTableResult {
+  schema: string;
+  table: string;
+  sql: string;
+}
+
+export interface TruncateTableRequest {
+  schema: string;
+  table: string;
+}
+export interface TruncateTableResult {
+  schema: string;
+  table: string;
+  sql: string;
+}
+
 export type DdlPreviewRequest =
   | { kind: 'createTable'; request: CreateTableRequest }
   | { kind: 'alterTable'; request: AlterTableRequest }
   | { kind: 'createIndex'; request: CreateIndexRequest }
-  | { kind: 'dropIndex'; request: DropIndexRequest };
+  | { kind: 'dropIndex'; request: DropIndexRequest }
+  | { kind: 'dropTable'; request: DropTableRequest }
+  | { kind: 'truncateTable'; request: TruncateTableRequest };
 
 export interface DdlPreviewResult {
   sql: string;

@@ -43,7 +43,6 @@ describe('SettingsPanel — outside-click', () => {
     const triggerRef = createRef<HTMLButtonElement>();
     const trigger = document.createElement('button');
     document.body.appendChild(trigger);
-    // @ts-expect-error assigning to a ref object's current in a test
     triggerRef.current = trigger;
 
     render(<SettingsPanel onClose={onClose} triggerRef={triggerRef} />);

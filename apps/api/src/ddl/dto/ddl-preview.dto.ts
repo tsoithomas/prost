@@ -1,12 +1,13 @@
 import { plainToInstance, Transform } from 'class-transformer';
 import { IsIn, IsObject, IsString, MinLength, ValidateNested } from 'class-validator';
-import type { DdlPreviewRequest } from '@prost/shared-types';
 import { AlterTableDto } from './alter-table.dto';
 import { CreateIndexDto } from './create-index.dto';
 import { CreateTableDto } from './create-table.dto';
 import { DropIndexDto } from './drop-index.dto';
 
+// Preview is offered for the builder-based DDL kinds only; drop/truncate are direct actions.
 const KINDS = ['createTable', 'alterTable', 'createIndex', 'dropIndex'] as const;
+type PreviewKind = (typeof KINDS)[number];
 
 export class AlterTablePreviewRequestDto extends AlterTableDto {
   @IsString()
@@ -20,7 +21,7 @@ export class AlterTablePreviewRequestDto extends AlterTableDto {
 
 type PreviewRequestDto = CreateTableDto | AlterTablePreviewRequestDto | CreateIndexDto | DropIndexDto;
 
-function transformRequest(kind: DdlPreviewRequest['kind'], value: unknown): PreviewRequestDto | unknown {
+function transformRequest(kind: PreviewKind, value: unknown): PreviewRequestDto | unknown {
   switch (kind) {
     case 'createTable':
       return plainToInstance(CreateTableDto, value);
@@ -38,7 +39,7 @@ function transformRequest(kind: DdlPreviewRequest['kind'], value: unknown): Prev
 export class DdlPreviewDto {
   @IsString()
   @IsIn(KINDS)
-  kind!: DdlPreviewRequest['kind'];
+  kind!: PreviewKind;
 
   @IsObject()
   @ValidateNested()

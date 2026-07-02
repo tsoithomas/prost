@@ -7,6 +7,8 @@ import type {
   DdlPreviewRequest,
   DdlPreviewResult,
   DropIndexResult,
+  DropTableResult,
+  TruncateTableResult,
 } from '@prost/shared-types';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import { ConnectionsService } from '../connections/connections.service';
@@ -46,6 +48,29 @@ export class DdlController {
     await this.connectionsService.assertOwnership(user.userId, id);
     const operation = this.dtoToOperation(dto);
     return this.ddlService.alterTable(id, { schema, table, operation });
+  }
+
+  @Delete(':id/ddl/tables/:schema/:table')
+  async dropTable(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('schema') schema: string,
+    @Param('table') table: string,
+  ): Promise<DropTableResult> {
+    await this.connectionsService.assertOwnership(user.userId, id);
+    return this.ddlService.dropTable(id, { schema, table });
+  }
+
+  @Post(':id/ddl/tables/:schema/:table/truncate')
+  @HttpCode(200)
+  async truncateTable(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('schema') schema: string,
+    @Param('table') table: string,
+  ): Promise<TruncateTableResult> {
+    await this.connectionsService.assertOwnership(user.userId, id);
+    return this.ddlService.truncateTable(id, { schema, table });
   }
 
   @Post(':id/ddl/indexes')

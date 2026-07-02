@@ -21,6 +21,7 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
   const workspaceTabs = useWorkspaceStore((state) => state.tabs);
   const activeWorkspaceTabId = useWorkspaceStore((state) => state.activeTabId);
   const openTable = useWorkspaceStore((state) => state.openTable);
+  const openOverview = useWorkspaceStore((state) => state.openOverview);
 
   const [createTableState, setCreateTableState] = useState<{ open: boolean; schema: string }>({
     open: false,
@@ -45,7 +46,7 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
           {activeConnectionId ? 'Connected' : 'Not connected'}
         </span>
       </div>
-      <div className="flex-1 overflow-y-auto px-sm py-2">
+      <div className="flex-1 overflow-y-auto px-sm pb-2">
         {activeConnectionId === null ? (
           <p className="px-sm py-2 text-xs italic text-text-faint">
             No active connection. Use "New Connection" to get started.
@@ -67,6 +68,10 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
               onSelectTable?.();
             }}
             onNewTable={(schema) => setCreateTableState({ open: true, schema })}
+            onOpenOverview={(schema) => {
+              openOverview(schema);
+              onSelectTable?.();
+            }}
             hasSchemas={activeConnection?.capabilities.hasSchemas ?? true}
             writable={!activeConnection?.capabilities.readOnly}
           />

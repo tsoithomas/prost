@@ -8,6 +8,8 @@ import type {
   CreateTableResult,
   DropIndexRequest,
   DropIndexResult,
+  DropTableResult,
+  TruncateTableResult,
 } from '@prost/shared-types';
 import { apiFetch } from '../lib/apiClient';
 
@@ -54,6 +56,37 @@ export function useDropIndex(connectionId: string, schema: string, table: string
       apiFetch<DropIndexResult>(`/connections/${connectionId}/ddl/indexes`, { method: 'DELETE', body }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['table-structure', connectionId, schema, table] });
+    },
+  });
+}
+
+/** Drop a table entirely. Invalidates the schema overview + metadata tree. */
+export function useDropTable(connectionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ schema, table }: { schema: string; table: string }) =>
+      apiFetch<DropTableResult>(
+        `/connections/${connectionId}/ddl/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: (_result, { schema }) => {
+      void queryClient.invalidateQueries({ queryKey: ['schema-overview', connectionId, schema] });
+      void queryClient.invalidateQueries({ queryKey: ['metadata', connectionId] });
+    },
+  });
+}
+
+/** Empty a table (TRUNCATE / DELETE FROM). Invalidates the schema overview so counts refresh. */
+export function useTruncateTable(connectionId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ schema, table }: { schema: string; table: string }) =>
+      apiFetch<TruncateTableResult>(
+        `/connections/${connectionId}/ddl/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/truncate`,
+        { method: 'POST' },
+      ),
+    onSuccess: (_result, { schema }) => {
+      void queryClient.invalidateQueries({ queryKey: ['schema-overview', connectionId, schema] });
     },
   });
 }

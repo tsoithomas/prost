@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
-import { Braces, Calendar, Check, RotateCcw, ToggleLeft } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowUpDown, Braces, Calendar, Check, RotateCcw, Search, ToggleLeft } from 'lucide-react';
 import type { ColumnRenderMode } from '@prost/shared-types';
+import { Input } from '@prost/ui';
 import { availableRenderModes, type HeaderContextMenuArgs } from './columnDefs';
 
 const MODE_LABEL: Record<ColumnRenderMode, string> = {
@@ -22,6 +23,11 @@ interface Props {
   currentMode?: ColumnRenderMode;
   /** Set the column's render mode, or `null` to clear it back to the raw value. */
   onSelect: (mode: ColumnRenderMode | null) => void;
+  /**
+   * When provided, the menu shows a "Search this column" input at the top; submitting a non-empty
+   * term calls this to add an inline filter on the column (only hosts with a filter feature pass it).
+   */
+  onFilterColumn?: (term: string) => void;
   onClose: () => void;
 }
 
@@ -30,7 +36,14 @@ interface Props {
  * has no context-menu API, so this mirrors the custom-menu pattern in `SchemaTree` (fixed-positioned,
  * closes on any outside click / another context-menu / Escape).
  */
-export function ColumnRenderMenu({ state, currentMode, onSelect, onClose }: Props) {
+export function ColumnRenderMenu({ state, currentMode, onSelect, onFilterColumn, onClose }: Props) {
+  const [term, setTerm] = useState('');
+
+  // Reset the search term whenever a new header is right-clicked.
+  useEffect(() => {
+    setTerm('');
+  }, [state?.field]);
+
   useEffect(() => {
     if (!state) return;
     const close = () => onClose();
@@ -57,6 +70,47 @@ export function ColumnRenderMenu({ state, currentMode, onSelect, onClose }: Prop
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {onFilterColumn ? (
+        <>
+          <form
+            className="flex items-center gap-1 px-2 py-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const trimmed = term.trim();
+              if (!trimmed) return;
+              onFilterColumn(trimmed);
+              onClose();
+            }}
+          >
+            <Search size={13} className="shrink-0 text-text-faint" />
+            <Input
+              autoFocus
+              value={term}
+              onChange={(e) => setTerm(e.target.value)}
+              placeholder={`Search ${state.field}…`}
+              aria-label={`Search column ${state.field}`}
+              className="h-6 w-40 text-xs"
+            />
+          </form>
+          <div className="my-1 h-px bg-border" />
+        </>
+      ) : null}
+      {state.onClearSort ? (
+        <>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text hover:bg-surface-hover"
+            onClick={() => {
+              state.onClearSort?.();
+              onClose();
+            }}
+          >
+            <ArrowUpDown size={13} className="shrink-0 text-text-faint" />
+            <span className="flex-1 text-left">Clear sort</span>
+          </button>
+          <div className="my-1 h-px bg-border" />
+        </>
+      ) : null}
       {modes.length === 0 ? (
         <div className="px-3 py-1.5 text-xs text-text-faint">No display options for this column type</div>
       ) : (

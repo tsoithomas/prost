@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AgGridReact } from 'ag-grid-react';
 import type {
@@ -11,11 +11,11 @@ import type {
   IGetRowsParams,
   SelectionChangedEvent,
 } from 'ag-grid-community';
-import { CopyPlus, Filter, Plus, Redo2, Save, Trash2, Undo2, X } from 'lucide-react';
-import type { BulkRowEdit, ColumnRenderMode, GridResponse, RowConcurrency, RowFilter } from '@prost/shared-types';
+import { CopyPlus, Filter, Plus, Redo2, Save, Search, Trash2, Undo2, X } from 'lucide-react';
+import type { BulkRowEdit, ColumnMetadata, ColumnRenderMode, FilterOperator, GridResponse, RowConcurrency, RowFilter } from '@prost/shared-types';
 import { ROW_VERSION_KEY } from '@prost/shared-types';
-import { Badge, Button, IconButton, prostGridTheme, Toast } from '@prost/ui';
-import { FilterPanel } from './FilterPanel';
+import { Badge, Button, IconButton, Input, prostGridTheme, Toast } from '@prost/ui';
+import { FilterPanel, operatorsForColumn } from './FilterPanel';
 import { TableStructurePanel } from './TableStructurePanel';
 import { useActiveConnection } from '../api/connections';
 import { useBulkUpdate, useDeleteRow, useInsertRow } from '../api/grid';
@@ -28,6 +28,29 @@ import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
 import { ApiError, apiErrorDetail, apiFetch } from '../lib/apiClient';
 import { useThemeStore } from '../stores/themeStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
+
+/** Text-family column types the cross-column search targets (mirrors the server's `TEXT_TYPES`). */
+const TEXT_TYPES = new Set([
+  'text', 'character varying', 'character', 'name', 'citext', 'varchar', 'char', 'bpchar',
+  'tinytext', 'mediumtext', 'longtext', 'enum', 'set', 'text/blob',
+]);
+
+/**
+ * Builds an OR-of-`contains` filter across every text column, so a single term matches any text
+ * field. Non-text columns are skipped (the `contains` operator is only valid for text). Returns
+ * `null` for a blank term or a table with no text columns (clears the filter).
+ */
+function buildSearchFilter(term: string, columns: ColumnMetadata[]): RowFilter | null {
+  const trimmed = term.trim();
+  if (!trimmed) return null;
+  const textColumns = columns.filter((column) => TEXT_TYPES.has(column.dataType.toLowerCase()));
+  if (textColumns.length === 0) return null;
+  return {
+    combinator: 'or',
+    conditions: textColumns.map((column) => ({ column: column.name, operator: 'contains', value: trimmed })),
+  };
+}
 
 /** A committed batch we can reverse: each row's pre-edit (`before`) and edited (`after`) values, plus its live version. */
 interface UndoRow {
@@ -58,6 +81,9 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<RowFilter | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [lastEdit, setLastEdit] = useState<{ column: string; value: unknown } | null>(null);
   const [undoStack, setUndoStack] = useState<UndoRow[][]>([]);
   const [redoStack, setRedoStack] = useState<UndoRow[][]>([]);
@@ -104,6 +130,28 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const deleteRow = useDeleteRow(connectionId, schema, table);
   const bulkUpdate = useBulkUpdate(connectionId, schema, table);
 
+  // Cross-column search: update the box immediately, debounce the (fetch-triggering) filter apply.
+  const applySearch = useCallback(
+    (term: string) => {
+      setSearchTerm(term);
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+      const columns = columnsQuery.data?.columns ?? [];
+      searchTimer.current = setTimeout(() => setActiveFilter(buildSearchFilter(term, columns)), 250);
+    },
+    [columnsQuery.data],
+  );
+
+  // One-shot hand-off from the database overview's "Search" action: focus the box (seeded term).
+  const tabId = `table:${schema}.${table}`;
+  const searchHandoff = useWorkspaceStore((state) => state.tabs.find((tab) => tab.id === tabId)?.search);
+  const clearTabSearch = useWorkspaceStore((state) => state.clearTabSearch);
+  useEffect(() => {
+    if (searchHandoff === undefined) return;
+    clearTabSearch(tabId);
+    applySearch(searchHandoff);
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, [searchHandoff, tabId, clearTabSearch, applySearch]);
+
   const rowKeyOf = useCallback(
     (row: Record<string, unknown>) => primaryKey.map((c) => String(row[c])).join('::'),
     [primaryKey],
@@ -144,6 +192,24 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
       }
     },
     [renderOverrides],
+  );
+
+  // From a column header's context menu: add an inline filter on that column (contains for text,
+  // exact for other types) and reveal the filter panel so it can be edited/removed.
+  const handleFilterColumn = useCallback(
+    (term: string) => {
+      if (!renderMenu) return;
+      const column = columnsQuery.data?.columns.find((c) => c.name === renderMenu.field);
+      const validOps = column ? operatorsForColumn(column) : (['eq'] as FilterOperator[]);
+      const operator: FilterOperator = validOps.includes('contains') ? 'contains' : validOps[0] ?? 'eq';
+      const condition = { column: renderMenu.field, operator, value: term };
+      setActiveFilter((prev) => {
+        const base = prev ?? { conditions: [], combinator: 'and' as const };
+        return { ...base, conditions: [...base.conditions, condition] };
+      });
+      setFilterOpen(true);
+    },
+    [renderMenu, columnsQuery.data],
   );
 
   const getRowId = useMemo(() => {
@@ -405,6 +471,28 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
                 </Badge>
               ) : null}
             </IconButton>
+            <div className="relative">
+              <Search size={12} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-text-faint" />
+              <Input
+                ref={searchInputRef}
+                type="text"
+                value={searchTerm}
+                onChange={(e) => applySearch(e.target.value)}
+                placeholder="Search all columns…"
+                aria-label="Search all columns"
+                className="h-7 w-40 pl-7 pr-6 text-xs max-md:w-32"
+              />
+              {searchTerm ? (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => applySearch('')}
+                  className="absolute right-1.5 top-1/2 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-sm text-text-faint hover:bg-surface-hover hover:text-text"
+                >
+                  <X size={12} />
+                </button>
+              ) : null}
+            </div>
             <div className="mx-1 h-4 w-px bg-border" />
             <IconButton aria-label="Add row" onClick={handleAddRow} disabled={!editable || pendingInsert !== null}>
               <Plus size={14} />
@@ -523,6 +611,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         state={renderMenu}
         currentMode={renderMenu ? renderOverrides?.[renderMenu.field] : undefined}
         onSelect={handleSelectRenderMode}
+        onFilterColumn={handleFilterColumn}
         onClose={() => setRenderMenu(null)}
       />
       <JsonCellPopup cell={jsonCell} onClose={() => setJsonCell(null)} />

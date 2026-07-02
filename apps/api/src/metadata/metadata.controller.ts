@@ -1,5 +1,5 @@
 import { Controller, Get, Param } from '@nestjs/common';
-import type { SchemaMetadata, TableStructure } from '@prost/shared-types';
+import type { SchemaMetadata, SchemaOverview, TableStructure } from '@prost/shared-types';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import { ConnectionsService } from '../connections/connections.service';
 import { MetadataService } from './metadata.service';
@@ -18,6 +18,16 @@ export class MetadataController {
   ): Promise<SchemaMetadata[]> {
     await this.connectionsService.assertOwnership(user.userId, id);
     return this.metadataService.getSchemas(id);
+  }
+
+  @Get(':id/schemas/:schema/overview')
+  async getSchemaOverview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('schema') schema: string,
+  ): Promise<SchemaOverview> {
+    await this.connectionsService.assertOwnership(user.userId, id);
+    return this.metadataService.getSchemaOverview(id, schema);
   }
 
   @Get(':id/tables/:schema/:table/structure')

@@ -228,6 +228,7 @@ export class PgDriver implements DbDriver {
   buildListAllColumns = sql.pgBuildListAllColumns;
   buildListColumns = (ref: TableRef) => sql.pgBuildListColumns(ref);
   buildListIndexes = (ref: TableRef) => sql.pgBuildListIndexes(ref);
+  buildSchemaTableStats = (namespace: string) => sql.pgBuildSchemaTableStats(namespace);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.pgBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) => sql.pgBuildFilteredRowCount(ref, w, p);
   buildRowCountEstimate = (ref: TableRef) => sql.pgBuildRowCountEstimate(ref);
@@ -269,6 +270,8 @@ export class PgDriver implements DbDriver {
   buildAlterTable = (ref: TableRef, op: AlterTableOperation) => sql.pgBuildAlterTable(ref, op);
   buildCreateIndex = (req: CreateIndexRequest, name: string, method: string) => sql.pgBuildCreateIndex(req, name, method);
   buildDropIndex = (ref: TableRef, indexName: string) => sql.pgBuildDropIndex(ref, indexName);
+  buildDropTable = (ref: TableRef) => sql.pgBuildDropTable(ref);
+  buildTruncateTable = (ref: TableRef) => sql.pgBuildTruncateTable(ref);
 
   async describeResultColumns(
     query: DriverQueryFn,

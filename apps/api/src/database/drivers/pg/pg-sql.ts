@@ -292,6 +292,34 @@ export function pgBuildRowCountEstimate(ref: TableRef): SqlFragment {
   };
 }
 
+export function pgBuildSchemaTableStats(namespace: string): SqlFragment {
+  return {
+    sql: `SELECT
+         c.relname                                        AS table_name,
+         c.reltuples::bigint                              AS row_estimate,
+         pg_total_relation_size(c.oid)                    AS size_bytes,
+         (SELECT count(*) FROM information_schema.columns col
+            WHERE col.table_schema = n.nspname AND col.table_name = c.relname) AS column_count,
+         (SELECT count(*) FROM pg_index ix WHERE ix.indrelid = c.oid) AS index_count,
+         NULL::text                                       AS engine,
+         NULL::text                                       AS collation,
+         obj_description(c.oid, 'pg_class')               AS comment
+       FROM pg_class c
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE n.nspname = $1 AND c.relkind = 'r'
+       ORDER BY c.relname`,
+    params: [namespace],
+  };
+}
+
+export function pgBuildDropTable(ref: TableRef): SqlFragment {
+  return { sql: `DROP TABLE ${qualify(ref)}`, params: [] };
+}
+
+export function pgBuildTruncateTable(ref: TableRef): SqlFragment {
+  return { sql: `TRUNCATE TABLE ${qualify(ref)}`, params: [] };
+}
+
 export function pgBuildInsertRow(ref: TableRef, entries: [string, unknown][]): SqlFragment {
   if (entries.length === 0) {
     return { sql: `INSERT INTO ${qualify(ref)} DEFAULT VALUES RETURNING *`, params: [] };

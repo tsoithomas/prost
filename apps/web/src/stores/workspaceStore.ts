@@ -4,7 +4,7 @@ import type { ExecuteQueryResponse } from '@prost/shared-types';
 export interface WorkspaceTab {
   id: string;
   label: string;
-  kind: 'table' | 'query';
+  kind: 'table' | 'query' | 'overview';
   schema?: string;
   table?: string;
   viewMode?: 'rows' | 'structure';
@@ -12,6 +12,11 @@ export interface WorkspaceTab {
   result?: ExecuteQueryResponse | null;
   /** "Run as transaction" toggle, per tab. Default `false`. */
   transactional?: boolean;
+  /**
+   * Cross-column search hand-off (table tabs only): when set (even to `''`), the TableView opens
+   * in rows mode and focuses its "search all columns" box, seeded with this term.
+   */
+  search?: string;
 }
 
 export interface CursorPosition {
@@ -32,7 +37,11 @@ interface WorkspaceState {
   cursorPosition: CursorPosition | null;
   /** A column the structure panel should scroll to + highlight (set by global search). */
   revealColumn: RevealColumnTarget | null;
-  openTable: (schema: string, table: string, viewMode?: 'rows' | 'structure') => void;
+  openTable: (schema: string, table: string, viewMode?: 'rows' | 'structure', opts?: { search?: string }) => void;
+  openOverview: (schema: string) => void;
+  closeTableTab: (schema: string, table: string) => void;
+  /** Clears a table tab's one-shot `search` hand-off once the TableView has consumed it. */
+  clearTabSearch: (id: string) => void;
   revealTableColumn: (schema: string, table: string, column: string) => void;
   clearRevealColumn: () => void;
   setTabViewMode: (id: string, viewMode: 'rows' | 'structure') => void;
@@ -87,19 +96,44 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   cursorPosition: null,
   revealColumn: null,
 
-  openTable: (schema, table, viewMode = 'rows') => {
+  openTable: (schema, table, viewMode = 'rows', opts) => {
     const id = `table:${schema}.${table}`;
+    const search = opts?.search;
     set((state) => {
       if (state.tabs.some((tab) => tab.id === id)) {
         return {
           activeTabId: id,
-          tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode } : tab)),
+          tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode, ...(search !== undefined ? { search } : {}) } : tab)),
         };
       }
       return {
-        tabs: [...state.tabs, { id, label: table, kind: 'table', schema, table, viewMode }],
+        tabs: [...state.tabs, { id, label: table, kind: 'table', schema, table, viewMode, ...(search !== undefined ? { search } : {}) }],
         activeTabId: id,
       };
+    });
+  },
+
+  openOverview: (schema) => {
+    const id = `overview:${schema}`;
+    set((state) => {
+      if (state.tabs.some((tab) => tab.id === id)) {
+        return { activeTabId: id };
+      }
+      return {
+        tabs: [...state.tabs, { id, label: schema, kind: 'overview', schema }],
+        activeTabId: id,
+      };
+    });
+  },
+
+  closeTableTab: (schema, table) => {
+    const id = `table:${schema}.${table}`;
+    set((state) => {
+      if (!state.tabs.some((tab) => tab.id === id)) return state;
+      const tabs = state.tabs.filter((tab) => tab.id !== id);
+      const activeTabId =
+        id === state.activeTabId ? tabs[tabs.length - 1]?.id ?? tabs[0]?.id ?? state.activeTabId : state.activeTabId;
+      return { tabs, activeTabId };
     });
   },
 
@@ -116,6 +150,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
       };
     });
   },
+
+  clearTabSearch: (id) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, search: undefined } : tab)),
+    })),
 
   clearRevealColumn: () => set({ revealColumn: null }),
 

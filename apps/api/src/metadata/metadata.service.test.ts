@@ -175,6 +175,58 @@ describe('MetadataService.getTableIndexes', () => {
   });
 });
 
+describe('MetadataService.getSchemaOverview', () => {
+  it('binds the schema, maps stat rows to TableOverview, and sums non-null totals', async () => {
+    const run = vi.fn().mockResolvedValue(
+      result([
+        {
+          table_name: 'users', row_estimate: '120', size_bytes: '8192', column_count: '5',
+          index_count: '2', engine: null, collation: null, comment: 'app users',
+        },
+        {
+          table_name: 'orders', row_estimate: 40, size_bytes: 4096, column_count: 3,
+          index_count: 1, engine: null, collation: null, comment: null,
+        },
+      ]),
+    );
+    const { service } = createService(run);
+
+    const overview = await service.getSchemaOverview('conn-1', 'public');
+
+    const [connectionId, frag] = run.mock.calls[0] as [string, { sql: string; params: unknown[] }];
+    expect(connectionId).toBe('conn-1');
+    expect(frag.params).toEqual(['public']);
+
+    expect(overview.schema).toBe('public');
+    expect(overview.tables).toHaveLength(2);
+    expect(overview.tables[0]).toEqual({
+      schema: 'public', name: 'users', rowEstimate: 120, sizeBytes: 8192,
+      columnCount: 5, indexCount: 2, engine: null, collation: null, comment: 'app users',
+    });
+    expect(overview.totalRowEstimate).toBe(160);
+    expect(overview.totalSizeBytes).toBe(12288);
+  });
+
+  it('keeps null row/size totals when the engine provides none (SQLite)', async () => {
+    const run = vi.fn().mockResolvedValue(
+      result([
+        {
+          table_name: 't1', row_estimate: null, size_bytes: null, column_count: 4,
+          index_count: 0, engine: null, collation: null, comment: null,
+        },
+      ]),
+    );
+    const { service } = createService(run);
+
+    const overview = await service.getSchemaOverview('conn-1', 'main');
+    expect(overview.tables[0]!.rowEstimate).toBeNull();
+    expect(overview.tables[0]!.sizeBytes).toBeNull();
+    expect(overview.tables[0]!.columnCount).toBe(4);
+    expect(overview.totalRowEstimate).toBeNull();
+    expect(overview.totalSizeBytes).toBeNull();
+  });
+});
+
 describe('MetadataService.getTableStructure', () => {
   it('calls getTableColumns and getTableIndexes exactly once each and merges their results', async () => {
     const { service } = createService();

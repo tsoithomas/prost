@@ -9,6 +9,9 @@ import {
   sqliteBuildListAllColumns,
   sqliteBuildListColumns,
   sqliteBuildRowCountEstimate,
+  sqliteBuildSchemaTableStats,
+  sqliteBuildDropTable,
+  sqliteBuildTruncateTable,
   sqliteBuildSelectRows,
   sqliteBuildUpdateRow,
   sqliteBuildUpdateRowGuarded,
@@ -79,6 +82,22 @@ describe('sqlite grid builders', () => {
     const frag = sqliteBuildFilteredRowCount({ namespace: 'main', name: 'users' }, 'WHERE "id" = ?', [1]);
     expect(frag.sql).toBe('SELECT COUNT(*) AS count FROM "main"."users" WHERE "id" = ?');
     expect(frag.params).toEqual([1]);
+  });
+
+  it('builds schema table stats with null size/estimate and pragma-based counts', () => {
+    const frag = sqliteBuildSchemaTableStats('main');
+    expect(frag.params).toEqual([]);
+    expect(frag.sql).toContain('pragma_table_info(m.name)');
+    expect(frag.sql).toContain('pragma_index_list(m.name)');
+    for (const alias of ['table_name', 'row_estimate', 'size_bytes', 'column_count', 'index_count', 'engine', 'collation', 'comment']) {
+      expect(frag.sql).toContain(alias);
+    }
+  });
+
+  it('drops a table and empties it via DELETE FROM (no TRUNCATE)', () => {
+    const ref = { namespace: 'main', name: 'users' };
+    expect(sqliteBuildDropTable(ref)).toEqual({ sql: 'DROP TABLE "main"."users"', params: [] });
+    expect(sqliteBuildTruncateTable(ref)).toEqual({ sql: 'DELETE FROM "main"."users"', params: [] });
   });
 
   it('inserts with RETURNING * and bound values', () => {

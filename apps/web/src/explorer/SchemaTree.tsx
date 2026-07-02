@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Box, ChevronDown, ChevronRight, Plus, Rows3, Search, StretchHorizontal, Table2, X } from 'lucide-react';
+import { Box, ChevronDown, ChevronRight, LayoutGrid, Plus, Rows3, Search, StretchHorizontal, Table2, X } from 'lucide-react';
 import clsx from 'clsx';
 import type { SchemaMetadata, TableSummary } from '@prost/shared-types';
 import { Input } from '@prost/ui';
@@ -11,6 +11,7 @@ export interface SchemaTreeProps {
   onSelectTable: (table: TableSummary) => void;
   onOpenStructure: (table: TableSummary) => void;
   onNewTable: (schema: string) => void;
+  onOpenOverview: (schema: string) => void;
   /** Engines without a schema layer (SQLite) render a flat table list instead of schema groups. */
   hasSchemas?: boolean;
   /** Read-only connections (the app DB) hide write affordances like "New table". */
@@ -29,6 +30,7 @@ export function SchemaTree({
   onSelectTable,
   onOpenStructure,
   onNewTable,
+  onOpenOverview,
   hasSchemas = true,
   writable = true,
 }: SchemaTreeProps) {
@@ -89,10 +91,22 @@ export function SchemaTree({
   if (!hasSchemas) {
     const allTables = schemas.flatMap((schema) => schema.tables);
     const tables = allTables.filter(matchesQuery);
+    const flatSchema = schemas[0]?.name ?? 'main';
     return (
       <div>
         {renderFilterBox()}
-        <div className="mb-2 px-sm text-xs font-medium uppercase tracking-wider text-text-faint">Tables</div>
+        <div className="mb-2 flex items-center justify-between px-sm">
+          <span className="text-xs font-medium uppercase tracking-wider text-text-faint">Tables</span>
+          <button
+            type="button"
+            aria-label="Database overview"
+            title="Database overview"
+            onClick={() => onOpenOverview(flatSchema)}
+            className="flex h-5 w-5 items-center justify-center rounded-sm text-text-faint transition-colors hover:bg-surface-hover hover:text-text"
+          >
+            <LayoutGrid size={13} />
+          </button>
+        </div>
         {allTables.length === 0 ? (
           <p className="px-sm py-1 text-xs italic text-text-faint">No tables</p>
         ) : tables.length === 0 ? (
@@ -134,6 +148,18 @@ export function SchemaTree({
                 <Box size={14} className="shrink-0 text-accent" />
                 <span className="truncate">{schema.name}</span>
               </button>
+              <button
+                type="button"
+                aria-label={`Overview of ${schema.name}`}
+                title={`Overview of ${schema.name}`}
+                onClick={(e) => { e.stopPropagation(); onOpenOverview(schema.name); }}
+                className={clsx(
+                  'flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:bg-surface-hover hover:text-text group-hover/schema:opacity-100',
+                  !writable && 'mr-1',
+                )}
+              >
+                <LayoutGrid size={12} />
+              </button>
               {writable ? (
                 <button
                   type="button"
@@ -161,7 +187,7 @@ export function SchemaTree({
 
   function renderFilterBox() {
     return (
-      <div className="sticky top-0 z-10 -mt-1 mb-2 bg-surface-sunken pb-1 pt-1">
+      <div className="sticky top-0 z-10 mb-2 bg-surface-sunken pb-1 pt-1">
         <div className="relative">
           <Search size={13} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-text-faint" />
           <Input

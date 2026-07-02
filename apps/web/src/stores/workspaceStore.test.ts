@@ -59,6 +59,45 @@ describe('workspaceStore — loadQuery', () => {
   });
 });
 
+describe('workspaceStore — openOverview', () => {
+  it('opens an overview tab keyed by schema and makes it active', () => {
+    useWorkspaceStore.getState().openOverview('public');
+    const state = useWorkspaceStore.getState();
+    expect(state.activeTabId).toBe('overview:public');
+    expect(state.tabs).toHaveLength(2);
+    expect(state.tabs[1]).toMatchObject({ id: 'overview:public', kind: 'overview', schema: 'public', label: 'public' });
+  });
+
+  it('dedupes: reopening the same schema reactivates the existing tab', () => {
+    useWorkspaceStore.getState().openOverview('public');
+    useWorkspaceStore.getState().openTable('public', 'users');
+    useWorkspaceStore.getState().openOverview('public');
+    const state = useWorkspaceStore.getState();
+    expect(state.tabs.filter((t) => t.id === 'overview:public')).toHaveLength(1);
+    expect(state.activeTabId).toBe('overview:public');
+  });
+});
+
+describe('workspaceStore — openTable search hand-off / closeTableTab', () => {
+  it('stashes the search term on the tab and clearTabSearch removes it', () => {
+    useWorkspaceStore.getState().openTable('public', 'users', 'rows', { search: '' });
+    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === 'table:public.users')?.search).toBe('');
+
+    useWorkspaceStore.getState().clearTabSearch('table:public.users');
+    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === 'table:public.users')?.search).toBeUndefined();
+  });
+
+  it('closeTableTab removes the matching table tab and is a no-op when absent', () => {
+    useWorkspaceStore.getState().openTable('public', 'users');
+    useWorkspaceStore.getState().closeTableTab('public', 'users');
+    expect(useWorkspaceStore.getState().tabs.some((t) => t.id === 'table:public.users')).toBe(false);
+
+    const before = useWorkspaceStore.getState().tabs.map((t) => t.id);
+    useWorkspaceStore.getState().closeTableTab('public', 'ghost');
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(before);
+  });
+});
+
 describe('workspaceStore — newQueryTab', () => {
   it('adds a new query tab with an incrementing label and makes it active', () => {
     useWorkspaceStore.getState().newQueryTab();

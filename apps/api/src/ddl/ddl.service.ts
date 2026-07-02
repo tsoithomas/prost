@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, UnprocessableEntityException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import type {
   AlterTableRequest,
   AlterTableResult,
@@ -10,6 +10,10 @@ import type {
   DdlPreviewResult,
   DropIndexRequest,
   DropIndexResult,
+  DropTableRequest,
+  DropTableResult,
+  TruncateTableRequest,
+  TruncateTableResult,
 } from '@prost/shared-types';
 import { PoolManager } from '../database/pool-manager.service';
 import { MetadataService } from '../metadata/metadata.service';
@@ -124,6 +128,48 @@ export class DdlService {
     return { schema: req.schema, index: req.index, sql: frag.sql };
   }
 
+  /** Asserts the table exists (resolves to ≥1 column) or throws NotFoundException. */
+  private async assertTableExists(connectionId: string, schema: string, table: string): Promise<void> {
+    const columns = await this.metadataService.getTableColumns(connectionId, schema, table);
+    if (columns.length === 0) {
+      throw new NotFoundException(`Table "${schema}"."${table}" does not exist`);
+    }
+  }
+
+  async dropTable(connectionId: string, req: DropTableRequest): Promise<DropTableResult> {
+    assertWritable(connectionId);
+    await this.assertTableExists(connectionId, req.schema, req.table);
+
+    const driver = await this.pool.driverFor(connectionId);
+    const frag = driver.buildDropTable({ namespace: req.schema, name: req.table });
+
+    try {
+      await this.pool.run(connectionId, frag);
+    } catch (err: unknown) {
+      driver.mapError(err, { operation: 'dropTable' });
+      throw err;
+    }
+
+    return { schema: req.schema, table: req.table, sql: frag.sql };
+  }
+
+  async truncateTable(connectionId: string, req: TruncateTableRequest): Promise<TruncateTableResult> {
+    assertWritable(connectionId);
+    await this.assertTableExists(connectionId, req.schema, req.table);
+
+    const driver = await this.pool.driverFor(connectionId);
+    const frag = driver.buildTruncateTable({ namespace: req.schema, name: req.table });
+
+    try {
+      await this.pool.run(connectionId, frag);
+    } catch (err: unknown) {
+      driver.mapError(err, { operation: 'truncateTable' });
+      throw err;
+    }
+
+    return { schema: req.schema, table: req.table, sql: frag.sql };
+  }
+
   async preview(connectionId: string, req: DdlPreviewRequest): Promise<DdlPreviewResult> {
     assertWritable(connectionId);
     const driver = await this.pool.driverFor(connectionId);
@@ -176,6 +222,18 @@ export class DdlService {
           throw new UnprocessableEntityException(`Index "${r.index}" does not exist on "${r.schema}"."${r.table}"`);
         }
         const frag = driver.buildDropIndex({ namespace: r.schema, name: r.index }, r.index);
+        return { sql: frag.sql };
+      }
+      case 'dropTable': {
+        const r = req.request;
+        await this.assertTableExists(connectionId, r.schema, r.table);
+        const frag = driver.buildDropTable({ namespace: r.schema, name: r.table });
+        return { sql: frag.sql };
+      }
+      case 'truncateTable': {
+        const r = req.request;
+        await this.assertTableExists(connectionId, r.schema, r.table);
+        const frag = driver.buildTruncateTable({ namespace: r.schema, name: r.table });
         return { sql: frag.sql };
       }
     }

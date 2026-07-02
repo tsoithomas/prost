@@ -363,6 +363,33 @@ export function mysqlBuildRowCountEstimate(ref: TableRef): SqlFragment {
   };
 }
 
+export function mysqlBuildSchemaTableStats(namespace: string): SqlFragment {
+  return {
+    sql: `SELECT t.TABLE_NAME                        AS table_name,
+           t.TABLE_ROWS                              AS row_estimate,
+           (t.DATA_LENGTH + t.INDEX_LENGTH)          AS size_bytes,
+           (SELECT COUNT(*) FROM information_schema.columns col
+              WHERE col.TABLE_SCHEMA = t.TABLE_SCHEMA AND col.TABLE_NAME = t.TABLE_NAME) AS column_count,
+           (SELECT COUNT(DISTINCT s.INDEX_NAME) FROM information_schema.statistics s
+              WHERE s.TABLE_SCHEMA = t.TABLE_SCHEMA AND s.TABLE_NAME = t.TABLE_NAME) AS index_count,
+           t.ENGINE                                  AS engine,
+           t.TABLE_COLLATION                         AS collation,
+           NULLIF(t.TABLE_COMMENT, '')               AS comment
+         FROM information_schema.tables t
+         WHERE t.TABLE_SCHEMA = ? AND t.TABLE_TYPE = 'BASE TABLE'
+         ORDER BY t.TABLE_NAME`,
+    params: [namespace],
+  };
+}
+
+export function mysqlBuildDropTable(ref: TableRef): SqlFragment {
+  return { sql: `DROP TABLE ${qualify(ref)}`, params: [] };
+}
+
+export function mysqlBuildTruncateTable(ref: TableRef): SqlFragment {
+  return { sql: `TRUNCATE TABLE ${qualify(ref)}`, params: [] };
+}
+
 export function mysqlBuildInsertRow(ref: TableRef, entries: [string, unknown][]): SqlFragment {
   if (entries.length === 0) {
     return { sql: `INSERT INTO ${qualify(ref)} () VALUES ()`, params: [] };

@@ -1,4 +1,4 @@
-import { ConflictException, UnprocessableEntityException } from '@nestjs/common';
+import { ConflictException, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { describe, expect, it, vi } from 'vitest';
 import type { ColumnMetadata, IndexMetadata, TableStructure } from '@prost/shared-types';
@@ -538,6 +538,46 @@ describe('DdlService.dropIndex', () => {
     await expect(
       service.dropIndex('conn-1', { schema: 'public', table: 'users', index: 'users_email_idx' }),
     ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+});
+
+describe('DdlService.dropTable', () => {
+  it('emits DROP TABLE with quoted schema and table', async () => {
+    const { service, runParameterized } = createService();
+    const result = await service.dropTable('conn-1', { schema: 'public', table: 'users' });
+    expect(result.sql).toBe('DROP TABLE "public"."users"');
+    expect(runParameterized).toHaveBeenCalledWith('conn-1', { sql: result.sql, params: [] });
+  });
+
+  it('throws 404 when the table does not exist, before reaching the database', async () => {
+    const { service, runParameterized } = createService();
+    (service as unknown as { metadataService: MetadataService }).metadataService.getTableColumns = vi
+      .fn()
+      .mockResolvedValue([]);
+    await expect(service.dropTable('conn-1', { schema: 'public', table: 'ghost' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+});
+
+describe('DdlService.truncateTable', () => {
+  it('emits TRUNCATE TABLE with quoted schema and table', async () => {
+    const { service, runParameterized } = createService();
+    const result = await service.truncateTable('conn-1', { schema: 'public', table: 'users' });
+    expect(result.sql).toBe('TRUNCATE TABLE "public"."users"');
+    expect(runParameterized).toHaveBeenCalledWith('conn-1', { sql: result.sql, params: [] });
+  });
+
+  it('throws 404 when the table does not exist, before reaching the database', async () => {
+    const { service, runParameterized } = createService();
+    (service as unknown as { metadataService: MetadataService }).metadataService.getTableColumns = vi
+      .fn()
+      .mockResolvedValue([]);
+    await expect(service.truncateTable('conn-1', { schema: 'public', table: 'ghost' })).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(runParameterized).not.toHaveBeenCalled();
   });
 });
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { pgPlaceholder, pgQuoteIdent, pgBuildListAllColumns, pgBuildListColumns, pgBuildListIndexes, pgBuildListTables } from './pg-sql';
 import { pgBuildSelectRows, pgBuildInsertRow, pgBuildUpdateRow, pgBuildUpdateRowGuarded, pgBuildDeleteRow, pgBuildRowCountEstimate } from './pg-sql';
 import { pgBuildCreateTable, pgBuildAlterTable, pgBuildCreateIndex, pgBuildDropIndex, pgBuildResolveTypeNames } from './pg-sql';
+import { pgBuildSchemaTableStats, pgBuildDropTable, pgBuildTruncateTable } from './pg-sql';
 
 describe('pg-sql quoting/placeholders', () => {
   it('double-quotes and escapes identifiers', () => {
@@ -97,6 +98,26 @@ describe('pg-sql grid builders', () => {
     const { sql, params } = pgBuildRowCountEstimate(ref);
     expect(sql).toContain('reltuples');
     expect(params).toEqual(['public', 'users']);
+  });
+  it('builds schema table stats bound to the namespace with the expected aliases', () => {
+    const { sql, params } = pgBuildSchemaTableStats('public');
+    expect(params).toEqual(['public']);
+    expect(sql).toContain('n.nspname = $1');
+    expect(sql).not.toMatch(/nspname = 'public'/); // parameterized, never interpolated
+    for (const alias of ['table_name', 'row_estimate', 'size_bytes', 'column_count', 'index_count', 'engine', 'collation', 'comment']) {
+      expect(sql).toContain(alias);
+    }
+    expect(sql).toContain('pg_total_relation_size');
+  });
+});
+
+describe('pg-sql drop/truncate builders', () => {
+  const ref = { namespace: 'public', name: 'users' };
+  it('drops a table with quoted identifiers and no params', () => {
+    expect(pgBuildDropTable(ref)).toEqual({ sql: 'DROP TABLE "public"."users"', params: [] });
+  });
+  it('truncates a table with quoted identifiers and no params', () => {
+    expect(pgBuildTruncateTable(ref)).toEqual({ sql: 'TRUNCATE TABLE "public"."users"', params: [] });
   });
 });
 

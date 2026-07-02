@@ -27,6 +27,7 @@ function renderTree(props: Partial<React.ComponentProps<typeof SchemaTree>> = {}
       onSelectTable={vi.fn()}
       onOpenStructure={vi.fn()}
       onNewTable={vi.fn()}
+      onOpenOverview={vi.fn()}
       {...props}
     />,
   );

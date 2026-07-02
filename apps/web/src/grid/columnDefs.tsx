@@ -1,4 +1,5 @@
-import { Calendar, Hash, KeyRound, ToggleLeft, Type } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowDown, ArrowUp, Calendar, Hash, KeyRound, ToggleLeft, Type } from 'lucide-react';
 import type { ColDef, ValueFormatterParams } from 'ag-grid-community';
 import type { CustomHeaderProps } from 'ag-grid-react';
 import type { ColumnMetadata, ColumnRenderMode } from '@prost/shared-types';
@@ -14,6 +15,8 @@ export interface HeaderContextMenuArgs {
   category: DataTypeCategory;
   x: number;
   y: number;
+  /** Present only when this column is currently sorted — clears its sort (from `CustomHeaderProps.setSort`). */
+  onClearSort?: () => void;
 }
 
 // Type-name sets are matched against the *normalized* form (lowercased, length/precision and
@@ -171,17 +174,39 @@ function ColumnHeader({
   field,
   category,
   onHeaderContextMenu,
+  progressSort,
+  setSort,
+  enableSorting,
+  column,
 }: CustomHeaderProps & ColumnHeaderParams) {
   const Icon = dataTypeIcon(dataType);
+  const [sort, setSortDir] = useState<'asc' | 'desc' | null>(column.getSort() ?? null);
+
+  // A custom header owns its own sort indicator: mirror the column's live sort state.
+  useEffect(() => {
+    const sync = () => setSortDir(column.getSort() ?? null);
+    sync();
+    column.addEventListener('sortChanged', sync);
+    return () => column.removeEventListener('sortChanged', sync);
+  }, [column]);
+
   return (
     <div
-      className="flex items-center gap-xs overflow-hidden px-1 text-xs"
+      className={`flex h-full w-full items-center gap-xs overflow-hidden px-1 text-xs select-none ${enableSorting ? 'cursor-pointer' : ''}`}
+      aria-sort={sort === 'asc' ? 'ascending' : sort === 'desc' ? 'descending' : 'none'}
+      onClick={enableSorting ? () => progressSort() : undefined}
       onContextMenu={
         onHeaderContextMenu
           ? (e) => {
               e.preventDefault();
               e.stopPropagation();
-              onHeaderContextMenu({ field, category, x: e.clientX, y: e.clientY });
+              onHeaderContextMenu({
+                field,
+                category,
+                x: e.clientX,
+                y: e.clientY,
+                onClearSort: sort ? () => setSort(null) : undefined,
+              });
             }
           : undefined
       }
@@ -193,6 +218,11 @@ function ColumnHeader({
       )}
       <span className="truncate font-medium text-text">{displayName}</span>
       <ColumnTypePill dataType={dataType} />
+      {sort === 'asc' ? (
+        <ArrowUp size={12} aria-label="sorted ascending" className="ml-auto shrink-0 text-text-muted" />
+      ) : sort === 'desc' ? (
+        <ArrowDown size={12} aria-label="sorted descending" className="ml-auto shrink-0 text-text-muted" />
+      ) : null}
     </div>
   );
 }

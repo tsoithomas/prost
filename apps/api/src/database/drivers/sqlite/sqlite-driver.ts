@@ -199,6 +199,7 @@ export class SqliteDriver implements DbDriver {
   buildListAllColumns = sql.sqliteBuildListAllColumns;
   buildListColumns = (ref: TableRef) => sql.sqliteBuildListColumns(ref);
   buildListIndexes = (ref: TableRef) => sql.sqliteBuildListIndexes(ref);
+  buildSchemaTableStats = (namespace: string) => sql.sqliteBuildSchemaTableStats(namespace);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.sqliteBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) => sql.sqliteBuildFilteredRowCount(ref, w, p);
   buildRowCountEstimate = (ref: TableRef) => sql.sqliteBuildRowCountEstimate(ref);
@@ -240,6 +241,8 @@ export class SqliteDriver implements DbDriver {
   buildAlterTable = (ref: TableRef, op: AlterTableOperation) => sql.sqliteBuildAlterTable(ref, op);
   buildCreateIndex = (req: CreateIndexRequest, name: string, method: string) => sql.sqliteBuildCreateIndex(req, name, method);
   buildDropIndex = (ref: TableRef, indexName: string) => sql.sqliteBuildDropIndex(ref, indexName);
+  buildDropTable = (ref: TableRef) => sql.sqliteBuildDropTable(ref);
+  buildTruncateTable = (ref: TableRef) => sql.sqliteBuildTruncateTable(ref);
 
   async describeResultColumns(
     _query: DriverQueryFn,
