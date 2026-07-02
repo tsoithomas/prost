@@ -34,14 +34,27 @@ passes **and** it violates none of the architecture principles.
 | [18](./phase-18-grid-editing-depth.md) | Grid editing depth (type-aware editors, bulk edits, undo/redo, pin/group) | ✅ Complete |
 | [19](./phase-19-history-management.md) | Query history management (edit/star/delete, search, export) | ✅ Complete |
 | [20](./phase-20-global-search.md) | Global search (command-palette overlay) | ✅ Complete |
-| [21](./phase-21-preferences-theming.md) | Preferences & theming expansion | 📋 Planned |
+| [21](./phase-21-preferences-theming.md) | Preferences & theming expansion | ✅ Complete |
 | [22](./phase-22-streaming-results.md) | Streaming / cursor-based large result sets | ✅ Complete |
+| [23](./phase-23-foreign-keys.md) | Foreign-key metadata + relational navigation | 📋 Planned |
+| [24](./phase-24-schema-objects.md) | Broader schema-object browsing (views/functions/triggers/…) | 📋 Planned |
+| [25](./phase-25-data-export-import.md) | Data export & import (CSV/JSON) | 📋 Planned |
+| [26](./phase-26-query-plan-viz.md) | Query-plan visualization | 📋 Planned |
+| [27](./phase-27-readonly-guardrails.md) | Read-only / environment connection guardrails | 📋 Planned |
+| [28](./phase-28-ssh-tunneling.md) | SSH tunneling (needs §13 amendment) | 📋 Planned |
+| [29](./phase-29-session-monitoring.md) | Active-session monitoring & kill-query | 📋 Planned |
+| [30](./phase-30-audit-trail.md) | Mutation & DDL audit trail | 📋 Planned |
+| [31](./phase-31-agentic-queries.md) | Agentic read-only query execution | 📋 Planned |
+| [32](./phase-32-error-insights.md) | Error explanation & result insights | 📋 Planned |
+| [33](./phase-33-ai-schema-suggestions.md) | AI schema-change suggestions | 📋 Planned |
 
 Phases 0–5 are the **MVP** (complete). Phases 6–10 are the **first post-MVP wave** drawn from
 [`../future-features.md`](../future-features.md) (all complete). Phases 11–22 are the **second
 post-MVP wave** — two "strengthening" phases (11, 12) that harden already-built features, then the
-remaining backlog (13–22). Phases 11–20 and 22 are complete; **21 remains**. Their sequencing,
-dependencies, and rationale live in [`roadmap-phase-11-22.md`](./roadmap-phase-11-22.md).
+remaining backlog (13–22); **all complete**, with the backlog now exhausted. Their sequencing lives
+in [`roadmap-phase-11-22.md`](./roadmap-phase-11-22.md). Phases 23–33 are the **third wave** — a
+fresh, backlog-independent set across three tracks (DBA depth, production safety/ops, AI depth),
+sequenced in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md); all **planned**.
 
 ## Sequencing notes
 

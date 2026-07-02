@@ -10,13 +10,18 @@ decisions, backend/frontend work, verification, out-of-scope) and add it to
 Items are grouped by area. Each entry notes whether a UI affordance already exists (and where)
 and links back to its source for full context where one exists.
 
-> **Status (2026-06-14):** The Stage 6–10 wave (connection-string import, schema view/edit, create
-> table, AI chat) is **complete**. The remaining items below have been sequenced into **Phases
-> 11–22** — two "strengthening" phases that harden already-built features (reliability/abuse
-> hardening, a frontend test foundation) plus the rest of this backlog. See
-> [`plans/roadmap-phase-11-22.md`](./plans/roadmap-phase-11-22.md) for full sequencing and
-> [`plans/README.md`](./plans/README.md) for the status table. Per-area pointers to the owning
-> phase are inline below.
+> **Status (2026-07-02): this backlog is exhausted.** Every item below shipped in Phases 6–22 —
+> the Stage 6–10 wave (connection-string import, schema view/edit, create table, AI chat) and the
+> Phase 11–22 wave (reliability/abuse hardening, frontend test foundation, saved snippets, row
+> filtering, multi-query tabs, multi-statement/`EXPLAIN`, IntelliSense, grid-editing depth, history
+> management, global search, preferences/theming expansion, streaming results). All complete; see
+> [`plans/README.md`](./plans/README.md) for the status table.
+>
+> The **next wave is Phases 23–33** — a fresh, backlog-independent set (this file fed nothing into
+> it) across three tracks: DBA/power-user depth, production safety & ops, and AI depth. It is
+> sequenced in [`plans/roadmap-phase-23-33.md`](./plans/roadmap-phase-23-33.md), with per-phase docs
+> under [`plans/`](./plans/). The sections below are kept as **provenance** for the 6–22 wave; they
+> no longer represent open work.
 
 ---
 
