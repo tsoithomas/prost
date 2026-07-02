@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type {
   ColorMode,
+  ColumnRenderMode,
+  ColumnRenderOverrides,
   ConnectionThemeOverride,
   CustomPalette,
   FontSize,
@@ -34,6 +36,8 @@ interface ThemeState {
   connectionOverrides: Record<string, ConnectionThemeOverride>;
   /** Connection whose override is currently applied, for revert-on-switch. */
   activeOverrideConnectionId: string | null;
+  /** Per-column "render as" overrides, keyed connectionId → "schema.table" → column (server-backed). */
+  columnRenderOverrides: ColumnRenderOverrides;
 
   setColorMode: (mode: ColorMode) => void;
   setAccentColor: (color: string, fg?: string) => void;
@@ -45,6 +49,36 @@ interface ThemeState {
   setConnectionOverrides: (overrides: Record<string, ConnectionThemeOverride>) => void;
   /** Re-themes for the active connection: applies its override, or reverts to the global theme. */
   applyConnectionTheme: (connectionId: string | null) => void;
+  /** Replace the whole render-override map (used by server hydration). */
+  setColumnRenderOverrides: (overrides: ColumnRenderOverrides) => void;
+  /** Set (or clear, when `mode` is null) one column's render override; returns the new full map. */
+  setColumnRenderOverride: (
+    connectionId: string,
+    sourceTable: string,
+    column: string,
+    mode: ColumnRenderMode | null,
+  ) => ColumnRenderOverrides;
+}
+
+/** Immutably set/clear one leaf in the `connection → table → column → mode` map, pruning empties. */
+function applyRenderOverride(
+  current: ColumnRenderOverrides,
+  connectionId: string,
+  sourceTable: string,
+  column: string,
+  mode: ColumnRenderMode | null,
+): ColumnRenderOverrides {
+  const next: ColumnRenderOverrides = structuredClone(current);
+  const tables = (next[connectionId] ??= {});
+  const columns = (tables[sourceTable] ??= {});
+  if (mode) {
+    columns[column] = mode;
+  } else {
+    delete columns[column];
+    if (Object.keys(columns).length === 0) delete tables[sourceTable];
+    if (Object.keys(tables).length === 0) delete next[connectionId];
+  }
+  return next;
 }
 
 /** Applies the user's base (global) theme: color mode, accent, and any active custom palette. */
@@ -75,6 +109,7 @@ export const useThemeStore = create<ThemeState>()(
       keybindings: {},
       connectionOverrides: {},
       activeOverrideConnectionId: null,
+      columnRenderOverrides: {},
 
       setColorMode: (mode) => {
         set({ colorMode: mode });
@@ -138,6 +173,14 @@ export const useThemeStore = create<ThemeState>()(
           set({ activeOverrideConnectionId: null });
         }
       },
+
+      setColumnRenderOverrides: (overrides) => set({ columnRenderOverrides: overrides }),
+
+      setColumnRenderOverride: (connectionId, sourceTable, column, mode) => {
+        const next = applyRenderOverride(get().columnRenderOverrides, connectionId, sourceTable, column, mode);
+        set({ columnRenderOverrides: next });
+        return next;
+      },
     }),
     {
       name: 'prost-theme',
@@ -152,6 +195,7 @@ export const useThemeStore = create<ThemeState>()(
         activePaletteName: state.activePaletteName,
         keybindings: state.keybindings,
         connectionOverrides: state.connectionOverrides,
+        columnRenderOverrides: state.columnRenderOverrides,
       }),
       onRehydrateStorage: () => (state) => {
         if (!state) return;

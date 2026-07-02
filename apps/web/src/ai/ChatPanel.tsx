@@ -27,6 +27,8 @@ export function ChatPanel({ connectionId }: Props) {
   const selectedEndpointId = useAiStore((s) => s.selectedEndpointId);
   const selectedModel = useAiStore((s) => s.selectedModel);
   const setSelection = useAiStore((s) => s.setSelection);
+  const pendingChatPrompt = useAiStore((s) => s.pendingChatPrompt);
+  const clearPendingChatPrompt = useAiStore((s) => s.clearPendingChatPrompt);
 
   // Keep a valid selection: pick the first available model when none chosen or the
   // persisted one no longer exists.
@@ -45,8 +47,7 @@ export function ChatPanel({ connectionId }: Props) {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, chat.isPending]);
 
-  function handleSend() {
-    const text = input.trim();
+  function sendMessage(text: string, sendMode: ChatMode) {
     if (!text || chat.isPending || !selectedEndpointId || !selectedModel) return;
 
     const userMsg: ChatMessage = { role: 'user', content: text };
@@ -56,7 +57,7 @@ export function ChatPanel({ connectionId }: Props) {
     setError(null);
 
     chat.mutate(
-      { messages: next, mode, endpointId: selectedEndpointId, model: selectedModel },
+      { messages: next, mode: sendMode, endpointId: selectedEndpointId, model: selectedModel },
       {
         onSuccess: (res) => setMessages((prev) => [...prev, res.message]),
         onError: (err) => {
@@ -67,6 +68,21 @@ export function ChatPanel({ connectionId }: Props) {
       },
     );
   }
+
+  function handleSend() {
+    sendMessage(input.trim(), mode);
+  }
+
+  // Consume a prompt handed in from elsewhere ("Fix with AI"): switch to Ask mode and auto-send once a
+  // model is selected, then clear the hand-off so it doesn't re-fire. If the panel just opened, the
+  // model may not be picked yet — this effect re-runs when the selection lands.
+  useEffect(() => {
+    if (!pendingChatPrompt || !selectedEndpointId || !selectedModel) return;
+    setMode('ask');
+    sendMessage(pendingChatPrompt, 'ask');
+    clearPendingChatPrompt();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingChatPrompt, selectedEndpointId, selectedModel]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {

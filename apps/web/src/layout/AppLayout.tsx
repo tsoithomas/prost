@@ -56,6 +56,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     store.setCustomPalettes(preferences.customPalettes ?? []);
     store.setKeybindings(preferences.keybindings ?? {});
     store.setConnectionOverrides(preferences.connectionOverrides ?? {});
+    store.setColumnRenderOverrides(preferences.columnRenderOverrides ?? {});
   }, [preferences]);
 
   // Apply the active connection's theme override (or revert to the global theme) on switch,

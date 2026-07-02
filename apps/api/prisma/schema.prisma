@@ -103,12 +103,14 @@ model UserPreference {
   gridDensity String @default("normal")
 
   // SQLite has no JSON type — these hold JSON-stringified structures (see @prost/shared-types):
-  //   keybindings         -> KeybindingMap                          (actionId -> chord, overrides only)
-  //   customPalettes      -> CustomPalette[]
-  //   connectionOverrides -> Record<connectionId, ConnectionThemeOverride>
-  keybindings         String @default("{}")
-  customPalettes      String @default("[]")
-  connectionOverrides String @default("{}")
+  //   keybindings           -> KeybindingMap                          (actionId -> chord, overrides only)
+  //   customPalettes        -> CustomPalette[]
+  //   connectionOverrides   -> Record<connectionId, ConnectionThemeOverride>
+  //   columnRenderOverrides -> ColumnRenderOverrides                  (connectionId -> "schema.table" -> column -> mode)
+  keybindings           String @default("{}")
+  customPalettes        String @default("[]")
+  connectionOverrides   String @default("{}")
+  columnRenderOverrides String @default("{}")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

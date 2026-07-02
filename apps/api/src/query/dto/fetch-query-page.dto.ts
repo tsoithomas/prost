@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 import type { FetchQueryPageBody } from '@prost/shared-types';
 
 export class FetchQueryPageDto implements FetchQueryPageBody {
@@ -18,4 +18,12 @@ export class FetchQueryPageDto implements FetchQueryPageBody {
   @Min(1)
   @Max(1000)
   limit?: number;
+
+  @IsOptional()
+  @IsString()
+  sortBy?: string;
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortDir?: 'asc' | 'desc';
 }

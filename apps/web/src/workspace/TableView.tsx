@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AgGridReact } from 'ag-grid-react';
 import type {
+  CellClickedEvent,
   CellValueChangedEvent,
   GetRowIdParams,
   GridApi,
@@ -11,18 +12,22 @@ import type {
   SelectionChangedEvent,
 } from 'ag-grid-community';
 import { CopyPlus, Filter, Plus, Redo2, Save, Trash2, Undo2, X } from 'lucide-react';
-import type { BulkRowEdit, GridResponse, RowConcurrency, RowFilter } from '@prost/shared-types';
+import type { BulkRowEdit, ColumnRenderMode, GridResponse, RowConcurrency, RowFilter } from '@prost/shared-types';
 import { ROW_VERSION_KEY } from '@prost/shared-types';
 import { Badge, Button, IconButton, prostGridTheme, Toast } from '@prost/ui';
 import { FilterPanel } from './FilterPanel';
 import { TableStructurePanel } from './TableStructurePanel';
 import { useActiveConnection } from '../api/connections';
 import { useBulkUpdate, useDeleteRow, useInsertRow } from '../api/grid';
-import { buildColumnDefs } from '../grid/columnDefs';
+import { useUpdatePreferences } from '../api/preferences';
+import { buildColumnDefs, type HeaderContextMenuArgs } from '../grid/columnDefs';
+import { ColumnRenderMenu } from '../grid/ColumnRenderMenu';
+import { JsonCellPopup } from '../grid/JsonCellPopup';
 import { useEditBuffer } from '../grid/useEditBuffer';
 import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
 import { ApiError, apiErrorDetail, apiFetch } from '../lib/apiClient';
+import { useThemeStore } from '../stores/themeStore';
 
 /** A committed batch we can reverse: each row's pre-edit (`before`) and edited (`after`) values, plus its live version. */
 interface UndoRow {
@@ -56,9 +61,17 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const [lastEdit, setLastEdit] = useState<{ column: string; value: unknown } | null>(null);
   const [undoStack, setUndoStack] = useState<UndoRow[][]>([]);
   const [redoStack, setRedoStack] = useState<UndoRow[][]>([]);
+  const [renderMenu, setRenderMenu] = useState<HeaderContextMenuArgs | null>(null);
+  const [jsonCell, setJsonCell] = useState<{ column: string; value: unknown } | null>(null);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const editBuffer = useEditBuffer();
+
+  // Per-column "render as" overrides for this table (server-backed, keyed connection → schema.table).
+  const sourceTable = `${schema}.${table}`;
+  const renderOverrides = useThemeStore((state) => state.columnRenderOverrides[connectionId]?.[sourceTable]);
+  const setColumnRenderOverride = useThemeStore((state) => state.setColumnRenderOverride);
+  const updatePreferences = useUpdatePreferences();
 
   const filterKey = activeFilter?.conditions.length ? JSON.stringify(activeFilter) : null;
 
@@ -104,8 +117,33 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   );
 
   const columnDefs = useMemo(
-    () => (columnsQuery.data ? buildColumnDefs(columnsQuery.data.columns, editable) : []),
-    [columnsQuery.data, editable],
+    () =>
+      columnsQuery.data
+        ? buildColumnDefs(columnsQuery.data.columns, editable, { renderOverrides, onHeaderContextMenu: setRenderMenu })
+        : [],
+    [columnsQuery.data, editable, renderOverrides],
+  );
+
+  const handleSelectRenderMode = useCallback(
+    (mode: ColumnRenderMode | null) => {
+      if (!renderMenu) return;
+      const next = setColumnRenderOverride(connectionId, sourceTable, renderMenu.field, mode);
+      updatePreferences.mutate(
+        { columnRenderOverrides: next },
+        { onError: (error) => pushToast('danger', apiErrorDetail(error, 'Failed to save display preference.')) },
+      );
+    },
+    [renderMenu, setColumnRenderOverride, connectionId, sourceTable, updatePreferences, pushToast],
+  );
+
+  const onCellClicked = useCallback(
+    (event: CellClickedEvent) => {
+      const colId = event.column.getColId();
+      if (renderOverrides?.[colId] === 'json') {
+        setJsonCell({ column: colId, value: event.value });
+      }
+    },
+    [renderOverrides],
   );
 
   const getRowId = useMemo(() => {
@@ -476,10 +514,18 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
               onGridReady={onGridReady}
               onSelectionChanged={onSelectionChanged}
               onCellValueChanged={onCellValueChanged}
+              onCellClicked={onCellClicked}
             />
           </div>
         )}
       </div>
+      <ColumnRenderMenu
+        state={renderMenu}
+        currentMode={renderMenu ? renderOverrides?.[renderMenu.field] : undefined}
+        onSelect={handleSelectRenderMode}
+        onClose={() => setRenderMenu(null)}
+      />
+      <JsonCellPopup cell={jsonCell} onClose={() => setJsonCell(null)} />
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-sm p-md sm:items-end">
         {toasts.map((toast) => (
           <div key={toast.id} className="pointer-events-auto w-full max-w-[24rem]">

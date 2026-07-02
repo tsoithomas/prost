@@ -13,6 +13,7 @@ function buildRow(overrides: Partial<UserPreference> = {}): UserPreference {
     keybindings: '{"run-all":"mod+r"}',
     customPalettes: '[{"name":"Prod","colors":{"accent":"#ff0000"}}]',
     connectionOverrides: '{"conn-1":{"accentColor":"#00ff00"}}',
+    columnRenderOverrides: '{"conn-1":{"public.orders":{"created_at":"date"}}}',
     ...overrides,
   };
 }
@@ -32,6 +33,7 @@ describe('toUserPreferenceDto', () => {
       keybindings: { 'run-all': 'mod+r' },
       customPalettes: [{ name: 'Prod', colors: { accent: '#ff0000' } }],
       connectionOverrides: { 'conn-1': { accentColor: '#00ff00' } },
+      columnRenderOverrides: { 'conn-1': { 'public.orders': { created_at: 'date' } } },
     });
   });
 
@@ -56,6 +58,7 @@ describe('PreferenceService.get', () => {
       keybindings: {},
       customPalettes: [],
       connectionOverrides: {},
+      columnRenderOverrides: {},
     });
     expect(findUnique).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
   });

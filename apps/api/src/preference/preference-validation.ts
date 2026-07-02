@@ -1,12 +1,14 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   CHORD_PATTERN,
+  COLUMN_RENDER_MODES,
   HEX_COLOR_PATTERN,
   KEYBINDING_ACTIONS,
   MAX_PALETTE_NAME_LENGTH,
   MAX_PALETTES,
   PALETTE_TOKEN_KEYS,
   type ColorMode,
+  type ColumnRenderOverrides,
   type ConnectionThemeOverride,
   type CustomPalette,
   type KeybindingMap,
@@ -15,6 +17,7 @@ import {
 const COLOR_MODES: ColorMode[] = ['light', 'dark', 'system'];
 const ACTION_IDS = new Set(KEYBINDING_ACTIONS.map((a) => a.id));
 const PALETTE_KEYS = new Set<string>(PALETTE_TOKEN_KEYS);
+const RENDER_MODES = new Set<string>(COLUMN_RENDER_MODES);
 
 function bad(message: string): never {
   throw new BadRequestException(message);
@@ -60,6 +63,27 @@ export function validateCustomPalettes(value: unknown): CustomPalette[] {
     }
     return { name, colors } as CustomPalette;
   });
+}
+
+/**
+ * Validates the nested render-override map (`connectionId → "schema.table" → column → mode`): every
+ * level must be a plain object and every leaf a known render mode. A pure shape check — no reference
+ * to live connections/schemas (the server never trusts these as anything but display hints).
+ */
+export function validateColumnRenderOverrides(value: unknown): ColumnRenderOverrides {
+  if (!isPlainObject(value)) bad('columnRenderOverrides must be an object');
+  for (const tables of Object.values(value)) {
+    if (!isPlainObject(tables)) bad('Each connection render-override entry must be an object');
+    for (const columns of Object.values(tables)) {
+      if (!isPlainObject(columns)) bad('Each table render-override entry must be an object');
+      for (const mode of Object.values(columns)) {
+        if (typeof mode !== 'string' || !RENDER_MODES.has(mode)) {
+          bad(`Invalid column render mode: ${String(mode)}`);
+        }
+      }
+    }
+  }
+  return value as ColumnRenderOverrides;
 }
 
 export function validateConnectionOverrides(value: unknown): Record<string, ConnectionThemeOverride> {

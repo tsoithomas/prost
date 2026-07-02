@@ -121,6 +121,9 @@ export interface FetchQueryPageBody {
   sql: string;
   offset: number;
   limit?: number;
+  /** Optional output-column name to sort the whole result by (applied to the paged wrapper). */
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
 }
 
 /** Response for `POST /connections/:id/query/page` — just the next page of rows. */
@@ -138,6 +141,9 @@ export interface FetchQueryPageResponse {
  */
 export interface OpenCursorBody {
   sql: string;
+  /** Optional output-column name to stream the result sorted by (baked into the cursor at open time). */
+  sortBy?: string;
+  sortDir?: 'asc' | 'desc';
 }
 
 /**

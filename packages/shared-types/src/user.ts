@@ -88,6 +88,23 @@ export type KeybindingMap = Record<string, string>;
 /** Chord grammar: zero+ modifiers (`mod`/`ctrl`/`cmd`/`shift`/`alt`) then one key, joined by `+`. */
 export const CHORD_PATTERN = /^(mod|ctrl|cmd|shift|alt)(\+(mod|ctrl|cmd|shift|alt))*\+[a-z0-9]+$/;
 
+/**
+ * A per-column display override chosen from a grid header's right-click menu. Purely presentational —
+ * the underlying value is untouched:
+ * - `date`: a numeric Unix epoch is rendered as a human-readable date string.
+ * - `boolean`: a numeric/boolean is rendered as `True`/`False`.
+ * - `json`: a string is treated as JSON — selecting the cell opens a prettified popup.
+ */
+export type ColumnRenderMode = 'date' | 'boolean' | 'json';
+
+export const COLUMN_RENDER_MODES: ColumnRenderMode[] = ['date', 'boolean', 'json'];
+
+/**
+ * Per-column render overrides, keyed `connectionId → "schema.table" → columnName → mode`. Only
+ * grids with a stable table identity persist here; ad-hoc query results are session-only.
+ */
+export type ColumnRenderOverrides = Record<string, Record<string, Record<string, ColumnRenderMode>>>;
+
 export interface UserPreferenceDto {
   colorMode: ColorMode;
   accentColor: string;
@@ -98,4 +115,6 @@ export interface UserPreferenceDto {
   customPalettes: CustomPalette[];
   /** Per-connection theme overrides, keyed by connectionId. */
   connectionOverrides: Record<string, ConnectionThemeOverride>;
+  /** Per-column "render as" display overrides (see `ColumnRenderOverrides`). */
+  columnRenderOverrides: ColumnRenderOverrides;
 }

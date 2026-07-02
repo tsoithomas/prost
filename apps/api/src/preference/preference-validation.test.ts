@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  validateColumnRenderOverrides,
   validateConnectionOverrides,
   validateCustomPalettes,
   validateKeybindings,
@@ -63,6 +64,31 @@ describe('validateConnectionOverrides', () => {
   it('rejects an invalid override color mode', () => {
     expect(() => validateConnectionOverrides({ 'conn-1': { colorMode: 'neon' } })).toThrow(
       /Invalid override colorMode/,
+    );
+  });
+});
+
+describe('validateColumnRenderOverrides', () => {
+  it('accepts a well-formed nested override map', () => {
+    const overrides = {
+      'conn-1': { 'public.orders': { created_at: 'date' as const, is_paid: 'boolean' as const } },
+    };
+    expect(validateColumnRenderOverrides(overrides)).toEqual(overrides);
+  });
+
+  it('accepts an empty map', () => {
+    expect(validateColumnRenderOverrides({})).toEqual({});
+  });
+
+  it('rejects an unknown render mode', () => {
+    expect(() => validateColumnRenderOverrides({ 'conn-1': { 'public.orders': { x: 'rainbow' } } })).toThrow(
+      /Invalid column render mode/,
+    );
+  });
+
+  it('rejects a non-object at the table level', () => {
+    expect(() => validateColumnRenderOverrides({ 'conn-1': { 'public.orders': 'nope' } })).toThrow(
+      /table render-override entry must be an object/,
     );
   });
 });

@@ -21,9 +21,10 @@ export function createQueryPageDatasource({ connectionId, sql, onError }: QueryP
     getRows: (params: IGetRowsParams) => {
       const offset = params.startRow;
       const limit = params.endRow - params.startRow;
+      const sort = params.sortModel[0];
       apiFetch<FetchQueryPageResponse>(`/connections/${connectionId}/query/page`, {
         method: 'POST',
-        body: { sql, offset, limit },
+        body: { sql, offset, limit, ...(sort ? { sortBy: sort.colId, sortDir: sort.sort } : {}) },
       })
         .then((page) => {
           const lastRow = page.truncated ? undefined : offset + page.rows.length;

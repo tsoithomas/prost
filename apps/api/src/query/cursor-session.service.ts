@@ -13,7 +13,7 @@ import type { ColumnMetadata, FetchCursorResponse, OpenCursorResponse } from '@p
 import { PoolManager } from '../database/pool-manager.service';
 import type { DriverCursor } from '../database/types';
 import { QueryService } from './query.service';
-import { QUERY_PAGE_SIZE } from './paging';
+import { buildOrderedStatement, QUERY_PAGE_SIZE } from './paging';
 
 interface CursorSession {
   connectionId: string;
@@ -69,7 +69,14 @@ export class CursorSessionService implements OnModuleInit, OnModuleDestroy {
    * register the session for subsequent fetches. Validation, editability, and column metadata are
    * resolved exactly as the offset execute path does, so the grid renders identically.
    */
-  async open(connectionId: string, userId: string, sql: string, correlationId = ''): Promise<OpenCursorResponse> {
+  async open(
+    connectionId: string,
+    userId: string,
+    sql: string,
+    correlationId = '',
+    sortBy?: string,
+    sortDir: 'asc' | 'desc' = 'asc',
+  ): Promise<OpenCursorResponse> {
     const statementText = await this.queryService.resolveSingleSelect(connectionId, sql);
     const driver = await this.pool.driverFor(connectionId);
     if (!driver.capabilities.supportsCursors) {
@@ -77,7 +84,13 @@ export class CursorSessionService implements OnModuleInit, OnModuleDestroy {
     }
     this.assertCapacity(connectionId);
 
-    const cursor = await this.pool.openCursor(connectionId, { sql: statementText, params: [] });
+    // Sorting a streamed result must be baked into the statement before the cursor opens — a
+    // forward-only cursor can't be re-sorted mid-stream. Editability/columns are still derived from
+    // the raw `statementText` (the wrapper is a `SELECT *`, so the output columns are unchanged).
+    const cursorSql = sortBy
+      ? buildOrderedStatement(statementText, { column: sortBy, dir: sortDir, quoteIdent: (id) => driver.quoteIdent(id) })
+      : statementText;
+    const cursor = await this.pool.openCursor(connectionId, { sql: cursorSql, params: [] });
     let first: { rows: Record<string, unknown>[]; complete: boolean };
     try {
       first = await cursor.fetch(QUERY_PAGE_SIZE);

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import type { RefObject } from 'react';
 import { LogOut } from 'lucide-react';
 import { Surface } from '@prost/ui';
 import { useAuthStore } from '../stores/authStore';
@@ -6,16 +7,20 @@ import { ThemeSettings } from './ThemeSettings';
 
 export interface SettingsPanelProps {
   onClose: () => void;
+  /** The trigger that toggles this panel; excluded from outside-click detection so a
+   * click on it doesn't close-then-reopen the panel. */
+  triggerRef?: RefObject<HTMLButtonElement | null>;
 }
 
-export function SettingsPanel({ onClose }: SettingsPanelProps) {
+export function SettingsPanel({ onClose, triggerRef }: SettingsPanelProps) {
   const ref = useRef<HTMLDivElement>(null);
   const user = useAuthStore((state) => state.user);
   const clearAuth = useAuthStore((state) => state.clear);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (ref.current && !ref.current.contains(target) && !triggerRef?.current?.contains(target)) {
         onClose();
       }
     }
@@ -28,7 +33,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [onClose]);
+  }, [onClose, triggerRef]);
 
   return (
     <Surface

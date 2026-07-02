@@ -82,7 +82,14 @@ export class QueryService {
    * else (multiple statements, INSERT/UPDATE/DDL, EXPLAIN) is rejected **before** any execution,
    * so "Load more" can never re-run a mutation.
    */
-  async fetchPage(connectionId: string, sql: string, offset: number, limit = QUERY_PAGE_SIZE): Promise<FetchQueryPageResponse> {
+  async fetchPage(
+    connectionId: string,
+    sql: string,
+    offset: number,
+    limit = QUERY_PAGE_SIZE,
+    sortBy?: string,
+    sortDir: 'asc' | 'desc' = 'asc',
+  ): Promise<FetchQueryPageResponse> {
     const statementTexts = splitStatements(sql);
     if (statementTexts.length !== 1) {
       throw new BadRequestException('Only a single SELECT statement can be paged');
@@ -97,7 +104,10 @@ export class QueryService {
       throw new BadRequestException('Only SELECT statements can be paged');
     }
 
-    const { sql: pagedSql, params } = buildPagedQuery(statementText, driver.placeholder, limit, offset);
+    const orderBy = sortBy
+      ? { column: sortBy, dir: sortDir, quoteIdent: (id: string) => driver.quoteIdent(id) }
+      : undefined;
+    const { sql: pagedSql, params } = buildPagedQuery(statementText, driver.placeholder, limit, offset, orderBy);
     const start = Date.now();
     const { rows } = await this.pool.run(connectionId, { sql: pagedSql, params });
     const executionTimeMs = Date.now() - start;

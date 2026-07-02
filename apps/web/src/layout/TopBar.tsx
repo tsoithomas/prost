@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Bot, Settings } from 'lucide-react';
 import { IconButton } from '@prost/ui';
 import logo from '../assets/logo.svg';
@@ -7,6 +7,7 @@ import { SettingsPanel } from './SettingsPanel';
 
 export function TopBar() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const rightSidebarOpen = useAiStore((s) => s.rightSidebarOpen);
   const toggleRightSidebar = useAiStore((s) => s.toggleRightSidebar);
 
@@ -27,13 +28,16 @@ export function TopBar() {
         </IconButton>
         <div className="relative">
           <IconButton
+            ref={settingsButtonRef}
             aria-label="Settings"
             variant={settingsOpen ? 'active' : 'ghost'}
             onClick={() => setSettingsOpen((open) => !open)}
           >
             <Settings size={16} />
           </IconButton>
-          {settingsOpen ? <SettingsPanel onClose={() => setSettingsOpen(false)} /> : null}
+          {settingsOpen ? (
+            <SettingsPanel triggerRef={settingsButtonRef} onClose={() => setSettingsOpen(false)} />
+          ) : null}
         </div>
       </div>
     </header>

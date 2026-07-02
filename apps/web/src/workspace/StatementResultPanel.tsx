@@ -3,6 +3,7 @@ import { AgGridReact } from 'ag-grid-react';
 import type { StatementResult } from '@prost/shared-types';
 import { Badge, Surface, prostGridTheme } from '@prost/ui';
 import { buildColumnDefs } from '../grid/columnDefs';
+import { FixWithAiButton } from '../ai/FixWithAiButton';
 
 export interface PlanPanelProps {
   planText: string;
@@ -72,6 +73,7 @@ export function StatementResultPanel({ index, total, statement }: StatementResul
         <div className="flex flex-col items-center gap-xs p-md text-center">
           <p className="max-w-[28rem] text-sm text-text">{statement.message}</p>
           <p className="text-xs text-text-faint">ref: {statement.correlationId}</p>
+          <FixWithAiButton sql={statement.sql} message={statement.message} code={statement.code} className="mt-sm" />
         </div>
       ) : null}
     </Surface>

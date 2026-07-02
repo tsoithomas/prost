@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildPagedQuery, looksLikeSingleSelect, QUERY_PAGE_SIZE } from './paging';
+import { buildOrderedStatement, buildPagedQuery, looksLikeSingleSelect, QUERY_PAGE_SIZE } from './paging';
+
+const dq = (id: string) => `"${id}"`;
 
 describe('buildPagedQuery', () => {
   it('wraps the statement in a subquery with limit/offset bound as $n params', () => {
@@ -38,6 +40,35 @@ describe('buildPagedQuery', () => {
 
     expect(sql).not.toContain('12345');
     expect(sql).not.toContain('6789');
+  });
+
+  it('appends a quoted ORDER BY before the LIMIT/OFFSET when sorting descending', () => {
+    const { sql } = buildPagedQuery('SELECT * FROM users', undefined, 100, 0, {
+      column: 'name',
+      dir: 'desc',
+      quoteIdent: dq,
+    });
+
+    expect(sql).toBe('SELECT * FROM (SELECT * FROM users) AS __prost_query ORDER BY "name" DESC LIMIT $1 OFFSET $2');
+  });
+
+  it('defaults the sort direction keyword to ASC', () => {
+    const { sql } = buildPagedQuery('SELECT * FROM users', undefined, 100, 0, {
+      column: 'id',
+      dir: 'asc',
+      quoteIdent: dq,
+    });
+
+    expect(sql).toContain('ORDER BY "id" ASC');
+  });
+});
+
+describe('buildOrderedStatement', () => {
+  it('wraps a SELECT in an ORDER BY-only subquery (no LIMIT) for the cursor path', () => {
+    const sql = buildOrderedStatement('SELECT * FROM users;', { column: 'created_at', dir: 'desc', quoteIdent: dq });
+
+    expect(sql).toBe('SELECT * FROM (SELECT * FROM users) AS __prost_query ORDER BY "created_at" DESC');
+    expect(sql).not.toContain('LIMIT');
   });
 });
 

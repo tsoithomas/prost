@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Editor, { type Monaco, type OnMount } from '@monaco-editor/react';
 import { AgGridReact } from 'ag-grid-react';
 import type {
+  CellClickedEvent,
   CellValueChangedEvent,
   GetRowIdParams,
   GridApi,
@@ -12,7 +13,7 @@ import type {
 } from 'ag-grid-community';
 import { Bookmark, Play, Plus, Save, Trash2, WandSparkles, X } from 'lucide-react';
 import { format } from 'sql-formatter';
-import type { DbEngineDescriptor, ExecuteQueryResponse } from '@prost/shared-types';
+import type { ColumnRenderMode, DbEngineDescriptor, ExecuteQueryResponse } from '@prost/shared-types';
 import {
   Badge,
   Button,
@@ -29,9 +30,12 @@ import {
 import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
 import { useEngineDescriptor } from '../api/databaseEngines';
 import { useMetadata } from '../api/metadata';
+import { useUpdatePreferences } from '../api/preferences';
 import { useExecuteQuery } from '../api/query';
 import { useCreateSnippet } from '../api/snippets';
-import { buildColumnDefs } from '../grid/columnDefs';
+import { buildColumnDefs, type HeaderContextMenuArgs, type RenderModeMap } from '../grid/columnDefs';
+import { ColumnRenderMenu } from '../grid/ColumnRenderMenu';
+import { JsonCellPopup } from '../grid/JsonCellPopup';
 import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
 import { matchesChord, resolveBinding } from '../keybindings';
@@ -44,6 +48,7 @@ import { createQueryPageDatasource } from './queryPageDatasource';
 import { PlanPanel, StatementResultPanel } from './StatementResultPanel';
 import { statementAtOffset } from './statementRanges';
 import { useMonacoCompletions } from './useMonacoCompletions';
+import { FixWithAiButton } from '../ai/FixWithAiButton';
 
 /** AG Grid infinite-model block size for editor query results (matches the server page size). */
 const PAGE_SIZE = 100;
@@ -97,6 +102,10 @@ export function SqlEditorView() {
   const [streamTruncatedAt, setStreamTruncatedAt] = useState<number | null>(null);
   // The streaming cursor expired mid-scroll and the grid fell back to offset paging.
   const [streamReaped, setStreamReaped] = useState(false);
+  const [renderMenu, setRenderMenu] = useState<HeaderContextMenuArgs | null>(null);
+  const [jsonCell, setJsonCell] = useState<{ column: string; value: unknown } | null>(null);
+  // Ad-hoc query results without a stable table identity keep render overrides in-session only.
+  const [ephemeralRenderOverrides, setEphemeralRenderOverrides] = useState<RenderModeMap>({});
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const createSnippet = useCreateSnippet();
@@ -118,9 +127,50 @@ export function SqlEditorView() {
   const primaryKey = editableResult?.primaryKey ?? [];
   const isGridResult = editableResult !== null;
 
+  // Render-as overrides: server-backed for results with a real table identity, session-only otherwise.
+  const persistedTableKey = editableResult?.sourceTable;
+  const persistedRenderOverrides = useThemeStore((state) =>
+    connectionId && persistedTableKey ? state.columnRenderOverrides[connectionId]?.[persistedTableKey] : undefined,
+  );
+  const setColumnRenderOverride = useThemeStore((state) => state.setColumnRenderOverride);
+  const updatePreferences = useUpdatePreferences();
+  const renderOverrides = persistedTableKey ? persistedRenderOverrides : ephemeralRenderOverrides;
+
   const columnDefs = useMemo(
-    () => (editableResult ? buildColumnDefs(editableResult.columns, editable) : []),
-    [editableResult, editable],
+    () =>
+      editableResult
+        ? buildColumnDefs(editableResult.columns, editable, { renderOverrides, onHeaderContextMenu: setRenderMenu })
+        : [],
+    [editableResult, editable, renderOverrides],
+  );
+
+  const handleSelectRenderMode = useCallback(
+    (mode: ColumnRenderMode | null) => {
+      if (!renderMenu) return;
+      if (connectionId && persistedTableKey) {
+        const next = setColumnRenderOverride(connectionId, persistedTableKey, renderMenu.field, mode);
+        updatePreferences.mutate(
+          { columnRenderOverrides: next },
+          { onError: (error) => pushToast('danger', apiErrorDetail(error, 'Failed to save display preference.')) },
+        );
+      } else {
+        setEphemeralRenderOverrides((prev) => {
+          const next = { ...prev };
+          if (mode) next[renderMenu.field] = mode;
+          else delete next[renderMenu.field];
+          return next;
+        });
+      }
+    },
+    [renderMenu, connectionId, persistedTableKey, setColumnRenderOverride, updatePreferences, pushToast],
+  );
+
+  const onCellClicked = useCallback(
+    (event: CellClickedEvent) => {
+      const colId = event.column.getColId();
+      if (renderOverrides?.[colId] === 'json') setJsonCell({ column: colId, value: event.value });
+    },
+    [renderOverrides],
   );
 
   const getRowId = useMemo(() => {
@@ -176,6 +226,9 @@ export function SqlEditorView() {
     setSaveSnippetName(null);
     setStreamTruncatedAt(null);
     setStreamReaped(false);
+    setEphemeralRenderOverrides({});
+    setRenderMenu(null);
+    setJsonCell(null);
   }, [activeTabId]);
 
   // Loading a query from history sets `pendingQuerySql` (see `workspaceStore.loadQuery`);
@@ -204,6 +257,7 @@ export function SqlEditorView() {
             setResultEpoch((e) => e + 1);
             setStreamTruncatedAt(null);
             setStreamReaped(false);
+            setEphemeralRenderOverrides({});
             setTabResult(activeTabId, data);
             queryClient.invalidateQueries({ queryKey: ['history', connectionId] });
           },
@@ -573,6 +627,7 @@ export function SqlEditorView() {
                 onGridReady={onGridReady}
                 onSelectionChanged={onSelectionChanged}
                 onCellValueChanged={onCellValueChanged}
+                onCellClicked={onCellClicked}
               />
             ) : single.kind === 'command' ? (
               <div className="flex h-full items-center justify-center text-sm text-text-faint">
@@ -585,6 +640,13 @@ export function SqlEditorView() {
                 <Badge variant="danger">{single.code ?? 'SQL_ERROR'}</Badge>
                 <p className="max-w-[28rem] text-sm text-text">{single.message}</p>
                 <p className="text-xs text-text-faint">ref: {single.correlationId}</p>
+                <FixWithAiButton
+                  sql={single.sql}
+                  message={single.message}
+                  code={single.code}
+                  engineLabel={descriptor?.label}
+                  className="mt-sm"
+                />
               </div>
             )
           ) : statements.length === 0 ? (
@@ -605,6 +667,13 @@ export function SqlEditorView() {
           )}
         </div>
       </div>
+      <ColumnRenderMenu
+        state={renderMenu}
+        currentMode={renderMenu ? renderOverrides?.[renderMenu.field] : undefined}
+        onSelect={handleSelectRenderMode}
+        onClose={() => setRenderMenu(null)}
+      />
+      <JsonCellPopup cell={jsonCell} onClose={() => setJsonCell(null)} />
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-sm p-md sm:items-end">
         {toasts.map((toast) => (
           <div key={toast.id} className="pointer-events-auto w-full max-w-[24rem]">

@@ -2,6 +2,12 @@ import type { IDatasource, IGetRowsParams } from 'ag-grid-community';
 import type { FetchCursorResponse, FetchQueryPageResponse, OpenCursorResponse } from '@prost/shared-types';
 import { ApiError, apiFetch } from '../lib/apiClient';
 
+/** The active sort as request-body fields, or `{}` when unsorted. Read fresh from AG Grid on each block. */
+function sortBody(params: IGetRowsParams): { sortBy: string; sortDir: 'asc' | 'desc' } | Record<string, never> {
+  const sort = params.sortModel[0];
+  return sort ? { sortBy: sort.colId, sortDir: sort.sort as 'asc' | 'desc' } : {};
+}
+
 export interface CursorDatasourceOptions {
   connectionId: string;
   /** The single SELECT that produced the result — opens the cursor and backs the offset fallback. */
@@ -40,7 +46,7 @@ export function createCursorDatasource(opts: CursorDatasourceOptions): IDatasour
   const offsetFallback = (params: IGetRowsParams, offset: number, limit: number): void => {
     apiFetch<FetchQueryPageResponse>(`/connections/${opts.connectionId}/query/page`, {
       method: 'POST',
-      body: { sql: opts.sql, offset, limit },
+      body: { sql: opts.sql, offset, limit, ...sortBody(params) },
     })
       .then((page) => {
         const lastRow = page.truncated ? undefined : offset + page.rows.length;
@@ -88,7 +94,7 @@ export function createCursorDatasource(opts: CursorDatasourceOptions): IDatasour
         closeSession();
         apiFetch<OpenCursorResponse>(`/connections/${opts.connectionId}/query/cursor`, {
           method: 'POST',
-          body: { sql: opts.sql },
+          body: { sql: opts.sql, ...sortBody(params) },
         })
           .then((open) => {
             sessionId = open.complete ? null : open.sessionId;

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { UserPreference } from '@prisma/client';
 import type {
+  ColumnRenderOverrides,
   ConnectionThemeOverride,
   CustomPalette,
   KeybindingMap,
@@ -9,6 +10,7 @@ import type {
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdatePreferenceDto } from './dto/update-preference.dto';
 import {
+  validateColumnRenderOverrides,
   validateConnectionOverrides,
   validateCustomPalettes,
   validateKeybindings,
@@ -22,6 +24,7 @@ const DEFAULTS: UserPreferenceDto = {
   keybindings: {},
   customPalettes: [],
   connectionOverrides: {},
+  columnRenderOverrides: {},
 };
 
 @Injectable()
@@ -55,7 +58,14 @@ export class PreferenceService {
 // All persisted columns are TEXT, so a plain string record is valid for both `create` and `update`.
 type PreferenceRowData = Partial<
   Record<
-    'colorMode' | 'accentColor' | 'fontSize' | 'gridDensity' | 'keybindings' | 'customPalettes' | 'connectionOverrides',
+    | 'colorMode'
+    | 'accentColor'
+    | 'fontSize'
+    | 'gridDensity'
+    | 'keybindings'
+    | 'customPalettes'
+    | 'connectionOverrides'
+    | 'columnRenderOverrides',
     string
   >
 >;
@@ -74,6 +84,9 @@ function toRowData(dto: UpdatePreferenceDto): PreferenceRowData {
   }
   if (dto.connectionOverrides !== undefined) {
     data.connectionOverrides = JSON.stringify(validateConnectionOverrides(dto.connectionOverrides));
+  }
+  if (dto.columnRenderOverrides !== undefined) {
+    data.columnRenderOverrides = JSON.stringify(validateColumnRenderOverrides(dto.columnRenderOverrides));
   }
   return data;
 }
@@ -95,5 +108,6 @@ export function toUserPreferenceDto(row: UserPreference): UserPreferenceDto {
     keybindings: parseJson<KeybindingMap>(row.keybindings, {}),
     customPalettes: parseJson<CustomPalette[]>(row.customPalettes, []),
     connectionOverrides: parseJson<Record<string, ConnectionThemeOverride>>(row.connectionOverrides, {}),
+    columnRenderOverrides: parseJson<ColumnRenderOverrides>(row.columnRenderOverrides, {}),
   };
 }

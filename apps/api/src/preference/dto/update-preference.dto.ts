@@ -3,6 +3,7 @@ import {
   FONT_SIZES,
   GRID_DENSITIES,
   type ColorMode,
+  type ColumnRenderOverrides,
   type ConnectionThemeOverride,
   type CustomPalette,
   type FontSize,
@@ -13,8 +14,9 @@ import {
 
 const COLOR_MODES: ColorMode[] = ['light', 'dark', 'system'];
 
-// The structured JSON fields (keybindings/customPalettes/connectionOverrides) are deep-validated in
-// PreferenceService.update via ./preference-validation — class-validator only shape-gates them here.
+// The structured JSON fields (keybindings/customPalettes/connectionOverrides/columnRenderOverrides)
+// are deep-validated in PreferenceService.update via ./preference-validation — class-validator only
+// shape-gates them here.
 export class UpdatePreferenceDto implements Partial<UserPreferenceDto> {
   @IsOptional()
   @IsIn(COLOR_MODES)
@@ -44,4 +46,8 @@ export class UpdatePreferenceDto implements Partial<UserPreferenceDto> {
   @IsOptional()
   @IsObject()
   connectionOverrides?: Record<string, ConnectionThemeOverride>;
+
+  @IsOptional()
+  @IsObject()
+  columnRenderOverrides?: ColumnRenderOverrides;
 }

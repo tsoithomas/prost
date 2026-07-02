@@ -42,7 +42,7 @@ export class QueryController {
     @Body() dto: FetchQueryPageDto,
   ): Promise<FetchQueryPageResponse> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.queryService.fetchPage(id, dto.sql, dto.offset, dto.limit);
+    return this.queryService.fetchPage(id, dto.sql, dto.offset, dto.limit, dto.sortBy, dto.sortDir);
   }
 
   /** Opens a forward-only streaming cursor for a single SELECT (large editor results). */
@@ -54,7 +54,7 @@ export class QueryController {
     @Req() req: RequestWithCorrelationId,
   ): Promise<OpenCursorResponse> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.cursorSessions.open(id, user.userId, dto.sql, req.correlationId);
+    return this.cursorSessions.open(id, user.userId, dto.sql, req.correlationId, dto.sortBy, dto.sortDir);
   }
 
   /** Pulls the next forward block from an open cursor session. */
