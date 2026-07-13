@@ -199,6 +199,8 @@ export class SqliteDriver implements DbDriver {
   buildListAllColumns = sql.sqliteBuildListAllColumns;
   buildListColumns = (ref: TableRef) => sql.sqliteBuildListColumns(ref);
   buildListIndexes = (ref: TableRef) => sql.sqliteBuildListIndexes(ref);
+  buildListForeignKeys = (ref: TableRef) => sql.sqliteBuildListForeignKeys(ref);
+  buildListReferencingForeignKeys = (ref: TableRef) => sql.sqliteBuildListReferencingForeignKeys(ref);
   buildSchemaTableStats = (namespace: string) => sql.sqliteBuildSchemaTableStats(namespace);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.sqliteBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) => sql.sqliteBuildFilteredRowCount(ref, w, p);

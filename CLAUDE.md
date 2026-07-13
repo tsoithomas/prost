@@ -12,7 +12,7 @@ implementation plans + status live in [`docs/plans/`](docs/plans/README.md). Dur
 architectural rules (read before making non-trivial changes — a violation is a defect
 even if it works): [`docs/architecture-principles.md`](docs/architecture-principles.md).
 
-**Current status**: All phases 0–10 complete. Login (JWT via `/auth/login`, guarded `/app/*`
+**Current status**: All phases 0–23 complete. Login (JWT via `/auth/login`, guarded `/app/*`
 routes), connection CRUD + test (`/connections`), real schema tree
 (`/connections/:id/metadata`), paginated table rows via AG Grid's Infinite Row Model
 (`/connections/:id/tables/:schema/:table/rows`) with inline cell editing + row insert/delete,
@@ -50,6 +50,29 @@ endpoint + a gear opening `LlmEndpointsModal`) lives in a **collapsible right si
 (`RightSidebar`, toggled from `TopBar`/`aiStore`) on desktop and the bottom-nav "AI" tab on
 mobile. SQL blocks in replies have a "Load into editor" button (`workspaceStore.loadQuery`); no
 auto-execution. When a user has no endpoints, the panel shows an "add an endpoint" empty state.
+
+**Phases 11–22 (post-MVP wave 2)**: reliability & abuse hardening (throttling, pool idle/LRU
+lifecycle, an editability fail-safe) (11) and a frontend test foundation (Vitest + RTL,
+`renderWithProviders`) (12); saved snippets (`SnippetList`) (13); per-column row filtering — a
+`RowFilter` compiled by `grid/filter.ts` and driven by `FilterPanel` (14); multi-query tabs via a
+`workspaceStore` refactor (15); multi-statement scripts, transactions, and `EXPLAIN` (16);
+schema-aware Monaco autocomplete + SQL formatting (17); grid-editing depth — type-aware editors,
+staged bulk edits (`useEditBuffer`) with undo/redo and column pin/group (18); query-history
+management (edit/star/delete, search, export) (19); a command-palette global search
+(`CommandPalette`) (20); preferences & theming expansion, incl. per-column render overrides (21);
+and streaming cursor-based large result sets (`POST :id/query/cursor`, forward-only
+`DriverCursor`) (22).
+
+**Phase 23 (foreign keys + relational navigation)**: a capability-uniform `buildListForeignKeys` /
+`buildListReferencingForeignKeys` per driver (PG `pg_constraint`, MySQL
+`KEY_COLUMN_USAGE`/`REFERENTIAL_CONSTRAINTS`, SQLite `pragma_foreign_key_list`) surfaces
+`ForeignKeyMetadata` end-to-end. `MetadataService.getTableStructure` gains `foreignKeys` (a
+read-only Foreign-keys section in `TableStructurePanel`), and `GridResponse` carries `foreignKeys`
++ `referencingKeys` (best-effort, fetched only on the first page). In the grid, a cell context
+menu (right-click / long-press) offers "open referenced row" (forward) and "show referencing rows"
+(reverse); both compile to a parameterized Phase-14 `RowFilter` via `buildFkNavTargets` (in
+`grid/fkNavigation.ts`) and open the target as a table tab seeded through `workspaceStore`'s
+one-shot `presetFilter`. Read + navigate only — FK-constraint DDL and ER diagrams stay out of scope.
 
 ## Commands
 

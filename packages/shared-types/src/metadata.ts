@@ -32,9 +32,37 @@ export interface IndexMetadata {
   definition: string;
 }
 
+export interface ForeignKeyMetadata {
+  constraintName: string;
+  /** Local (referencing) columns, ordered. */
+  columns: string[];
+  /** Referenced schema, or `null` where the engine has no schema namespace (MySQL/SQLite). */
+  referencedSchema: string | null;
+  referencedTable: string;
+  /** Referenced columns, 1:1 with `columns`. */
+  referencedColumns: string[];
+  /** Referential action, e.g. `'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION' | 'SET DEFAULT'`. */
+  onDelete?: string;
+  onUpdate?: string;
+}
+
+/**
+ * A foreign key on *another* table that points *at* the current table — the inverse of
+ * `ForeignKeyMetadata`. `table`/`schema` identify the referencing (child) table; `columns` are its
+ * local FK columns, and `referencedColumns` are the current table's columns they point at. Powers
+ * "show referencing rows" navigation.
+ */
+export interface ReferencingKeyMetadata extends ForeignKeyMetadata {
+  /** The referencing (child) table that owns this FK. */
+  table: string;
+  /** The referencing table's schema, or `null` where the engine has no schema namespace. */
+  schema: string | null;
+}
+
 export interface TableStructure {
   columns: ColumnMetadata[];
   indexes: IndexMetadata[];
+  foreignKeys: ForeignKeyMetadata[];
 }
 
 /** One table's row in the per-schema overview page (phpMyAdmin-style). */

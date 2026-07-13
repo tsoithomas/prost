@@ -87,6 +87,24 @@ describe('workspaceStore — openTable search hand-off / closeTableTab', () => {
     expect(useWorkspaceStore.getState().tabs.find((t) => t.id === 'table:public.users')?.search).toBeUndefined();
   });
 
+  it('stashes a preset filter (FK navigation) on the tab and clearTabFilter removes it', () => {
+    const filter = { combinator: 'and' as const, conditions: [{ column: 'id', operator: 'eq' as const, value: 42 }] };
+    useWorkspaceStore.getState().openTable('public', 'users', 'rows', { filter });
+    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === 'table:public.users')?.presetFilter).toEqual(filter);
+
+    useWorkspaceStore.getState().clearTabFilter('table:public.users');
+    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === 'table:public.users')?.presetFilter).toBeUndefined();
+  });
+
+  it('applies a preset filter to an already-open table tab on re-open', () => {
+    useWorkspaceStore.getState().openTable('public', 'users');
+    const filter = { combinator: 'and' as const, conditions: [{ column: 'id', operator: 'eq' as const, value: 7 }] };
+    useWorkspaceStore.getState().openTable('public', 'users', 'rows', { filter });
+    const tab = useWorkspaceStore.getState().tabs.find((t) => t.id === 'table:public.users');
+    expect(tab?.presetFilter).toEqual(filter);
+    expect(useWorkspaceStore.getState().tabs.filter((t) => t.id === 'table:public.users')).toHaveLength(1);
+  });
+
   it('closeTableTab removes the matching table tab and is a no-op when absent', () => {
     useWorkspaceStore.getState().openTable('public', 'users');
     useWorkspaceStore.getState().closeTableTab('public', 'users');

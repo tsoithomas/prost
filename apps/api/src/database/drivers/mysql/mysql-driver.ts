@@ -374,6 +374,8 @@ export class MysqlDriver implements DbDriver {
   buildListAllColumns = sql.mysqlBuildListAllColumns;
   buildListColumns = (ref: TableRef) => sql.mysqlBuildListColumns(ref);
   buildListIndexes = (ref: TableRef) => sql.mysqlBuildListIndexes(ref);
+  buildListForeignKeys = (ref: TableRef) => sql.mysqlBuildListForeignKeys(ref);
+  buildListReferencingForeignKeys = (ref: TableRef) => sql.mysqlBuildListReferencingForeignKeys(ref);
   buildSchemaTableStats = (namespace: string) => sql.mysqlBuildSchemaTableStats(namespace);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.mysqlBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, whereClause: string, params: unknown[]) =>

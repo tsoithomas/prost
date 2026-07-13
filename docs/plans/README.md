@@ -36,7 +36,7 @@ passes **and** it violates none of the architecture principles.
 | [20](./phase-20-global-search.md) | Global search (command-palette overlay) | ✅ Complete |
 | [21](./phase-21-preferences-theming.md) | Preferences & theming expansion | ✅ Complete |
 | [22](./phase-22-streaming-results.md) | Streaming / cursor-based large result sets | ✅ Complete |
-| [23](./phase-23-foreign-keys.md) | Foreign-key metadata + relational navigation | 📋 Planned |
+| [23](./phase-23-foreign-keys.md) | Foreign-key metadata + relational navigation | ✅ Complete |
 | [24](./phase-24-schema-objects.md) | Broader schema-object browsing (views/functions/triggers/…) | 📋 Planned |
 | [25](./phase-25-data-export-import.md) | Data export & import (CSV/JSON) | 📋 Planned |
 | [26](./phase-26-query-plan-viz.md) | Query-plan visualization | 📋 Planned |
@@ -54,7 +54,8 @@ post-MVP wave** — two "strengthening" phases (11, 12) that harden already-buil
 remaining backlog (13–22); **all complete**, with the backlog now exhausted. Their sequencing lives
 in [`roadmap-phase-11-22.md`](./roadmap-phase-11-22.md). Phases 23–33 are the **third wave** — a
 fresh, backlog-independent set across three tracks (DBA depth, production safety/ops, AI depth),
-sequenced in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md); all **planned**.
+sequenced in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). Phase 23 (FK metadata +
+relational navigation) is **complete**; 24–33 remain **planned**.
 
 ## Sequencing notes
 

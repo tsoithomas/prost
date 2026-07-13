@@ -10,6 +10,8 @@ import {
   mysqlBuildInsertRow,
   mysqlBuildListAllColumns,
   mysqlBuildListColumns,
+  mysqlBuildListForeignKeys,
+  mysqlBuildListReferencingForeignKeys,
   mysqlBuildListIndexes,
   mysqlBuildListTables,
   mysqlBuildRowCountEstimate,
@@ -106,6 +108,28 @@ describe('mysql metadata builders', () => {
     expect(frag.sql).toContain('AS columns');
     expect(frag.sql).toContain('LOWER(INDEX_TYPE) AS method');
     expect(frag.params).toEqual(['app_db', 'orders']);
+  });
+
+  it('aggregates FK columns from KEY_COLUMN_USAGE joined to REFERENTIAL_CONSTRAINTS', () => {
+    const frag = mysqlBuildListForeignKeys({ namespace: 'app_db', name: 'orders' });
+    expect(frag.sql).toContain('information_schema.KEY_COLUMN_USAGE');
+    expect(frag.sql).toContain('information_schema.REFERENTIAL_CONSTRAINTS');
+    expect(frag.sql).toContain('REFERENCED_TABLE_NAME IS NOT NULL');
+    expect(frag.sql).toContain('kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ?');
+    expect(frag.sql).toContain('ORDER BY kcu.ORDINAL_POSITION');
+    for (const alias of ['constraint_name', 'columns', 'referenced_schema', 'referenced_table', 'referenced_columns', 'on_delete', 'on_update']) {
+      expect(frag.sql).toContain(alias);
+    }
+    expect(frag.params).toEqual(['app_db', 'orders']);
+  });
+
+  it('builds referencing-FK query filtered on REFERENCED_TABLE, exposing the child table', () => {
+    const frag = mysqlBuildListReferencingForeignKeys({ namespace: 'app_db', name: 'users' });
+    expect(frag.sql).toContain('kcu.REFERENCED_TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME = ?');
+    for (const alias of ['table_schema', 'table_name', 'columns', 'referenced_table', 'referenced_columns']) {
+      expect(frag.sql).toContain(alias);
+    }
+    expect(frag.params).toEqual(['app_db', 'users']);
   });
 });
 

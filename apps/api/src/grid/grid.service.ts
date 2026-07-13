@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -49,6 +50,8 @@ interface ResolvedTable {
 
 @Injectable()
 export class GridService {
+  private readonly logger = new Logger(GridService.name);
+
   constructor(
     private readonly pool: PoolManager,
     private readonly metadataService: MetadataService,
@@ -87,7 +90,22 @@ export class GridService {
       // Token-concurrency engines (PG) project a per-row version we hand back to the client.
       includeVersion: editable && driver.capabilities.concurrency === 'token',
     });
-    const { rows } = await this.pool.run(connectionId, frag);
+    // FK metadata is table-level (identical for every page) and only the client's first request
+    // — offset 0, used to learn the table shape — consumes it, so skip it on later pages to avoid
+    // re-running catalog queries per infinite-scroll block. It is also best-effort: a failure must
+    // not fail the whole grid, so it degrades to "no relational navigation" rather than no rows.
+    const wantForeignKeys = offset === 0;
+    const [{ rows }, foreignKeys, referencingKeys] = await Promise.all([
+      this.pool.run(connectionId, frag),
+      wantForeignKeys
+        ? this.bestEffort(`foreign keys for ${schema}.${table}`, () => this.metadataService.getTableForeignKeys(connectionId, schema, table))
+        : Promise.resolve(undefined),
+      wantForeignKeys
+        ? this.bestEffort(`referencing keys for ${schema}.${table}`, () =>
+            this.metadataService.getReferencingForeignKeys(connectionId, schema, table),
+          )
+        : Promise.resolve(undefined),
+    ]);
 
     const totalRows = hasFilter
       ? await this.getFilteredRowCount(connectionId, driver, schema, table, whereClause, filterParams)
@@ -101,7 +119,19 @@ export class GridService {
       sourceTable: `${schema}.${table}`,
       primaryKey,
       concurrency: editable ? driver.capabilities.concurrency : undefined,
+      foreignKeys,
+      referencingKeys,
     };
+  }
+
+  /** Runs a best-effort metadata load: logs and returns `undefined` on failure instead of throwing. */
+  private async bestEffort<T>(label: string, load: () => Promise<T[]>): Promise<T[] | undefined> {
+    try {
+      return await load();
+    } catch (err) {
+      this.logger.warn(`Failed to load ${label}: ${err instanceof Error ? err.message : String(err)}`);
+      return undefined;
+    }
   }
 
   /**

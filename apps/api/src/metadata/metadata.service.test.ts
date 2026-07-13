@@ -175,6 +175,103 @@ describe('MetadataService.getTableIndexes', () => {
   });
 });
 
+describe('MetadataService.getTableForeignKeys', () => {
+  it('binds schema and table as params and never interpolates them', async () => {
+    const run = vi.fn().mockResolvedValue(result([]));
+    const { service } = createService(run);
+
+    await service.getTableForeignKeys('conn-1', 'public', 'orders');
+
+    const [connectionId, frag] = run.mock.calls[0] as [string, { sql: string; params: unknown[] }];
+    expect(connectionId).toBe('conn-1');
+    expect(frag.sql).not.toContain("'public'");
+    expect(frag.sql).not.toContain("'orders'");
+    expect(frag.params).toEqual(['public', 'orders']);
+  });
+
+  it('maps snake_case rows to ForeignKeyMetadata, normalizing array/JSON columns and null actions', async () => {
+    const run = vi.fn().mockResolvedValue(
+      result([
+        {
+          constraint_name: 'orders_user_id_fkey',
+          columns: ['user_id'], // PG: real array
+          referenced_schema: 'public',
+          referenced_table: 'users',
+          referenced_columns: ['id'],
+          on_delete: 'CASCADE',
+          on_update: 'NO ACTION',
+        },
+        {
+          constraint_name: 'order_items_order_fk',
+          columns: '["order_id","item_id"]', // MySQL/SQLite: JSON-encoded string
+          referenced_schema: null,
+          referenced_table: 'orders',
+          referenced_columns: '["id","line"]',
+          on_delete: null,
+          on_update: null,
+        },
+      ]),
+    );
+    const { service } = createService(run);
+
+    const fks = await service.getTableForeignKeys('conn-1', 'public', 'orders');
+
+    expect(fks[0]).toEqual({
+      constraintName: 'orders_user_id_fkey',
+      columns: ['user_id'],
+      referencedSchema: 'public',
+      referencedTable: 'users',
+      referencedColumns: ['id'],
+      onDelete: 'CASCADE',
+      onUpdate: 'NO ACTION',
+    });
+    // Composite FK: JSON-encoded arrays parse to ordered column pairs; null actions → undefined.
+    expect(fks[1]).toEqual({
+      constraintName: 'order_items_order_fk',
+      columns: ['order_id', 'item_id'],
+      referencedSchema: null,
+      referencedTable: 'orders',
+      referencedColumns: ['id', 'line'],
+      onDelete: undefined,
+      onUpdate: undefined,
+    });
+  });
+});
+
+describe('MetadataService.getReferencingForeignKeys', () => {
+  it('maps rows to ReferencingKeyMetadata including the child table and schema', async () => {
+    const run = vi.fn().mockResolvedValue(
+      result([
+        {
+          constraint_name: 'orders_user_id_fkey',
+          table_schema: 'public',
+          table_name: 'orders',
+          columns: ['user_id'],
+          referenced_schema: 'public',
+          referenced_table: 'users',
+          referenced_columns: ['id'],
+          on_delete: 'CASCADE',
+          on_update: null,
+        },
+      ]),
+    );
+    const { service } = createService(run);
+
+    const refs = await service.getReferencingForeignKeys('conn-1', 'public', 'users');
+    expect(refs[0]).toEqual({
+      constraintName: 'orders_user_id_fkey',
+      table: 'orders',
+      schema: 'public',
+      columns: ['user_id'],
+      referencedSchema: 'public',
+      referencedTable: 'users',
+      referencedColumns: ['id'],
+      onDelete: 'CASCADE',
+      onUpdate: undefined,
+    });
+  });
+});
+
 describe('MetadataService.getSchemaOverview', () => {
   it('binds the schema, maps stat rows to TableOverview, and sums non-null totals', async () => {
     const run = vi.fn().mockResolvedValue(
@@ -228,12 +325,18 @@ describe('MetadataService.getSchemaOverview', () => {
 });
 
 describe('MetadataService.getTableStructure', () => {
-  it('calls getTableColumns and getTableIndexes exactly once each and merges their results', async () => {
+  it('calls getTableColumns, getTableIndexes and getTableForeignKeys once each and merges their results', async () => {
     const { service } = createService();
     const colsSpy = vi.spyOn(service, 'getTableColumns').mockResolvedValue([
       { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
     ]);
     const idxSpy = vi.spyOn(service, 'getTableIndexes').mockResolvedValue([]);
+    const fkSpy = vi.spyOn(service, 'getTableForeignKeys').mockResolvedValue([
+      {
+        constraintName: 'orders_user_id_fkey', columns: ['user_id'], referencedSchema: 'public',
+        referencedTable: 'users', referencedColumns: ['id'], onDelete: 'CASCADE', onUpdate: 'NO ACTION',
+      },
+    ]);
 
     const structure = await service.getTableStructure('conn-1', 'public', 'orders');
 
@@ -241,7 +344,10 @@ describe('MetadataService.getTableStructure', () => {
     expect(colsSpy).toHaveBeenCalledWith('conn-1', 'public', 'orders');
     expect(idxSpy).toHaveBeenCalledOnce();
     expect(idxSpy).toHaveBeenCalledWith('conn-1', 'public', 'orders');
+    expect(fkSpy).toHaveBeenCalledOnce();
+    expect(fkSpy).toHaveBeenCalledWith('conn-1', 'public', 'orders');
     expect(structure.columns).toHaveLength(1);
     expect(structure.indexes).toHaveLength(0);
+    expect(structure.foreignKeys).toHaveLength(1);
   });
 });

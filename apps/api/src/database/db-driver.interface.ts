@@ -62,6 +62,19 @@ export interface DbDriver {
   buildListColumns(ref: TableRef): SqlFragment;
   buildListIndexes(ref: TableRef): SqlFragment;
   /**
+   * Foreign-key constraints on `ref`, one row per constraint with columns aliased
+   * `constraint_name, columns, referenced_schema, referenced_table, referenced_columns,
+   * on_delete, on_update`. `columns`/`referenced_columns` are ordered arrays (PG native `text[]`,
+   * MySQL/SQLite a JSON-encoded array string — the service normalizes both).
+   */
+  buildListForeignKeys(ref: TableRef): SqlFragment;
+  /**
+   * The inverse of `buildListForeignKeys`: FKs on *other* tables that reference `ref`. Same aliased
+   * shape plus `table_name`/`table_schema` for the referencing (child) table. Powers "show
+   * referencing rows" navigation.
+   */
+  buildListReferencingForeignKeys(ref: TableRef): SqlFragment;
+  /**
    * Per-schema table stats for the overview page — one row per base table with columns aliased
    * `table_name, row_estimate, size_bytes, column_count, index_count, engine, collation, comment`.
    * `namespace` is bound (schema for PG, database for MySQL, ignored/`'main'` for SQLite).

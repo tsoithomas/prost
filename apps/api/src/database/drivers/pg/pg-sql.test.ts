@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pgPlaceholder, pgQuoteIdent, pgBuildListAllColumns, pgBuildListColumns, pgBuildListIndexes, pgBuildListTables } from './pg-sql';
+import { pgPlaceholder, pgQuoteIdent, pgBuildListAllColumns, pgBuildListColumns, pgBuildListIndexes, pgBuildListForeignKeys, pgBuildListReferencingForeignKeys, pgBuildListTables } from './pg-sql';
 import { pgBuildSelectRows, pgBuildInsertRow, pgBuildUpdateRow, pgBuildUpdateRowGuarded, pgBuildDeleteRow, pgBuildRowCountEstimate } from './pg-sql';
 import { pgBuildCreateTable, pgBuildAlterTable, pgBuildCreateIndex, pgBuildDropIndex, pgBuildResolveTypeNames } from './pg-sql';
 import { pgBuildSchemaTableStats, pgBuildDropTable, pgBuildTruncateTable } from './pg-sql';
@@ -39,6 +39,27 @@ describe('pg-sql metadata builders', () => {
   it('builds index query via pg_index bound to schema+table', () => {
     const { sql, params } = pgBuildListIndexes({ namespace: 'public', name: 'users' });
     expect(sql).toContain('pg_index');
+    expect(params).toEqual(['public', 'users']);
+  });
+  it('builds FK query via pg_constraint (contype f) with the documented aliases bound to schema+table', () => {
+    const { sql, params } = pgBuildListForeignKeys({ namespace: 'public', name: 'orders' });
+    expect(sql).toContain('pg_constraint');
+    expect(sql).toContain("con.contype = 'f'");
+    for (const alias of ['constraint_name', 'columns', 'referenced_schema', 'referenced_table', 'referenced_columns', 'on_delete', 'on_update']) {
+      expect(sql).toContain(alias);
+    }
+    expect(sql).toContain('$1');
+    expect(sql).toContain('$2');
+    expect(params).toEqual(['public', 'orders']);
+  });
+  it('builds referencing-FK query filtered on the referenced side, exposing the child table', () => {
+    const { sql, params } = pgBuildListReferencingForeignKeys({ namespace: 'public', name: 'users' });
+    expect(sql).toContain('pg_constraint');
+    expect(sql).toContain('rns.nspname = $1');
+    expect(sql).toContain('rcl.relname = $2');
+    for (const alias of ['table_name', 'table_schema', 'columns', 'referenced_table', 'referenced_columns']) {
+      expect(sql).toContain(alias);
+    }
     expect(params).toEqual(['public', 'users']);
   });
 });

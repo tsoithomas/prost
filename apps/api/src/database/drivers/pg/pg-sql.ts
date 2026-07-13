@@ -268,6 +268,79 @@ export function pgBuildListIndexes(ref: TableRef): SqlFragment {
   };
 }
 
+/** Maps `pg_constraint.confdeltype`/`confupdtype` single-char codes to referential-action names. */
+const PG_FK_ACTION = `CASE $CODE$
+           WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT' WHEN 'c' THEN 'CASCADE'
+           WHEN 'n' THEN 'SET NULL' WHEN 'd' THEN 'SET DEFAULT' END`;
+
+export function pgBuildListForeignKeys(ref: TableRef): SqlFragment {
+  return {
+    sql: `SELECT
+         con.conname AS constraint_name,
+         ARRAY(
+           SELECT a.attname
+           FROM   unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord)
+           JOIN   pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum
+           ORDER BY k.ord
+         )::text[] AS columns,
+         rns.nspname AS referenced_schema,
+         rcl.relname AS referenced_table,
+         ARRAY(
+           SELECT a.attname
+           FROM   unnest(con.confkey) WITH ORDINALITY AS k(attnum, ord)
+           JOIN   pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.attnum
+           ORDER BY k.ord
+         )::text[] AS referenced_columns,
+         ${PG_FK_ACTION.replace('$CODE$', 'con.confdeltype')} AS on_delete,
+         ${PG_FK_ACTION.replace('$CODE$', 'con.confupdtype')} AS on_update
+       FROM   pg_constraint con
+       JOIN   pg_class     cl  ON cl.oid  = con.conrelid
+       JOIN   pg_namespace n   ON n.oid   = cl.relnamespace
+       JOIN   pg_class     rcl ON rcl.oid = con.confrelid
+       JOIN   pg_namespace rns ON rns.oid = rcl.relnamespace
+       WHERE  con.contype = 'f'
+         AND  n.nspname = $1
+         AND  cl.relname = $2
+       ORDER BY con.conname`,
+    params: [ref.namespace, ref.name],
+  };
+}
+
+export function pgBuildListReferencingForeignKeys(ref: TableRef): SqlFragment {
+  return {
+    sql: `SELECT
+         con.conname AS constraint_name,
+         n.nspname AS table_schema,
+         cl.relname AS table_name,
+         ARRAY(
+           SELECT a.attname
+           FROM   unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord)
+           JOIN   pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum
+           ORDER BY k.ord
+         )::text[] AS columns,
+         rns.nspname AS referenced_schema,
+         rcl.relname AS referenced_table,
+         ARRAY(
+           SELECT a.attname
+           FROM   unnest(con.confkey) WITH ORDINALITY AS k(attnum, ord)
+           JOIN   pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.attnum
+           ORDER BY k.ord
+         )::text[] AS referenced_columns,
+         ${PG_FK_ACTION.replace('$CODE$', 'con.confdeltype')} AS on_delete,
+         ${PG_FK_ACTION.replace('$CODE$', 'con.confupdtype')} AS on_update
+       FROM   pg_constraint con
+       JOIN   pg_class     cl  ON cl.oid  = con.conrelid
+       JOIN   pg_namespace n   ON n.oid   = cl.relnamespace
+       JOIN   pg_class     rcl ON rcl.oid = con.confrelid
+       JOIN   pg_namespace rns ON rns.oid = rcl.relnamespace
+       WHERE  con.contype = 'f'
+         AND  rns.nspname = $1
+         AND  rcl.relname = $2
+       ORDER BY n.nspname, cl.relname, con.conname`,
+    params: [ref.namespace, ref.name],
+  };
+}
+
 /** Re-projects the row's `xmin` transaction id as the reserved `__version` token (text-cast for JSON safety). */
 const PG_VERSION_PROJECTION = `, xmin::text AS ${pgQuoteIdent(ROW_VERSION_KEY)}`;
 

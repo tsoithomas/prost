@@ -8,6 +8,8 @@ import {
   sqliteBuildInsertRow,
   sqliteBuildListAllColumns,
   sqliteBuildListColumns,
+  sqliteBuildListForeignKeys,
+  sqliteBuildListReferencingForeignKeys,
   sqliteBuildRowCountEstimate,
   sqliteBuildSchemaTableStats,
   sqliteBuildDropTable,
@@ -50,6 +52,30 @@ describe('sqlite metadata builders', () => {
     expect(frag.sql).toContain('(SELECT COUNT(*) FROM pragma_table_info(m.name) WHERE pk > 0) = 1');
     expect(frag.sql).toContain('AS is_auto_increment');
     expect(frag.params).toEqual([]);
+  });
+
+  it('lists FKs from pragma_foreign_key_list with a synthesized name and JSON column arrays', () => {
+    const frag = sqliteBuildListForeignKeys({ namespace: 'main', name: 'orders' });
+    expect(frag.sql).toContain('pragma_foreign_key_list(?)');
+    expect(frag.sql).toContain("'fk_' || ? || '_' || fk.id AS constraint_name");
+    expect(frag.sql).toContain('json_group_array(fk."from") AS columns');
+    // A NULL `to` (implicit-PK reference) resolves to the parent PK column at the matching position.
+    expect(frag.sql).toContain('COALESCE(fk."to"');
+    expect(frag.sql).toContain('WHERE ti.pk = fk.seq + 1');
+    expect(frag.sql).toContain('AS referenced_columns');
+    expect(frag.sql).toContain('NULL AS referenced_schema');
+    expect(frag.sql).not.toContain("'orders'");
+    expect(frag.params).toEqual(['orders', 'orders']);
+  });
+
+  it('scans sqlite_master for FKs referencing the table, exposing the child table', () => {
+    const frag = sqliteBuildListReferencingForeignKeys({ namespace: 'main', name: 'users' });
+    expect(frag.sql).toContain('FROM sqlite_master m');
+    expect(frag.sql).toContain('JOIN pragma_foreign_key_list(m.name) fk');
+    expect(frag.sql).toContain('fk."table" = ?');
+    expect(frag.sql).toContain('m.name AS table_name');
+    expect(frag.sql).not.toContain("'users'");
+    expect(frag.params).toEqual(['users']);
   });
 });
 

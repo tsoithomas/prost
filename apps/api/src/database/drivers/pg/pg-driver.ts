@@ -228,6 +228,8 @@ export class PgDriver implements DbDriver {
   buildListAllColumns = sql.pgBuildListAllColumns;
   buildListColumns = (ref: TableRef) => sql.pgBuildListColumns(ref);
   buildListIndexes = (ref: TableRef) => sql.pgBuildListIndexes(ref);
+  buildListForeignKeys = (ref: TableRef) => sql.pgBuildListForeignKeys(ref);
+  buildListReferencingForeignKeys = (ref: TableRef) => sql.pgBuildListReferencingForeignKeys(ref);
   buildSchemaTableStats = (namespace: string) => sql.pgBuildSchemaTableStats(namespace);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.pgBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) => sql.pgBuildFilteredRowCount(ref, w, p);

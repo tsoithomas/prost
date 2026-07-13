@@ -181,6 +181,37 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
             </div>
           )}
         </section>
+
+        <section>
+          <div className="mb-sm flex items-center justify-between">
+            <h2 className="text-xs font-medium uppercase tracking-wider text-text-faint">
+              Foreign keys ({data.foreignKeys.length})
+            </h2>
+          </div>
+          {data.foreignKeys.length === 0 ? (
+            <p className="text-sm italic text-text-faint">No foreign keys.</p>
+          ) : (
+            <div className="overflow-hidden rounded-md border border-border">
+              {data.foreignKeys.map((fk, i) => (
+                <div
+                  key={fk.constraintName}
+                  className={`flex flex-col gap-xs px-md py-sm ${i < data.foreignKeys.length - 1 ? 'border-b border-border' : ''}`}
+                >
+                  <div className="flex flex-wrap items-center gap-xs">
+                    <span className="flex-1 font-medium text-text">{fk.constraintName}</span>
+                    {fk.onDelete ? <Badge variant="neutral">ON DELETE {fk.onDelete}</Badge> : null}
+                    {fk.onUpdate ? <Badge variant="neutral">ON UPDATE {fk.onUpdate}</Badge> : null}
+                  </div>
+                  <span className="font-mono text-xs text-text-faint">
+                    {fk.columns.join(', ')} →{' '}
+                    {fk.referencedSchema ? `${fk.referencedSchema}.` : ''}
+                    {fk.referencedTable}({fk.referencedColumns.join(', ')})
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
     </>
   );

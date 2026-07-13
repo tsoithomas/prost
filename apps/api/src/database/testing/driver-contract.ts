@@ -93,6 +93,26 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
         'widgets_rank_idx',
         'btree',
       ));
+      // A child table with a FK to `widgets(id)` so `buildListForeignKeys` has a row on every
+      // engine. DDL FK creation is out of scope for the driver builders (read-only phase), so
+      // create it with a raw, engine-neutral statement. `INTEGER` and this FK syntax parse on
+      // PG, MySQL (InnoDB, referenced PK is indexed), and SQLite alike.
+      const qwidgets = supportsSchemas
+        ? `${driver.quoteIdent(schema)}.${driver.quoteIdent('widgets')}`
+        : driver.quoteIdent('widgets');
+      const qparts = supportsSchemas
+        ? `${driver.quoteIdent(schema)}.${driver.quoteIdent('widget_parts')}`
+        : driver.quoteIdent('widget_parts');
+      await driver.query(pool, {
+        sql: `CREATE TABLE ${qparts} (
+                ${driver.quoteIdent('id')} INTEGER PRIMARY KEY,
+                ${driver.quoteIdent('widget_id')} INTEGER,
+                CONSTRAINT widget_parts_widget_fk
+                  FOREIGN KEY (${driver.quoteIdent('widget_id')})
+                  REFERENCES ${qwidgets} (${driver.quoteIdent('id')}) ON DELETE CASCADE
+              )`,
+        params: [],
+      });
     });
 
     afterAll(async () => {
@@ -100,6 +120,8 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       if (supportsSchemas) {
         await driver.query(pool, { sql: `DROP SCHEMA IF EXISTS ${driver.quoteIdent(schema)} CASCADE`, params: [] }).catch(() => undefined);
       } else {
+        // Drop the FK child before its parent so engines that enforce FKs (MySQL InnoDB) allow it.
+        await driver.query(pool, { sql: `DROP TABLE IF EXISTS ${driver.quoteIdent('widget_parts')}`, params: [] }).catch(() => undefined);
         await driver.query(pool, { sql: `DROP TABLE IF EXISTS ${driver.quoteIdent(ref.name)}`, params: [] }).catch(() => undefined);
       }
       await driver.closePool(pool);
@@ -264,6 +286,35 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       // PG returns a real array; SQLite returns a JSON-encoded array string.
       const columns = typeof raw === 'string' ? (JSON.parse(raw) as unknown) : raw;
       expect(Array.isArray(columns)).toBe(true);
+    });
+
+    it('lists foreign keys with local/referenced columns and actions', async (ctx) => {
+      skipIfUnreachable(ctx);
+      // PG returns real arrays; MySQL/SQLite return JSON-encoded array strings.
+      const asArray = (raw: unknown): string[] =>
+        typeof raw === 'string' ? (JSON.parse(raw) as string[]) : (raw as string[]);
+      const fks = await driver.query(pool!, driver.buildListForeignKeys({ namespace: schema, name: 'widget_parts' }));
+      const row = fks.rows[0] as Record<string, unknown> | undefined;
+      expect(row).toBeDefined();
+      expect(asArray(row!.columns)).toEqual(['widget_id']);
+      expect(row!.referenced_table).toBe('widgets');
+      expect(asArray(row!.referenced_columns)).toEqual(['id']);
+      // Referential action naming is normalized to the SQL spelling by each builder.
+      expect(String(row!.on_delete).toUpperCase()).toBe('CASCADE');
+    });
+
+    it('lists referencing foreign keys (the inverse direction) with the child table', async (ctx) => {
+      skipIfUnreachable(ctx);
+      const asArray = (raw: unknown): string[] =>
+        typeof raw === 'string' ? (JSON.parse(raw) as string[]) : (raw as string[]);
+      const refs = await driver.query(pool!, driver.buildListReferencingForeignKeys(ref));
+      const row = refs.rows.find((r) => (r as Record<string, unknown>).table_name === 'widget_parts') as
+        | Record<string, unknown>
+        | undefined;
+      expect(row).toBeDefined();
+      expect(asArray(row!.columns)).toEqual(['widget_id']);
+      expect(row!.referenced_table).toBe('widgets');
+      expect(asArray(row!.referenced_columns)).toEqual(['id']);
     });
 
     // Reusable column metadata for the `widgets` table (id PK, nullable name).

@@ -1,4 +1,4 @@
-import type { ColumnMetadata } from './metadata.js';
+import type { ColumnMetadata, ForeignKeyMetadata, ReferencingKeyMetadata } from './metadata.js';
 
 /**
  * How the client must build the optimistic-concurrency guard when writing an edited row back:
@@ -21,6 +21,10 @@ export interface GridResponse {
   primaryKey?: string[];
   /** How the client must guard writes for this result set (set on editable table reads). */
   concurrency?: RowConcurrency;
+  /** FK constraints on the source table (set on table reads) — enables "open referenced row". */
+  foreignKeys?: ForeignKeyMetadata[];
+  /** FKs on other tables pointing at the source table — enables "show referencing rows". */
+  referencingKeys?: ReferencingKeyMetadata[];
 }
 
 /** One column's new value within a staged row edit. */

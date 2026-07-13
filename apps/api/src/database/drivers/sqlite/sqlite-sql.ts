@@ -207,6 +207,57 @@ export function sqliteBuildListIndexes(ref: TableRef): SqlFragment {
   };
 }
 
+/**
+ * `columns`/`referenced_columns` come back as JSON-encoded arrays (SQLite has no array type).
+ * SQLite FKs are unnamed, so `constraint_name` is synthesized as `fk_<table>_<id>`. `referenced_schema`
+ * is always null (single database). A FK declared without an explicit referenced column
+ * (`REFERENCES parent`) has a NULL `to` in the pragma — it targets the parent's primary key, so we
+ * resolve it to the parent PK column at the matching position (`ti.pk = fk.seq + 1`).
+ */
+export function sqliteBuildListForeignKeys(ref: TableRef): SqlFragment {
+  return {
+    sql: `SELECT 'fk_' || ? || '_' || fk.id AS constraint_name,
+           json_group_array(fk."from") AS columns,
+           NULL AS referenced_schema,
+           fk."table" AS referenced_table,
+           json_group_array(COALESCE(fk."to",
+             (SELECT ti.name FROM pragma_table_info(fk."table") ti WHERE ti.pk = fk.seq + 1)
+           )) AS referenced_columns,
+           fk.on_delete AS on_delete,
+           fk.on_update AS on_update
+         FROM pragma_foreign_key_list(?) fk
+         GROUP BY fk.id, fk."table", fk.on_delete, fk.on_update
+         ORDER BY fk.id`,
+    params: [ref.name, ref.name],
+  };
+}
+
+/**
+ * Inverse of `sqliteBuildListForeignKeys`: scans every table's `pragma_foreign_key_list` for FKs
+ * that reference `ref`. `table_schema` is always null (single database).
+ */
+export function sqliteBuildListReferencingForeignKeys(ref: TableRef): SqlFragment {
+  return {
+    sql: `SELECT 'fk_' || m.name || '_' || fk.id AS constraint_name,
+           NULL AS table_schema,
+           m.name AS table_name,
+           json_group_array(fk."from") AS columns,
+           NULL AS referenced_schema,
+           fk."table" AS referenced_table,
+           json_group_array(COALESCE(fk."to",
+             (SELECT ti.name FROM pragma_table_info(fk."table") ti WHERE ti.pk = fk.seq + 1)
+           )) AS referenced_columns,
+           fk.on_delete AS on_delete,
+           fk.on_update AS on_update
+         FROM sqlite_master m
+         JOIN pragma_foreign_key_list(m.name) fk
+         WHERE m.type = 'table' AND fk."table" = ?
+         GROUP BY m.name, fk.id, fk."table", fk.on_delete, fk.on_update
+         ORDER BY m.name, fk.id`,
+    params: [ref.name],
+  };
+}
+
 export function sqliteBuildSelectRows(ref: TableRef, opts: SelectRowsOptions): SqlFragment {
   let sql = `SELECT * FROM ${qualify(ref)}`;
   if (opts.whereClause) sql += ` ${opts.whereClause}`;

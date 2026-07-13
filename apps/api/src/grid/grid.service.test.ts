@@ -33,6 +33,8 @@ function createService(
 ) {
   const metadataService = {
     getTableColumns: vi.fn().mockResolvedValue(columns),
+    getTableForeignKeys: vi.fn().mockResolvedValue([]),
+    getReferencingForeignKeys: vi.fn().mockResolvedValue([]),
   } as unknown as MetadataService;
 
   const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);

@@ -335,6 +335,66 @@ export function mysqlBuildListIndexes(ref: TableRef): SqlFragment {
   };
 }
 
+/** `columns`/`referenced_columns` come back as JSON-encoded arrays; consumers parse them. */
+export function mysqlBuildListForeignKeys(ref: TableRef): SqlFragment {
+  return {
+    sql: `SELECT ordered.CONSTRAINT_NAME AS constraint_name,
+           JSON_ARRAYAGG(ordered.COLUMN_NAME) AS columns,
+           ordered.REFERENCED_TABLE_SCHEMA AS referenced_schema,
+           ordered.REFERENCED_TABLE_NAME AS referenced_table,
+           JSON_ARRAYAGG(ordered.REFERENCED_COLUMN_NAME) AS referenced_columns,
+           ordered.DELETE_RULE AS on_delete,
+           ordered.UPDATE_RULE AS on_update
+         FROM (
+           SELECT kcu.CONSTRAINT_NAME, kcu.COLUMN_NAME,
+                  kcu.REFERENCED_TABLE_SCHEMA, kcu.REFERENCED_TABLE_NAME,
+                  kcu.REFERENCED_COLUMN_NAME, rc.DELETE_RULE, rc.UPDATE_RULE
+           FROM information_schema.KEY_COLUMN_USAGE kcu
+           JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
+             ON rc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA
+             AND rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+           WHERE kcu.TABLE_SCHEMA = ? AND kcu.TABLE_NAME = ?
+             AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+           ORDER BY kcu.ORDINAL_POSITION
+         ) AS ordered
+         GROUP BY ordered.CONSTRAINT_NAME, ordered.REFERENCED_TABLE_SCHEMA,
+                  ordered.REFERENCED_TABLE_NAME, ordered.DELETE_RULE, ordered.UPDATE_RULE
+         ORDER BY ordered.CONSTRAINT_NAME`,
+    params: [ref.namespace, ref.name],
+  };
+}
+
+/** Inverse of `mysqlBuildListForeignKeys`: FKs on other tables referencing `ref`. */
+export function mysqlBuildListReferencingForeignKeys(ref: TableRef): SqlFragment {
+  return {
+    sql: `SELECT ordered.CONSTRAINT_NAME AS constraint_name,
+           ordered.TABLE_SCHEMA AS table_schema,
+           ordered.TABLE_NAME AS table_name,
+           JSON_ARRAYAGG(ordered.COLUMN_NAME) AS columns,
+           ordered.REFERENCED_TABLE_SCHEMA AS referenced_schema,
+           ordered.REFERENCED_TABLE_NAME AS referenced_table,
+           JSON_ARRAYAGG(ordered.REFERENCED_COLUMN_NAME) AS referenced_columns,
+           ordered.DELETE_RULE AS on_delete,
+           ordered.UPDATE_RULE AS on_update
+         FROM (
+           SELECT kcu.CONSTRAINT_NAME, kcu.TABLE_SCHEMA, kcu.TABLE_NAME, kcu.COLUMN_NAME,
+                  kcu.REFERENCED_TABLE_SCHEMA, kcu.REFERENCED_TABLE_NAME,
+                  kcu.REFERENCED_COLUMN_NAME, rc.DELETE_RULE, rc.UPDATE_RULE
+           FROM information_schema.KEY_COLUMN_USAGE kcu
+           JOIN information_schema.REFERENTIAL_CONSTRAINTS rc
+             ON rc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA
+             AND rc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+           WHERE kcu.REFERENCED_TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME = ?
+           ORDER BY kcu.ORDINAL_POSITION
+         ) AS ordered
+         GROUP BY ordered.CONSTRAINT_NAME, ordered.TABLE_SCHEMA, ordered.TABLE_NAME,
+                  ordered.REFERENCED_TABLE_SCHEMA, ordered.REFERENCED_TABLE_NAME,
+                  ordered.DELETE_RULE, ordered.UPDATE_RULE
+         ORDER BY ordered.TABLE_NAME, ordered.CONSTRAINT_NAME`,
+    params: [ref.namespace, ref.name],
+  };
+}
+
 export function mysqlBuildSelectRows(ref: TableRef, opts: SelectRowsOptions): SqlFragment {
   let sql = `SELECT * FROM ${qualify(ref)}`;
   if (opts.whereClause) sql += ` ${opts.whereClause}`;

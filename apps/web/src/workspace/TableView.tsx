@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { AgGridReact } from 'ag-grid-react';
 import type {
   CellClickedEvent,
+  CellContextMenuEvent,
   CellValueChangedEvent,
   GetRowIdParams,
   GridApi,
@@ -21,6 +22,8 @@ import { useActiveConnection } from '../api/connections';
 import { useBulkUpdate, useDeleteRow, useInsertRow } from '../api/grid';
 import { useUpdatePreferences } from '../api/preferences';
 import { buildColumnDefs, type HeaderContextMenuArgs } from '../grid/columnDefs';
+import { CellContextMenu, type CellMenuItem, type CellMenuState } from '../grid/CellContextMenu';
+import { buildFkNavTargets } from '../grid/fkNavigation';
 import { ColumnRenderMenu } from '../grid/ColumnRenderMenu';
 import { JsonCellPopup } from '../grid/JsonCellPopup';
 import { useEditBuffer } from '../grid/useEditBuffer';
@@ -88,7 +91,11 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const [undoStack, setUndoStack] = useState<UndoRow[][]>([]);
   const [redoStack, setRedoStack] = useState<UndoRow[][]>([]);
   const [renderMenu, setRenderMenu] = useState<HeaderContextMenuArgs | null>(null);
+  const [cellMenu, setCellMenu] = useState<CellMenuState | null>(null);
   const [jsonCell, setJsonCell] = useState<{ column: string; value: unknown } | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressFired = useRef(false);
+  const openTable = useWorkspaceStore((state) => state.openTable);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const editBuffer = useEditBuffer();
@@ -152,6 +159,16 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
     requestAnimationFrame(() => searchInputRef.current?.focus());
   }, [searchHandoff, tabId, clearTabSearch, applySearch]);
 
+  // One-shot hand-off from FK relational navigation: apply the preset filter and reveal the panel.
+  const presetFilter = useWorkspaceStore((state) => state.tabs.find((tab) => tab.id === tabId)?.presetFilter);
+  const clearTabFilter = useWorkspaceStore((state) => state.clearTabFilter);
+  useEffect(() => {
+    if (!presetFilter) return;
+    clearTabFilter(tabId);
+    setActiveFilter(presetFilter);
+    setFilterOpen(true);
+  }, [presetFilter, tabId, clearTabFilter]);
+
   const rowKeyOf = useCallback(
     (row: Record<string, unknown>) => primaryKey.map((c) => String(row[c])).join('::'),
     [primaryKey],
@@ -210,6 +227,86 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
       setFilterOpen(true);
     },
     [renderMenu, columnsQuery.data],
+  );
+
+  // Builds the FK relational-navigation actions for a cell (forward "open referenced row" + reverse
+  // "show referencing rows"); each compiles to a parameterized `and`/`eq` RowFilter — the same path
+  // Phase 14 validates — and opens the target table as a tab seeded with that filter.
+  const buildCellMenuItems = useCallback(
+    (colId: string, row: Record<string, unknown>): CellMenuItem[] =>
+      buildFkNavTargets(
+        colId,
+        row,
+        columnsQuery.data?.foreignKeys ?? [],
+        columnsQuery.data?.referencingKeys ?? [],
+        schema,
+      ).map((target) => ({
+        direction: target.direction,
+        label: target.label,
+        onSelect: () => openTable(target.schema, target.table, 'rows', { filter: target.filter }),
+      })),
+    [columnsQuery.data, openTable, schema],
+  );
+
+  const onCellContextMenu = useCallback(
+    (event: CellContextMenuEvent) => {
+      const row = event.data as Record<string, unknown> | undefined;
+      if (!row) return;
+      const items = buildCellMenuItems(event.column.getColId(), row);
+      if (items.length === 0) return; // no FK actions → let the native menu show
+      const native = event.event as MouseEvent | undefined;
+      native?.preventDefault();
+      setCellMenu({ x: native?.clientX ?? 0, y: native?.clientY ?? 0, items });
+    },
+    [buildCellMenuItems],
+  );
+
+  // Mobile parity (principle §9): a long-press on an FK cell opens the same menu.
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }, []);
+
+  const onTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      const touch = e.touches[0];
+      if (!touch) return;
+      const target = e.target as HTMLElement;
+      const cell = target.closest<HTMLElement>('.ag-cell');
+      const rowEl = target.closest<HTMLElement>('.ag-row');
+      const colId = cell?.getAttribute('col-id');
+      const rowIndex = rowEl ? Number(rowEl.getAttribute('row-index')) : NaN;
+      // A pinned row (the pending-insert top row) reuses row-index 0 in its own container, so an
+      // index lookup would resolve the wrong body row — it isn't a navigable source anyway, skip it.
+      if (!colId || Number.isNaN(rowIndex) || rowEl?.getAttribute('row-pinned')) return;
+      const { clientX, clientY } = touch;
+      cancelLongPress();
+      longPressTimer.current = setTimeout(() => {
+        const data = gridApiRef.current?.getDisplayedRowAtIndex(rowIndex)?.data as Record<string, unknown> | undefined;
+        if (!data) return;
+        const items = buildCellMenuItems(colId, data);
+        if (items.length > 0) {
+          longPressFired.current = true;
+          setCellMenu({ x: clientX, y: clientY, items });
+        }
+      }, 500);
+    },
+    [buildCellMenuItems, cancelLongPress],
+  );
+
+  // On release after a long-press that opened the menu, suppress the browser-synthesized click —
+  // otherwise it would fire on the just-opened menu (closing it or triggering its first item).
+  const onTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      cancelLongPress();
+      if (longPressFired.current) {
+        e.preventDefault();
+        longPressFired.current = false;
+      }
+    },
+    [cancelLongPress],
   );
 
   const getRowId = useMemo(() => {
@@ -587,7 +684,14 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         ) : columnsQuery.isError ? (
           <div className="flex h-full items-center justify-center text-sm text-danger">Failed to load table.</div>
         ) : (
-          <div className="h-full" onKeyDown={onGridKeyDown}>
+          <div
+            className="h-full"
+            onKeyDown={onGridKeyDown}
+            onTouchStart={onTouchStart}
+            onTouchEnd={onTouchEnd}
+            onTouchMove={cancelLongPress}
+            onTouchCancel={cancelLongPress}
+          >
             <AgGridReact
               key={`${connectionId}.${schema}.${table}`}
               theme={prostGridTheme}
@@ -603,6 +707,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
               onSelectionChanged={onSelectionChanged}
               onCellValueChanged={onCellValueChanged}
               onCellClicked={onCellClicked}
+              onCellContextMenu={onCellContextMenu}
             />
           </div>
         )}
@@ -614,6 +719,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         onFilterColumn={handleFilterColumn}
         onClose={() => setRenderMenu(null)}
       />
+      <CellContextMenu state={cellMenu} onClose={() => setCellMenu(null)} />
       <JsonCellPopup cell={jsonCell} onClose={() => setJsonCell(null)} />
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-sm p-md sm:items-end">
         {toasts.map((toast) => (

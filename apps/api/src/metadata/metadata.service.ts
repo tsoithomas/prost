@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import type {
   ColumnMetadata,
+  ForeignKeyMetadata,
   IndexMetadata,
+  ReferencingKeyMetadata,
   SchemaMetadata,
   SchemaOverview,
   TableMetadata,
@@ -61,6 +63,21 @@ interface IndexRow {
   method: string;
   definition: string;
   columns: string[];
+}
+
+interface ForeignKeyRow {
+  constraint_name: string;
+  columns: string[] | string;
+  referenced_schema: string | null;
+  referenced_table: string;
+  referenced_columns: string[] | string;
+  on_delete: string | null;
+  on_update: string | null;
+}
+
+interface ReferencingKeyRow extends ForeignKeyRow {
+  table_schema: string | null;
+  table_name: string;
 }
 
 interface TableStatsRow {
@@ -142,12 +159,51 @@ export class MetadataService {
     }));
   }
 
+  async getTableForeignKeys(connectionId: string, schema: string, table: string): Promise<ForeignKeyMetadata[]> {
+    const driver = await this.pool.driverFor(connectionId);
+    const { rows } = (await this.pool.run(
+      connectionId,
+      driver.buildListForeignKeys({ namespace: schema, name: table }),
+    )) as unknown as { rows: ForeignKeyRow[] };
+
+    return rows.map((row) => ({
+      constraintName: row.constraint_name,
+      columns: toColumnArray(row.columns),
+      referencedSchema: row.referenced_schema == null ? null : String(row.referenced_schema),
+      referencedTable: row.referenced_table,
+      referencedColumns: toColumnArray(row.referenced_columns),
+      onDelete: row.on_delete == null ? undefined : String(row.on_delete),
+      onUpdate: row.on_update == null ? undefined : String(row.on_update),
+    }));
+  }
+
+  async getReferencingForeignKeys(connectionId: string, schema: string, table: string): Promise<ReferencingKeyMetadata[]> {
+    const driver = await this.pool.driverFor(connectionId);
+    const { rows } = (await this.pool.run(
+      connectionId,
+      driver.buildListReferencingForeignKeys({ namespace: schema, name: table }),
+    )) as unknown as { rows: ReferencingKeyRow[] };
+
+    return rows.map((row) => ({
+      constraintName: row.constraint_name,
+      table: row.table_name,
+      schema: row.table_schema == null ? null : String(row.table_schema),
+      columns: toColumnArray(row.columns),
+      referencedSchema: row.referenced_schema == null ? null : String(row.referenced_schema),
+      referencedTable: row.referenced_table,
+      referencedColumns: toColumnArray(row.referenced_columns),
+      onDelete: row.on_delete == null ? undefined : String(row.on_delete),
+      onUpdate: row.on_update == null ? undefined : String(row.on_update),
+    }));
+  }
+
   async getTableStructure(connectionId: string, schema: string, table: string): Promise<TableStructure> {
-    const [columns, indexes] = await Promise.all([
+    const [columns, indexes, foreignKeys] = await Promise.all([
       this.getTableColumns(connectionId, schema, table),
       this.getTableIndexes(connectionId, schema, table),
+      this.getTableForeignKeys(connectionId, schema, table),
     ]);
-    return { columns, indexes };
+    return { columns, indexes, foreignKeys };
   }
 
   async getSchemaOverview(connectionId: string, schema: string): Promise<SchemaOverview> {
