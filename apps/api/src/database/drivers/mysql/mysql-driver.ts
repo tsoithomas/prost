@@ -12,6 +12,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  SchemaObjectKind,
 } from '@prost/shared-types';
 import {
   createConnection,
@@ -187,6 +188,10 @@ export class MysqlDriver implements DbDriver {
       indexMethods: ['btree'],
       supportsAutoIncrement: true,
       supportsUsingExpression: false,
+    },
+    objects: {
+      views: true, materializedViews: false, sequences: false,
+      functions: true, procedures: true, triggers: true, enums: false,
     },
   };
 
@@ -376,6 +381,8 @@ export class MysqlDriver implements DbDriver {
   buildListIndexes = (ref: TableRef) => sql.mysqlBuildListIndexes(ref);
   buildListForeignKeys = (ref: TableRef) => sql.mysqlBuildListForeignKeys(ref);
   buildListReferencingForeignKeys = (ref: TableRef) => sql.mysqlBuildListReferencingForeignKeys(ref);
+  buildListAllSchemaObjects = () => sql.mysqlBuildListAllSchemaObjects();
+  buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.mysqlBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.mysqlBuildSchemaTableStats(namespace);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.mysqlBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, whereClause: string, params: unknown[]) =>

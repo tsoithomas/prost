@@ -22,6 +22,16 @@ export interface DbEngineDescriptor {
     supportsAutoIncrement: boolean;
     supportsUsingExpression: boolean;
   };
+  /** Which non-table schema-object kinds this engine exposes for read-only browsing (Phase 24). */
+  objects: {
+    views: boolean;
+    materializedViews: boolean;
+    sequences: boolean;
+    functions: boolean;
+    procedures: boolean;
+    triggers: boolean;
+    enums: boolean;
+  };
 }
 
 /**

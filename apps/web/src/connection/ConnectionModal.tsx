@@ -75,6 +75,10 @@ const fallbackNetworkEngine: DbEngineDescriptor = {
     supportsAutoIncrement: false,
     supportsUsingExpression: true,
   },
+  objects: {
+    views: false, materializedViews: false, sequences: false,
+    functions: false, procedures: false, triggers: false, enums: false,
+  },
 };
 
 function toFormState(connection: ConnectionDto): ConnectionFormState {

@@ -10,6 +10,8 @@ import {
   sqliteBuildListColumns,
   sqliteBuildListForeignKeys,
   sqliteBuildListReferencingForeignKeys,
+  sqliteBuildListAllSchemaObjects,
+  sqliteBuildObjectDefinition,
   sqliteBuildRowCountEstimate,
   sqliteBuildSchemaTableStats,
   sqliteBuildDropTable,
@@ -76,6 +78,24 @@ describe('sqlite metadata builders', () => {
     expect(frag.sql).toContain('m.name AS table_name');
     expect(frag.sql).not.toContain("'users'");
     expect(frag.params).toEqual(['users']);
+  });
+
+  it('lists only views and triggers from sqlite_master with a main schema', () => {
+    const frag = sqliteBuildListAllSchemaObjects();
+    expect(frag.sql).toContain('FROM sqlite_master');
+    expect(frag.sql).toContain("type IN ('view', 'trigger')");
+    expect(frag.sql).toContain("'main' AS schema");
+    expect(frag.sql).toContain("name NOT LIKE 'sqlite_%'");
+    expect(frag.params).toEqual([]);
+  });
+
+  it('binds the object kind and name for a view/trigger definition and rejects unsupported kinds', () => {
+    const frag = sqliteBuildObjectDefinition('view', { namespace: 'main', name: 'v' });
+    expect(frag.sql).toContain('SELECT sql AS definition');
+    expect(frag.sql).toContain('type = ? AND name = ?');
+    expect(frag.params).toEqual(['view', 'v']);
+    expect(sqliteBuildObjectDefinition('trigger', { namespace: 'main', name: 't' }).params).toEqual(['trigger', 't']);
+    expect(() => sqliteBuildObjectDefinition('function', { namespace: 'main', name: 'f' })).toThrow(/does not support/);
   });
 });
 

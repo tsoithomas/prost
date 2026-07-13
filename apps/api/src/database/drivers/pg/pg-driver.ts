@@ -8,6 +8,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  SchemaObjectKind,
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
@@ -64,6 +65,10 @@ export class PgDriver implements DbDriver {
       indexMethods: ['btree', 'hash', 'gin', 'gist', 'brin'],
       supportsAutoIncrement: true,
       supportsUsingExpression: true,
+    },
+    objects: {
+      views: true, materializedViews: true, sequences: true,
+      functions: true, procedures: true, triggers: true, enums: true,
     },
   };
   readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: true, parserDialect: 'postgresql', concurrency: 'token', supportsCursors: true };
@@ -230,6 +235,8 @@ export class PgDriver implements DbDriver {
   buildListIndexes = (ref: TableRef) => sql.pgBuildListIndexes(ref);
   buildListForeignKeys = (ref: TableRef) => sql.pgBuildListForeignKeys(ref);
   buildListReferencingForeignKeys = (ref: TableRef) => sql.pgBuildListReferencingForeignKeys(ref);
+  buildListAllSchemaObjects = () => sql.pgBuildListAllSchemaObjects();
+  buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.pgBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.pgBuildSchemaTableStats(namespace);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.pgBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) => sql.pgBuildFilteredRowCount(ref, w, p);

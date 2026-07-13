@@ -16,7 +16,7 @@ function createService(run = vi.fn()) {
 }
 
 describe('MetadataService.getSchemas', () => {
-  it('runs two queries in parallel and returns tables with columns', async () => {
+  it('runs three queries in parallel and returns tables with columns + objects', async () => {
     const run = vi.fn()
       .mockResolvedValueOnce(result([
         { table_schema: 'public', table_name: 'users' },
@@ -35,14 +35,22 @@ describe('MetadataService.getSchemas', () => {
           table_schema: 'public', table_name: 'orders', column_name: 'id', data_type: 'integer',
           is_nullable: 'NO', is_primary_key: true, default_value: 0, is_auto_increment: 0,
         },
+      ]))
+      .mockResolvedValueOnce(result([
+        { kind: 'view', schema: 'public', name: 'active_users', comment: 'live users' },
+        { kind: 'function', schema: 'public', name: 'add', comment: null },
       ]));
     const { service } = createService(run);
 
     const schemas = await service.getSchemas('conn-1');
 
-    expect(run).toHaveBeenCalledTimes(2);
+    expect(run).toHaveBeenCalledTimes(3);
     expect(schemas).toHaveLength(1);
     expect(schemas[0]!.name).toBe('public');
+    expect(schemas[0]!.objects).toEqual([
+      { kind: 'view', schema: 'public', name: 'active_users', comment: 'live users' },
+      { kind: 'function', schema: 'public', name: 'add' },
+    ]);
 
     const [usersTable, ordersTable] = schemas[0]!.tables;
     expect(usersTable!.name).toBe('users');
@@ -79,11 +87,70 @@ describe('MetadataService.getSchemas', () => {
   it('returns empty columns array for tables with no matching column rows', async () => {
     const run = vi.fn()
       .mockResolvedValueOnce(result([{ table_schema: 'public', table_name: 'empty_table' }]))
+      .mockResolvedValueOnce(result([]))
       .mockResolvedValueOnce(result([]));
     const { service } = createService(run);
 
     const schemas = await service.getSchemas('conn-1');
     expect(schemas[0]!.tables[0]!.columns).toEqual([]);
+    expect(schemas[0]!.objects).toEqual([]);
+  });
+
+  it('surfaces a schema that holds only objects (no tables)', async () => {
+    const run = vi.fn()
+      .mockResolvedValueOnce(result([]))
+      .mockResolvedValueOnce(result([]))
+      .mockResolvedValueOnce(result([{ kind: 'view', schema: 'reporting', name: 'daily', comment: null }]));
+    const { service } = createService(run);
+
+    const schemas = await service.getSchemas('conn-1');
+    expect(schemas.map((s) => s.name)).toContain('reporting');
+    expect(schemas.find((s) => s.name === 'reporting')!.objects).toHaveLength(1);
+  });
+});
+
+describe('MetadataService.getObjectDefinition', () => {
+  it('maps definition + normalizes a real-object extra (PG json), dropping nulls', async () => {
+    const run = vi.fn().mockResolvedValue(
+      result([{ definition: 'CREATE VIEW …', extra: { language: 'sql', returns: null } }]),
+    );
+    const { service } = createService(run);
+
+    const detail = await service.getObjectDefinition('conn-1', 'public', 'function', 'add');
+    expect(detail).toEqual({
+      kind: 'function',
+      schema: 'public',
+      name: 'add',
+      definition: 'CREATE VIEW …',
+      extra: { language: 'sql' },
+    });
+  });
+
+  it('parses a JSON-string extra (MySQL/SQLite) into a flat record', async () => {
+    const run = vi.fn().mockResolvedValue(
+      result([{ definition: 'BEGIN … END', extra: '{"timing":"BEFORE","event":"INSERT"}' }]),
+    );
+    const { service } = createService(run);
+
+    const detail = await service.getObjectDefinition('conn-1', 'app', 'trigger', 'trg');
+    expect(detail.extra).toEqual({ timing: 'BEFORE', event: 'INSERT' });
+  });
+
+  it('binds schema and object name as params, never interpolating them', async () => {
+    const run = vi.fn().mockResolvedValue(result([{ definition: 'x', extra: null }]));
+    const { service } = createService(run);
+
+    await service.getObjectDefinition('conn-1', 'public', 'view', 'v');
+    const [, frag] = run.mock.calls[0] as [string, { sql: string; params: unknown[] }];
+    expect(frag.params).toEqual(['public', 'v']);
+  });
+
+  it('omits definition/extra when the object is not found', async () => {
+    const run = vi.fn().mockResolvedValue(result([]));
+    const { service } = createService(run);
+
+    const detail = await service.getObjectDefinition('conn-1', 'public', 'view', 'missing');
+    expect(detail).toEqual({ kind: 'view', schema: 'public', name: 'missing' });
   });
 });
 

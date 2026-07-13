@@ -12,10 +12,15 @@ const schemas: SchemaMetadata[] = [
       { schema: 'public', name: 'orders', columns: [] },
       { schema: 'public', name: 'products', columns: [] },
     ],
+    objects: [
+      { kind: 'view', schema: 'public', name: 'active_users' },
+      { kind: 'function', schema: 'public', name: 'total_sales' },
+    ],
   },
   {
     name: 'analytics',
     tables: [{ schema: 'analytics', name: 'events', columns: [] }],
+    objects: [],
   },
 ];
 
@@ -26,6 +31,7 @@ function renderTree(props: Partial<React.ComponentProps<typeof SchemaTree>> = {}
       selectedTable={null}
       onSelectTable={vi.fn()}
       onOpenStructure={vi.fn()}
+      onSelectObject={vi.fn()}
       onNewTable={vi.fn()}
       onOpenOverview={vi.fn()}
       {...props}
@@ -81,5 +87,36 @@ describe('SchemaTree filter', () => {
     await userEvent.type(screen.getByLabelText('Filter tables'), 'event');
     expect(screen.getByText('events')).toBeInTheDocument();
     expect(screen.queryByText('users')).not.toBeInTheDocument();
+  });
+});
+
+describe('SchemaTree object groups', () => {
+  it('renders per-kind groups only for kinds present, hiding empty ones', () => {
+    renderTree();
+    expect(screen.getByText('Views (1)')).toBeInTheDocument();
+    expect(screen.getByText('Functions (1)')).toBeInTheDocument();
+    expect(screen.getByText('active_users')).toBeInTheDocument();
+    expect(screen.getByText('total_sales')).toBeInTheDocument();
+    // Kinds with no objects never render a group header.
+    expect(screen.queryByText(/^Triggers/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Sequences/)).not.toBeInTheDocument();
+  });
+
+  it('calls onSelectObject with the clicked object', async () => {
+    const onSelectObject = vi.fn();
+    renderTree({ onSelectObject });
+    await userEvent.click(screen.getByText('active_users'));
+    expect(onSelectObject).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'view', name: 'active_users', schema: 'public' }),
+    );
+  });
+
+  it('filters objects by name alongside tables', async () => {
+    renderTree();
+    await userEvent.type(screen.getByLabelText('Filter tables'), 'active');
+    expect(screen.getByText('active_users')).toBeInTheDocument();
+    // A non-matching object is hidden, and its group header disappears.
+    expect(screen.queryByText('total_sales')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Functions/)).not.toBeInTheDocument();
   });
 });

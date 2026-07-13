@@ -26,6 +26,7 @@ const BASE: DbEngineDescriptor = {
     supportsAutoIncrement: false,
     supportsUsingExpression: true,
   },
+  objects: { views: true, materializedViews: true, sequences: true, functions: true, procedures: true, triggers: true, enums: true },
 };
 const COLUMN = {
   name: 'total', dataType: 'integer', nullable: true, isPrimaryKey: false,

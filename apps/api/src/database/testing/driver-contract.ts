@@ -113,6 +113,15 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
               )`,
         params: [],
       });
+      // A view is the one non-table object kind all three engines support, so it's the universal
+      // fixture for the schema-object builders (Phase 24). `CREATE VIEW … AS SELECT` parses on all.
+      const qview = supportsSchemas
+        ? `${driver.quoteIdent(schema)}.${driver.quoteIdent('widgets_view')}`
+        : driver.quoteIdent('widgets_view');
+      await driver.query(pool, {
+        sql: `CREATE VIEW ${qview} AS SELECT ${driver.quoteIdent('id')}, ${driver.quoteIdent('name')} FROM ${qwidgets}`,
+        params: [],
+      });
     });
 
     afterAll(async () => {
@@ -120,7 +129,8 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       if (supportsSchemas) {
         await driver.query(pool, { sql: `DROP SCHEMA IF EXISTS ${driver.quoteIdent(schema)} CASCADE`, params: [] }).catch(() => undefined);
       } else {
-        // Drop the FK child before its parent so engines that enforce FKs (MySQL InnoDB) allow it.
+        // Drop the view + FK child before their parents so engines that enforce dependencies allow it.
+        await driver.query(pool, { sql: `DROP VIEW IF EXISTS ${driver.quoteIdent('widgets_view')}`, params: [] }).catch(() => undefined);
         await driver.query(pool, { sql: `DROP TABLE IF EXISTS ${driver.quoteIdent('widget_parts')}`, params: [] }).catch(() => undefined);
         await driver.query(pool, { sql: `DROP TABLE IF EXISTS ${driver.quoteIdent(ref.name)}`, params: [] }).catch(() => undefined);
       }
@@ -315,6 +325,24 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       expect(asArray(row!.columns)).toEqual(['widget_id']);
       expect(row!.referenced_table).toBe('widgets');
       expect(asArray(row!.referenced_columns)).toEqual(['id']);
+    });
+
+    it('lists the view as a schema object with kind "view"', async (ctx) => {
+      skipIfUnreachable(ctx);
+      const objects = await driver.query(pool!, driver.buildListAllSchemaObjects());
+      const view = objects.rows.find(
+        (r) => (r as Record<string, unknown>).name === 'widgets_view',
+      ) as Record<string, unknown> | undefined;
+      expect(view).toBeDefined();
+      expect(view!.kind).toBe('view');
+    });
+
+    it('returns a non-empty definition for the view', async (ctx) => {
+      skipIfUnreachable(ctx);
+      const res = await driver.query(pool!, driver.buildObjectDefinition('view', { namespace: schema, name: 'widgets_view' }));
+      const def = (res.rows[0] as Record<string, unknown> | undefined)?.definition;
+      expect(typeof def).toBe('string');
+      expect((def as string).length).toBeGreaterThan(0);
     });
 
     // Reusable column metadata for the `widgets` table (id PK, nullable name).

@@ -171,6 +171,7 @@ function makeDescriptor(
       supportsAutoIncrement: true,
       supportsUsingExpression: false,
     },
+    objects: { views: true, materializedViews: false, sequences: false, functions: true, procedures: true, triggers: true, enums: false },
   };
 }
 

@@ -18,6 +18,7 @@ const schemas: SchemaMetadata[] = [
   {
     name: 'public',
     tables: [{ schema: 'public', name: 'orders', columns: [column('id'), column('total')] }],
+    objects: [],
   },
 ];
 

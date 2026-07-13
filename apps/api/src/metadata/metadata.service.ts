@@ -5,6 +5,9 @@ import type {
   IndexMetadata,
   ReferencingKeyMetadata,
   SchemaMetadata,
+  SchemaObjectDetail,
+  SchemaObjectKind,
+  SchemaObjectSummary,
   SchemaOverview,
   TableMetadata,
   TableOverview,
@@ -35,6 +38,27 @@ function toColumnArray(value: unknown): string[] {
     }
   }
   return [];
+}
+
+/**
+ * An object-definition `extra` arrives as a real object (PG `json`) or a JSON-encoded string
+ * (MySQL/SQLite `JSON_OBJECT`). Normalize to a flat `Record<string,string>`, dropping null values.
+ */
+function normalizeExtra(value: Record<string, unknown> | string): Record<string, string> {
+  let obj: unknown = value;
+  if (typeof value === 'string') {
+    try {
+      obj = JSON.parse(value);
+    } catch {
+      return {};
+    }
+  }
+  if (obj === null || typeof obj !== 'object') return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+    if (v !== null && v !== undefined) out[k] = String(v);
+  }
+  return out;
 }
 
 interface TableRow {
@@ -80,6 +104,19 @@ interface ReferencingKeyRow extends ForeignKeyRow {
   table_name: string;
 }
 
+interface SchemaObjectRow {
+  kind: SchemaObjectKind;
+  schema: string | null;
+  name: string;
+  comment: string | null;
+}
+
+interface ObjectDefinitionRow {
+  definition: string | null;
+  /** JSON object (real object on PG `json`, JSON string on MySQL/SQLite), or null. */
+  extra: Record<string, unknown> | string | null;
+}
+
 interface TableStatsRow {
   table_name: string;
   row_estimate: number | string | null;
@@ -97,9 +134,10 @@ export class MetadataService {
 
   async getSchemas(connectionId: string): Promise<SchemaMetadata[]> {
     const driver = await this.pool.driverFor(connectionId);
-    const [{ rows: tableRows }, { rows: colRows }] = await Promise.all([
+    const [{ rows: tableRows }, { rows: colRows }, { rows: objectRows }] = await Promise.all([
       this.pool.run(connectionId, driver.buildListTables()) as unknown as Promise<{ rows: TableRow[] }>,
       this.pool.run(connectionId, driver.buildListAllColumns()) as unknown as Promise<{ rows: AllColumnsRow[] }>,
+      this.pool.run(connectionId, driver.buildListAllSchemaObjects()) as unknown as Promise<{ rows: SchemaObjectRow[] }>,
     ]);
 
     const colMap = new Map<string, ColumnMetadata[]>();
@@ -117,14 +155,53 @@ export class MetadataService {
       colMap.set(key, list);
     }
 
-    const schemas = new Map<string, TableMetadata[]>();
+    const tableMap = new Map<string, TableMetadata[]>();
     for (const row of tableRows) {
-      const tables = schemas.get(row.table_schema) ?? [];
+      const tables = tableMap.get(row.table_schema) ?? [];
       tables.push({ schema: row.table_schema, name: row.table_name, columns: colMap.get(`${row.table_schema}.${row.table_name}`) ?? [] });
-      schemas.set(row.table_schema, tables);
+      tableMap.set(row.table_schema, tables);
     }
 
-    return Array.from(schemas.entries()).map(([name, tables]) => ({ name, tables }));
+    const objectMap = new Map<string, SchemaObjectSummary[]>();
+    for (const row of objectRows) {
+      const key = row.schema ?? '';
+      const list = objectMap.get(key) ?? [];
+      list.push({
+        kind: row.kind,
+        schema: row.schema,
+        name: row.name,
+        ...(row.comment == null ? {} : { comment: String(row.comment) }),
+      });
+      objectMap.set(key, list);
+    }
+
+    // Seed schema names from both tables and objects, so a schema holding only views still appears.
+    const names = new Set<string>([...tableMap.keys(), ...objectMap.keys()]);
+    return Array.from(names)
+      .sort()
+      .map((name) => ({ name, tables: tableMap.get(name) ?? [], objects: objectMap.get(name) ?? [] }));
+  }
+
+  async getObjectDefinition(
+    connectionId: string,
+    schema: string,
+    kind: SchemaObjectKind,
+    name: string,
+  ): Promise<SchemaObjectDetail> {
+    const driver = await this.pool.driverFor(connectionId);
+    const { rows } = (await this.pool.run(
+      connectionId,
+      driver.buildObjectDefinition(kind, { namespace: schema, name }),
+    )) as unknown as { rows: ObjectDefinitionRow[] };
+
+    const row = rows[0];
+    return {
+      kind,
+      schema,
+      name,
+      ...(row?.definition == null ? {} : { definition: String(row.definition) }),
+      ...(row?.extra == null ? {} : { extra: normalizeExtra(row.extra) }),
+    };
   }
 
   async getTableColumns(connectionId: string, schema: string, table: string): Promise<ColumnMetadata[]> {

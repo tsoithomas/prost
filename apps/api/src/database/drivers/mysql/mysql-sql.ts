@@ -5,6 +5,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   NewColumn,
+  SchemaObjectKind,
 } from '@prost/shared-types';
 import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
 
@@ -393,6 +394,52 @@ export function mysqlBuildListReferencingForeignKeys(ref: TableRef): SqlFragment
          ORDER BY ordered.TABLE_NAME, ordered.CONSTRAINT_NAME`,
     params: [ref.namespace, ref.name],
   };
+}
+
+/** MySQL exposes views, functions/procedures, and triggers — all within the connected database. */
+export function mysqlBuildListAllSchemaObjects(): SqlFragment {
+  return {
+    sql: `SELECT 'view' AS kind, TABLE_SCHEMA AS \`schema\`, TABLE_NAME AS name, NULL AS comment
+           FROM information_schema.VIEWS WHERE TABLE_SCHEMA = DATABASE()
+         UNION ALL
+           SELECT CASE ROUTINE_TYPE WHEN 'PROCEDURE' THEN 'procedure' ELSE 'function' END,
+             ROUTINE_SCHEMA, ROUTINE_NAME, NULLIF(ROUTINE_COMMENT, '')
+           FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE()
+         UNION ALL
+           SELECT 'trigger', TRIGGER_SCHEMA, TRIGGER_NAME, NULL
+           FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = DATABASE()
+         ORDER BY \`schema\`, kind, name`,
+    params: [],
+  };
+}
+
+export function mysqlBuildObjectDefinition(kind: SchemaObjectKind, ref: TableRef): SqlFragment {
+  const params = [ref.namespace, ref.name];
+  switch (kind) {
+    case 'view':
+      return {
+        sql: `SELECT VIEW_DEFINITION AS definition, NULL AS extra
+              FROM information_schema.VIEWS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
+        params,
+      };
+    case 'function':
+    case 'procedure':
+      return {
+        sql: `SELECT ROUTINE_DEFINITION AS definition,
+                JSON_OBJECT('type', ROUTINE_TYPE, 'returns', DTD_IDENTIFIER) AS extra
+              FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = ? AND ROUTINE_NAME = ?`,
+        params,
+      };
+    case 'trigger':
+      return {
+        sql: `SELECT ACTION_STATEMENT AS definition,
+                JSON_OBJECT('timing', ACTION_TIMING, 'event', EVENT_MANIPULATION, 'table', EVENT_OBJECT_TABLE) AS extra
+              FROM information_schema.TRIGGERS WHERE TRIGGER_SCHEMA = ? AND TRIGGER_NAME = ?`,
+        params,
+      };
+    default:
+      throw new Error(`MySQL does not support schema object kind "${kind}"`);
+  }
 }
 
 export function mysqlBuildSelectRows(ref: TableRef, opts: SelectRowsOptions): SqlFragment {

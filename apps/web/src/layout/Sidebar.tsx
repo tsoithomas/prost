@@ -9,6 +9,7 @@ import { useMetadata } from '../api/metadata';
 import { CreateTableModal } from '../ddl/CreateTableModal';
 import { QueryHistoryList } from '../explorer/QueryHistoryList';
 import { SchemaTree } from '../explorer/SchemaTree';
+import { openSchemaObject, selectedObjectKey } from '../explorer/objectNavigation';
 import { SnippetList } from '../explorer/SnippetList';
 import { useConfirm } from '../hooks/useConfirm';
 import { useResizableWidth } from '../hooks/useResizableWidth';
@@ -51,6 +52,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
   const workspaceTabs = useWorkspaceStore((state) => state.tabs);
   const activeWorkspaceTabId = useWorkspaceStore((state) => state.activeTabId);
   const openTable = useWorkspaceStore((state) => state.openTable);
+  const openObject = useWorkspaceStore((state) => state.openObject);
   const openOverview = useWorkspaceStore((state) => state.openOverview);
   const loadQuery = useWorkspaceStore((state) => state.loadQuery);
 
@@ -64,6 +66,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
     activeWorkspaceTab?.kind === 'table' && activeWorkspaceTab.schema
       ? `${activeWorkspaceTab.schema}.${activeWorkspaceTab.table}`
       : null;
+  const selectedObject = selectedObjectKey(activeWorkspaceTab);
 
   async function handleDeleteConnection(connection: ConnectionDto) {
     const confirmed = await confirm({
@@ -154,8 +157,10 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
             <SchemaTree
               schemas={schemas ?? []}
               selectedTable={selectedTable}
+              selectedObject={selectedObject}
               onSelectTable={(table) => openTable(table.schema, table.name, 'rows')}
               onOpenStructure={(table) => openTable(table.schema, table.name, 'structure')}
+              onSelectObject={(object) => openSchemaObject({ openTable, openObject }, object)}
               onNewTable={(schema) => setCreateTableState({ open: true, schema })}
               onOpenOverview={(schema) => openOverview(schema)}
               hasSchemas={activeConnection?.capabilities.hasSchemas ?? true}

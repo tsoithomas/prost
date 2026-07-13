@@ -6,6 +6,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   NewColumn,
+  SchemaObjectKind,
 } from '@prost/shared-types';
 import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
 
@@ -255,6 +256,28 @@ export function sqliteBuildListReferencingForeignKeys(ref: TableRef): SqlFragmen
          GROUP BY m.name, fk.id, fk."table", fk.on_delete, fk.on_update
          ORDER BY m.name, fk.id`,
     params: [ref.name],
+  };
+}
+
+/** SQLite exposes views and triggers via `sqlite_master`; no sequences/routines/enums/matviews. */
+export function sqliteBuildListAllSchemaObjects(): SqlFragment {
+  return {
+    sql: `SELECT type AS kind, 'main' AS schema, name AS name, NULL AS comment
+          FROM sqlite_master
+          WHERE type IN ('view', 'trigger') AND name NOT LIKE 'sqlite_%'
+          ORDER BY type, name`,
+    params: [],
+  };
+}
+
+export function sqliteBuildObjectDefinition(kind: SchemaObjectKind, ref: TableRef): SqlFragment {
+  if (kind !== 'view' && kind !== 'trigger') {
+    throw new Error(`SQLite does not support schema object kind "${kind}"`);
+  }
+  // `kind` is one of the literal `sqlite_master.type` values ('view'/'trigger') — bind it directly.
+  return {
+    sql: `SELECT sql AS definition, NULL AS extra FROM sqlite_master WHERE type = ? AND name = ?`,
+    params: [kind, ref.name],
   };
 }
 

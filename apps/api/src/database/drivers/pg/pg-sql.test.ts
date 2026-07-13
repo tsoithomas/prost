@@ -3,6 +3,7 @@ import { pgPlaceholder, pgQuoteIdent, pgBuildListAllColumns, pgBuildListColumns,
 import { pgBuildSelectRows, pgBuildInsertRow, pgBuildUpdateRow, pgBuildUpdateRowGuarded, pgBuildDeleteRow, pgBuildRowCountEstimate } from './pg-sql';
 import { pgBuildCreateTable, pgBuildAlterTable, pgBuildCreateIndex, pgBuildDropIndex, pgBuildResolveTypeNames } from './pg-sql';
 import { pgBuildSchemaTableStats, pgBuildDropTable, pgBuildTruncateTable } from './pg-sql';
+import { pgBuildListAllSchemaObjects, pgBuildObjectDefinition } from './pg-sql';
 
 describe('pg-sql quoting/placeholders', () => {
   it('double-quotes and escapes identifiers', () => {
@@ -61,6 +62,28 @@ describe('pg-sql metadata builders', () => {
       expect(sql).toContain(alias);
     }
     expect(params).toEqual(['public', 'users']);
+  });
+
+  it('unions views/matviews/sequences/routines/triggers/enums with kind/schema/name/comment aliases', () => {
+    const { sql, params } = pgBuildListAllSchemaObjects();
+    for (const src of ['pg_class', 'pg_proc', 'pg_trigger', 'pg_type']) expect(sql).toContain(src);
+    for (const alias of ['kind', 'schema', 'name', 'comment']) expect(sql).toContain(alias);
+    expect(sql).toContain("'materializedView'");
+    expect(sql).toContain('NOT IN (\'pg_catalog\', \'information_schema\')');
+    expect(params).toEqual([]);
+  });
+
+  it('builds a parameterized definition query per object kind', () => {
+    expect(pgBuildObjectDefinition('view', { namespace: 'public', name: 'v' })).toMatchObject({
+      params: ['public', 'v'],
+    });
+    expect(pgBuildObjectDefinition('view', { namespace: 'public', name: 'v' }).sql).toContain('pg_get_viewdef');
+    expect(pgBuildObjectDefinition('function', { namespace: 'public', name: 'f' }).sql).toContain('pg_get_functiondef');
+    expect(pgBuildObjectDefinition('trigger', { namespace: 'public', name: 't' }).sql).toContain('pg_get_triggerdef');
+    expect(pgBuildObjectDefinition('enum', { namespace: 'public', name: 'e' }).sql).toContain('pg_enum');
+    expect(pgBuildObjectDefinition('sequence', { namespace: 'public', name: 's' }).sql).toContain('pg_sequences');
+    // Never interpolates identifiers into the SQL — always bound.
+    expect(pgBuildObjectDefinition('view', { namespace: 'public', name: 'v' }).sql).not.toContain("'v'");
   });
 });
 

@@ -20,6 +20,7 @@ const schemas: SchemaMetadata[] = [
       { schema: 'public', name: 'orders', columns: [column('id'), column('total')] },
       { schema: 'public', name: 'order_items', columns: [column('id')] },
     ],
+    objects: [],
   },
 ];
 
@@ -57,6 +58,7 @@ describe('search', () => {
           name: `t_table_${i}`,
           columns: [],
         })),
+        objects: [],
       },
     ];
     const fuse = createMetadataFuse(buildMetadataItems(many));

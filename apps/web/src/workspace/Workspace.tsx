@@ -3,6 +3,7 @@ import { WorkspaceTabBar } from './WorkspaceTabBar';
 import { TableView } from './TableView';
 import { SqlEditorView } from './SqlEditorView';
 import { DatabaseOverview } from './DatabaseOverview';
+import { DefinitionPanel } from './DefinitionPanel';
 import { useActiveConnection } from '../api/connections';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -27,7 +28,7 @@ export function Workspace() {
   const connectionLabel = activeConnection?.name ?? 'No connection';
   const writable = !activeConnection?.capabilities.readOnly;
   const breadcrumbSegments =
-    activeTab?.kind === 'table' && activeTab.schema
+    (activeTab?.kind === 'table' || activeTab?.kind === 'object') && activeTab.schema
       ? [connectionLabel, activeTab.schema, activeTab.label]
       : activeTab?.kind === 'overview' && activeTab.schema
         ? [connectionLabel, activeTab.schema]
@@ -59,6 +60,14 @@ export function Workspace() {
       ) : null}
       {activeTab?.kind === 'overview' && activeTab.schema && activeConnectionId ? (
         <DatabaseOverview connectionId={activeConnectionId} schema={activeTab.schema} writable={writable} />
+      ) : null}
+      {activeTab?.kind === 'object' && activeTab.schema && activeTab.objectKind && activeTab.objectName && activeConnectionId ? (
+        <DefinitionPanel
+          connectionId={activeConnectionId}
+          schema={activeTab.schema}
+          objectKind={activeTab.objectKind}
+          objectName={activeTab.objectName}
+        />
       ) : null}
       {activeTab?.kind === 'query' ? <SqlEditorView /> : null}
       {!activeTab ? (
