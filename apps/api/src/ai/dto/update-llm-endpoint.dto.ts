@@ -1,4 +1,4 @@
-import { ArrayNotEmpty, IsArray, IsOptional, IsString, IsUrl, MinLength } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsInt, IsOptional, IsString, IsUrl, Min, MinLength } from 'class-validator';
 import type { UpdateLlmEndpointBody } from '@prost/shared-types';
 
 export class UpdateLlmEndpointDto implements UpdateLlmEndpointBody {
@@ -20,4 +20,14 @@ export class UpdateLlmEndpointDto implements UpdateLlmEndpointBody {
   @ArrayNotEmpty()
   @IsString({ each: true })
   models?: string[];
+
+  @IsOptional()
+  @IsInt()
+  @Min(500)
+  contextBudget?: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(64)
+  maxOutputTokens?: number | null;
 }

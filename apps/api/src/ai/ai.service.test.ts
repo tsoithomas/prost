@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ChatRequest } from '@prost/shared-types';
 import type { ConnectionsService } from '../connections/connections.service';
 import type { PoolManager } from '../database/pool-manager.service';
+import type { HistoryService } from '../history/history.service';
 import type { AiProviderService } from './ai-provider.service';
 import type { DecryptedEndpoint, LlmEndpointService } from './llm-endpoint.service';
 import type { RetrievalService } from './retrieval.service';
@@ -15,6 +16,8 @@ const ENDPOINT: DecryptedEndpoint = {
   baseUrl: 'https://api.openai.com/v1',
   apiKey: 'sk-secret',
   models: ['gpt-4o', 'gpt-4o-mini'],
+  contextBudget: null,
+  maxOutputTokens: null,
 };
 
 function createService({
@@ -24,6 +27,7 @@ function createService({
   engineLabel = 'PostgreSQL',
   providerResponse = 'Here is your answer.\n```sql\nSELECT * FROM users;\n```',
   providerThrows = false,
+  recentQueries = [] as string[],
 }: {
   ownershipFails?: boolean;
   endpoint?: DecryptedEndpoint;
@@ -31,6 +35,7 @@ function createService({
   engineLabel?: string;
   providerResponse?: string;
   providerThrows?: boolean;
+  recentQueries?: string[];
 } = {}) {
   const connectionsService = {
     assertOwnership: vi.fn().mockImplementation(() => {
@@ -50,23 +55,30 @@ function createService({
       if (providerThrows) throw new Error('network');
       return Promise.resolve(providerResponse);
     }),
+    completeStream: vi.fn().mockReturnValue((async function* () {})()),
   } as unknown as AiProviderService;
 
   const retrieval = {
     buildContext: vi.fn().mockResolvedValue(SAMPLE_CONTEXT),
+    describeTables: vi.fn().mockResolvedValue('-- described'),
   } as unknown as RetrievalService;
 
   const pool = {
     driverFor: vi.fn().mockResolvedValue({ descriptor: { label: engineLabel } }),
   } as unknown as PoolManager;
 
+  const history = {
+    listRecent: vi.fn().mockResolvedValue(recentQueries.map((sql) => ({ sql }))),
+  } as unknown as HistoryService;
+
   return {
-    service: new AiService(connectionsService, llmEndpointService, provider, retrieval, pool),
+    service: new AiService(connectionsService, llmEndpointService, provider, retrieval, pool, history),
     connectionsService,
     llmEndpointService,
     provider,
     retrieval,
     pool,
+    history,
   };
 }
 
@@ -122,6 +134,49 @@ describe('AiService.chat', () => {
     expect(opts.systemPrompt).toContain('public.users');
   });
 
+  it('builds the names-only table index for the connection', async () => {
+    const { service, retrieval } = createService();
+    await service.chat('user-1', 'conn-1', REQ);
+    expect(retrieval.buildContext).toHaveBeenCalledWith('conn-1', expect.any(Object));
+  });
+
+  it('includes the user recent queries as few-shot examples', async () => {
+    const { service, provider, history } = createService({
+      recentQueries: ['SELECT * FROM orders WHERE user_id = 1'],
+    });
+    await service.chat('user-1', 'conn-1', REQ);
+    expect(history.listRecent).toHaveBeenCalledWith('user-1', 'conn-1', expect.any(Number));
+    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(opts.systemPrompt).toContain('SELECT * FROM orders WHERE user_id = 1');
+  });
+
+  it('omits the examples section when there is no history', async () => {
+    const { service, provider } = createService({ recentQueries: [] });
+    await service.chat('user-1', 'conn-1', REQ);
+    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(opts.systemPrompt).not.toContain('Recent queries the user has run');
+  });
+
+  it('still answers when history retrieval fails', async () => {
+    const { service, history } = createService();
+    (history.listRecent as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('db down'));
+    const result = await service.chat('user-1', 'conn-1', REQ);
+    expect(result.message.role).toBe('assistant');
+  });
+
+  describe('streamChat', () => {
+    it('offers the get_table_schema tool wired to describeTables', async () => {
+      const { service, provider, retrieval } = createService();
+      await service.streamChat('user-1', 'conn-1', REQ);
+      const opts = (provider.completeStream as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+      const tool = opts.tools?.find((t: { name: string }) => t.name === 'get_table_schema');
+      expect(tool).toBeDefined();
+      // The tool's executor forwards names to RetrievalService.describeTables.
+      await tool.execute({ tables: ['clients'] });
+      expect(retrieval.describeTables).toHaveBeenCalledWith('conn-1', ['clients']);
+    });
+  });
+
   it('passes mode to the system prompt — generateSql changes role', async () => {
     const { service, provider } = createService();
     await service.chat('user-1', 'conn-1', { ...REQ, mode: 'generateSql' });
@@ -129,11 +184,12 @@ describe('AiService.chat', () => {
     expect(opts.systemPrompt).toContain('SQL generator');
   });
 
+  // Each mode must produce a functionally distinct instruction, not just a different role line.
   it.each([
-    ['generateSql', 'You are a SQL generator for a PostgreSQL database.'],
-    ['explain', 'You are a SQL explainer for a PostgreSQL database.'],
-    [undefined, 'You are a PostgreSQL assistant.'],
-  ] as const)('uses PostgreSQL wording for %s mode by default', async (mode, expected) => {
+    ['generateSql', 'Return exactly one runnable PostgreSQL statement'],
+    ['explain', 'Explain what the query does, step by step'],
+    [undefined, 'Answer the user\'s questions about its schema and data model conversationally'],
+  ] as const)('uses a distinct instruction for %s mode', async (mode, expected) => {
     const { service, provider } = createService();
     await service.chat('user-1', 'conn-1', { ...REQ, mode });
     const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
@@ -143,7 +199,7 @@ describe('AiService.chat', () => {
   it.each([
     ['generateSql', 'You are a SQL generator for a MySQL database.'],
     ['explain', 'You are a SQL explainer for a MySQL database.'],
-    [undefined, 'You are a MySQL assistant.'],
+    [undefined, 'You are a helpful assistant for a MySQL database.'],
   ] as const)('uses the driver label for %s mode', async (mode, expected) => {
     const { service, provider } = createService({ engineLabel: 'MySQL' });
     await service.chat('user-1', 'conn-1', { ...REQ, mode });

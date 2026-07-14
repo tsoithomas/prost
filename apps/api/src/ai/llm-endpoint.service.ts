@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { LlmEndpoint, Prisma } from '@prisma/client';
-import type { LlmEndpointDto } from '@prost/shared-types';
+import type { LlmEndpointDto, LlmProbeResult } from '@prost/shared-types';
 import { CryptoService, type EncryptedPayload } from '../common/crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLlmEndpointDto } from './dto/create-llm-endpoint.dto';
@@ -12,6 +12,8 @@ export interface DecryptedEndpoint {
   baseUrl: string;
   apiKey: string;
   models: string[];
+  contextBudget: number | null;
+  maxOutputTokens: number | null;
 }
 
 /** `models` is stored as a JSON-encoded string array (SQLite has no scalar-list type). */
@@ -50,6 +52,8 @@ export class LlmEndpointService {
         name: dto.name,
         baseUrl: dto.baseUrl,
         models: serializeModels(dto.models),
+        contextBudget: dto.contextBudget ?? null,
+        maxOutputTokens: dto.maxOutputTokens ?? null,
         encryptedApiKey: this.crypto.encrypt(dto.apiKey) as unknown as Prisma.InputJsonValue,
       },
     });
@@ -62,6 +66,8 @@ export class LlmEndpointService {
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.baseUrl !== undefined) data.baseUrl = dto.baseUrl;
     if (dto.models !== undefined) data.models = serializeModels(dto.models);
+    if (dto.contextBudget !== undefined) data.contextBudget = dto.contextBudget;
+    if (dto.maxOutputTokens !== undefined) data.maxOutputTokens = dto.maxOutputTokens;
     if (dto.apiKey !== undefined) {
       data.encryptedApiKey = this.crypto.encrypt(dto.apiKey) as unknown as Prisma.InputJsonValue;
     }
@@ -82,7 +88,42 @@ export class LlmEndpointService {
       baseUrl: row.baseUrl,
       apiKey: this.crypto.decrypt(row.encryptedApiKey as unknown as EncryptedPayload),
       models: parseModels(row.models),
+      contextBudget: row.contextBudget,
+      maxOutputTokens: row.maxOutputTokens,
     };
+  }
+
+  /**
+   * Best-effort discovery: fetch `{baseUrl}/v1/models` to list available model IDs and, when the
+   * endpoint reports one, a context length (OpenRouter/vLLM expose `context_length`/`max_model_len`;
+   * most omit it). Used to prefill the endpoints modal — never authoritative. Never throws for a
+   * bad endpoint; returns empty results the caller can fall back from.
+   */
+  async probe(baseUrl: string, apiKey: string): Promise<LlmProbeResult> {
+    const url = `${baseUrl.replace(/\/+$/, '')}/models`;
+    try {
+      const res = await fetch(url, {
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+        signal: AbortSignal.timeout(8_000),
+      });
+      if (!res.ok) return { models: [], contextLength: null };
+      const body = (await res.json()) as { data?: unknown };
+      const rows = Array.isArray(body.data) ? body.data : [];
+      const models = rows
+        .map((r) => (r as { id?: unknown }).id)
+        .filter((id): id is string => typeof id === 'string')
+        .sort();
+      let contextLength: number | null = null;
+      for (const r of rows) {
+        const row = r as { context_length?: unknown; max_model_len?: unknown };
+        const len = typeof row.context_length === 'number' ? row.context_length
+          : typeof row.max_model_len === 'number' ? row.max_model_len : null;
+        if (len != null) contextLength = Math.max(contextLength ?? 0, len);
+      }
+      return { models, contextLength };
+    } catch {
+      return { models: [], contextLength: null };
+    }
   }
 
   private async requireOwned(userId: string, id: string): Promise<LlmEndpoint> {
@@ -101,6 +142,8 @@ export function toLlmEndpointDto(row: LlmEndpoint): LlmEndpointDto {
     baseUrl: row.baseUrl,
     models: parseModels(row.models),
     hasApiKey: true,
+    contextBudget: row.contextBudget,
+    maxOutputTokens: row.maxOutputTokens,
     createdAt: row.createdAt.toISOString(),
   };
 }

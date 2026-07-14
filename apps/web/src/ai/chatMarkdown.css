@@ -1,0 +1,64 @@
+/*
+ * Syntax highlighting for code blocks in AI chat replies. highlight.js (via rehype-highlight)
+ * emits `.hljs-*` token classes at runtime; we map them onto the app's theme-aware
+ * `--color-data-*` / semantic tokens so highlighting adapts to light/dark with no hardcoded hex.
+ * Scoped under `.chat-markdown` so it only affects chat content.
+ */
+.chat-markdown .hljs {
+  color: var(--color-text);
+  background: transparent;
+}
+
+.chat-markdown .hljs-comment,
+.chat-markdown .hljs-quote {
+  color: var(--color-text-faint);
+  font-style: italic;
+}
+
+.chat-markdown .hljs-keyword,
+.chat-markdown .hljs-selector-tag,
+.chat-markdown .hljs-literal,
+.chat-markdown .hljs-section,
+.chat-markdown .hljs-doctag,
+.chat-markdown .hljs-name,
+.chat-markdown .hljs-strong {
+  color: var(--color-data-boolean);
+  font-weight: 600;
+}
+
+.chat-markdown .hljs-string,
+.chat-markdown .hljs-attr,
+.chat-markdown .hljs-template-tag,
+.chat-markdown .hljs-template-variable,
+.chat-markdown .hljs-addition {
+  color: var(--color-data-string);
+}
+
+.chat-markdown .hljs-number,
+.chat-markdown .hljs-symbol,
+.chat-markdown .hljs-bullet {
+  color: var(--color-data-number);
+}
+
+.chat-markdown .hljs-built_in,
+.chat-markdown .hljs-builtin-name,
+.chat-markdown .hljs-type,
+.chat-markdown .hljs-title,
+.chat-markdown .hljs-class,
+.chat-markdown .hljs-function {
+  color: var(--color-data-decimal);
+}
+
+.chat-markdown .hljs-variable,
+.chat-markdown .hljs-regexp,
+.chat-markdown .hljs-meta {
+  color: var(--color-text-muted);
+}
+
+.chat-markdown .hljs-deletion {
+  color: var(--color-danger);
+}
+
+.chat-markdown .hljs-emphasis {
+  font-style: italic;
+}

@@ -1,9 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bot, CornerDownLeft, Download, Settings2 } from 'lucide-react';
+import {
+  Bot,
+  Check,
+  Copy,
+  CornerDownLeft,
+  Download,
+  FileCode,
+  History,
+  Settings2,
+  Square,
+  SquarePen,
+  Trash2,
+} from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
 import type { ChatMessage, ChatMode } from '@prost/shared-types';
+import './chatMarkdown.css';
 import { Button, IconButton, Surface } from '@prost/ui';
-import { useAiChat, useLlmEndpoints } from '../api/ai';
-import { apiErrorDetail } from '../lib/apiClient';
+import {
+  fetchConversation,
+  streamAiChat,
+  useAppendConversation,
+  useConversations,
+  useDeleteConversation,
+  useLlmEndpoints,
+  type ChatTokenUsage,
+} from '../api/ai';
+import { ApiError, apiErrorDetail } from '../lib/apiClient';
 import { useAiStore } from '../stores/aiStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { LlmEndpointsModal } from './LlmEndpointsModal';
@@ -14,15 +38,28 @@ interface Props {
 
 export function ChatPanel({ connectionId }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [usages, setUsages] = useState<Record<number, ChatTokenUsage>>({});
   const [input, setInput] = useState('');
   const [mode, setMode] = useState<ChatMode>('ask');
   const [error, setError] = useState<string | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const { data: endpoints = [], isLoading: endpointsLoading } = useLlmEndpoints();
-  const chat = useAiChat(connectionId);
+  const { data: conversations = [] } = useConversations(connectionId);
+  const appendConversation = useAppendConversation(connectionId);
+  const deleteConversation = useDeleteConversation(connectionId);
   const loadQuery = useWorkspaceStore((state) => state.loadQuery);
+  // The active query tab's SQL — the subject for Explain mode (falls back to the first query tab).
+  const activeQuerySql = useWorkspaceStore((state) => {
+    const active = state.tabs.find((t) => t.id === state.activeTabId);
+    const target = active?.kind === 'query' ? active : state.tabs.find((t) => t.kind === 'query');
+    return target?.sql?.trim() ?? '';
+  });
 
   const selectedEndpointId = useAiStore((s) => s.selectedEndpointId);
   const selectedModel = useAiStore((s) => s.selectedModel);
@@ -45,33 +82,133 @@ export function ChatPanel({ connectionId }: Props) {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, chat.isPending]);
+  }, [messages, isStreaming]);
+
+  // Abort any in-flight stream when the panel unmounts.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   function sendMessage(text: string, sendMode: ChatMode) {
-    if (!text || chat.isPending || !selectedEndpointId || !selectedModel) return;
+    if (!text || isStreaming || !selectedEndpointId || !selectedModel) return;
 
     const userMsg: ChatMessage = { role: 'user', content: text };
-    const next = [...messages, userMsg];
-    setMessages(next);
+    const next: ChatMessage[] = [...messages, userMsg];
+    const assistantIndex = next.length; // index of the seeded assistant message below
+    // Seed an empty assistant message that fills in as deltas stream in.
+    setMessages([...next, { role: 'assistant', content: '' }]);
     setInput('');
     setError(null);
+    setIsStreaming(true);
 
-    chat.mutate(
+    const controller = new AbortController();
+    abortRef.current = controller;
+    let received = false;
+    let assistantContent = '';
+
+    streamAiChat(
+      connectionId,
       { messages: next, mode: sendMode, endpointId: selectedEndpointId, model: selectedModel },
       {
-        onSuccess: (res) => setMessages((prev) => [...prev, res.message]),
-        onError: (err) => {
-          setError(apiErrorDetail(err, 'AI request failed.'));
-          setMessages((prev) => prev.slice(0, -1));
-          setInput(text);
+        signal: controller.signal,
+        onUsage: (usage) => setUsages((prev) => ({ ...prev, [assistantIndex]: usage })),
+        onDelta: (delta) => {
+          received = true;
+          assistantContent += delta;
+          setMessages((prev) => {
+            const copy = prev.slice();
+            const last = copy[copy.length - 1];
+            if (last && last.role === 'assistant') {
+              copy[copy.length - 1] = { ...last, content: last.content + delta };
+            }
+            return copy;
+          });
         },
       },
-    );
+    )
+      .then(() => {
+        // Persist the completed exchange, adopting the server-assigned id for the thread.
+        if (!assistantContent) return;
+        appendConversation.mutate(
+          {
+            ...(conversationId ? { conversationId } : {}),
+            messages: [userMsg, { role: 'assistant', content: assistantContent }],
+          },
+          { onSuccess: (convo) => setConversationId(convo.id) },
+        );
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === 'AbortError') return; // Stop: keep partial
+        // A mid-stream failure surfaces as a plain Error whose message carries the provider hint
+        // (e.g. "…(HTTP 404)"); a pre-stream failure is an ApiError. Show whichever we have.
+        const message =
+          err instanceof ApiError
+            ? apiErrorDetail(err, 'AI request failed.')
+            : err instanceof Error && err.message
+              ? err.message
+              : 'AI request failed.';
+        setError(message);
+        if (!received) {
+          // Nothing streamed — drop the empty assistant + user turn and restore the input.
+          setMessages((prev) => prev.slice(0, -2));
+          setInput(text);
+        }
+      })
+      .finally(() => {
+        setIsStreaming(false);
+        abortRef.current = null;
+      });
+  }
+
+  function handleStop() {
+    abortRef.current?.abort();
+  }
+
+  function handleNewChat() {
+    abortRef.current?.abort();
+    setMessages([]);
+    setUsages({});
+    setError(null);
+    setInput('');
+    setConversationId(null);
+    setHistoryOpen(false);
+  }
+
+  async function handleLoadConversation(id: string) {
+    abortRef.current?.abort();
+    setHistoryOpen(false);
+    setError(null);
+    setUsages({});
+    try {
+      const convo = await fetchConversation(connectionId, id);
+      setMessages(convo.messages);
+      setConversationId(convo.id);
+    } catch (err) {
+      setError(apiErrorDetail(err, 'Failed to load conversation.'));
+    }
+  }
+
+  function handleDeleteConversation(id: string) {
+    deleteConversation.mutate(id, {
+      onSuccess: () => {
+        if (conversationId === id) handleNewChat();
+      },
+    });
   }
 
   function handleSend() {
+    if (mode === 'explain') {
+      // Explain's subject is the current editor query; any typed text is an extra instruction.
+      const typed = input.trim();
+      if (!activeQuerySql && !typed) return;
+      const parts: string[] = [];
+      if (activeQuerySql) parts.push(`Explain this query:\n\`\`\`sql\n${activeQuerySql}\n\`\`\``);
+      if (typed) parts.push(typed);
+      sendMessage(parts.join('\n\n'), 'explain');
+      return;
+    }
     sendMessage(input.trim(), mode);
   }
+
+  const canSend = mode === 'explain' ? Boolean(activeQuerySql || input.trim()) : Boolean(input.trim());
 
   // Consume a prompt handed in from elsewhere ("Fix with AI"): switch to Ask mode and auto-send once a
   // model is selected, then clear the hand-off so it doesn't re-fire. If the panel just opened, the
@@ -111,6 +248,9 @@ export function ChatPanel({ connectionId }: Props) {
   }
 
   const selectValue = selectedEndpointId && selectedModel ? `${selectedEndpointId}::${selectedModel}` : '';
+  const lastMessage = messages[messages.length - 1];
+  const awaitingFirstToken =
+    isStreaming && lastMessage?.role === 'assistant' && lastMessage.content === '';
 
   return (
     <>
@@ -137,6 +277,54 @@ export function ChatPanel({ connectionId }: Props) {
               </optgroup>
             ))}
           </select>
+          <div className="relative">
+            <IconButton
+              aria-label="Chat history"
+              onClick={() => setHistoryOpen((v) => !v)}
+              disabled={conversations.length === 0}
+            >
+              <History size={15} />
+            </IconButton>
+            {historyOpen ? (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setHistoryOpen(false)} />
+                <Surface
+                  level="overlay"
+                  bordered
+                  className="absolute right-0 top-8 z-20 max-h-80 w-64 overflow-y-auto rounded-sm p-xs shadow-lg"
+                >
+                  {conversations.map((c) => (
+                    <div key={c.id} className="group flex items-center gap-xs rounded-sm hover:bg-surface-hover">
+                      <button
+                        type="button"
+                        onClick={() => void handleLoadConversation(c.id)}
+                        className={`flex-1 truncate px-sm py-1.5 text-left text-xs ${
+                          c.id === conversationId ? 'text-accent' : 'text-text'
+                        }`}
+                        title={c.title ?? 'Untitled'}
+                      >
+                        {c.title ?? 'Untitled'}
+                      </button>
+                      <IconButton
+                        aria-label={`Delete conversation ${c.title ?? ''}`}
+                        className="mr-1 opacity-0 transition-opacity group-hover:opacity-100"
+                        onClick={() => handleDeleteConversation(c.id)}
+                      >
+                        <Trash2 size={13} />
+                      </IconButton>
+                    </div>
+                  ))}
+                </Surface>
+              </>
+            ) : null}
+          </div>
+          <IconButton
+            aria-label="New chat"
+            onClick={handleNewChat}
+            disabled={messages.length === 0 && !isStreaming}
+          >
+            <SquarePen size={15} />
+          </IconButton>
           <IconButton aria-label="Manage endpoints" onClick={() => setManageOpen(true)}>
             <Settings2 size={15} />
           </IconButton>
@@ -167,34 +355,50 @@ export function ChatPanel({ connectionId }: Props) {
               Ask a question about your database schema.
             </p>
           ) : null}
-          {messages.map((msg, i) => (
-            <MessageBubble key={i} msg={msg} onLoadSql={loadQuery} />
-          ))}
-          {chat.isPending ? <TypingIndicator /> : null}
+          {messages.map((msg, i) =>
+            // Skip the seeded empty assistant placeholder — the typing indicator stands in until the
+            // first token lands.
+            msg.role === 'assistant' && msg.content === '' ? null : (
+              <MessageBubble key={i} msg={msg} usage={usages[i]} onLoadSql={loadQuery} />
+            ),
+          )}
+          {awaitingFirstToken ? <TypingIndicator /> : null}
           {error ? <p className="text-xs text-danger" role="alert">{error}</p> : null}
           <div ref={bottomRef} />
         </div>
 
         {/* Input */}
         <Surface level="raised" className="border-t border-border p-sm">
+          {mode === 'explain' ? (
+            <p className="mb-1 flex items-center gap-xs text-xs text-text-faint">
+              <FileCode size={12} />
+              {activeQuerySql ? 'Explaining your current query' : 'Open or type a query to explain'}
+            </p>
+          ) : null}
           <div className="flex items-end gap-sm">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask about your schema, generate SQL…"
+              placeholder={placeholderForMode(mode, Boolean(activeQuerySql))}
               rows={2}
               className="min-h-[2.5rem] flex-1 resize-none rounded-sm border border-border bg-surface px-sm py-xs text-sm text-text placeholder-text-faint focus:border-accent focus:outline-none"
             />
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleSend}
-              disabled={!input.trim() || chat.isPending || !selectedModel}
-              aria-label="Send"
-            >
-              <CornerDownLeft size={14} />
-            </Button>
+            {isStreaming ? (
+              <Button variant="ghost" size="sm" onClick={handleStop} aria-label="Stop">
+                <Square size={14} />
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSend}
+                disabled={!canSend || !selectedModel}
+                aria-label="Send"
+              >
+                <CornerDownLeft size={14} />
+              </Button>
+            )}
           </div>
         </Surface>
       </div>
@@ -202,41 +406,167 @@ export function ChatPanel({ connectionId }: Props) {
   );
 }
 
-function MessageBubble({ msg, onLoadSql }: { msg: ChatMessage; onLoadSql: (sql: string) => void }) {
+function placeholderForMode(mode: ChatMode, hasQuery: boolean): string {
+  switch (mode) {
+    case 'generateSql':
+      return 'Describe the query you want…';
+    case 'explain':
+      return hasQuery ? 'Add a question, or just send to explain your query…' : 'Type a query to explain…';
+    default:
+      return 'Ask about your schema, generate SQL…';
+  }
+}
+
+function MessageBubble({
+  msg,
+  usage,
+  onLoadSql,
+}: {
+  msg: ChatMessage;
+  usage?: ChatTokenUsage;
+  onLoadSql: (sql: string) => void;
+}) {
   const isUser = msg.role === 'user';
-  const parts = msg.content.split(/(```sql\n[\s\S]*?```)/g);
 
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
       <div
         className={`max-w-[85%] rounded-lg px-md py-sm text-sm ${
           isUser ? 'bg-accent text-accent-fg' : 'bg-surface-raised text-text'
         }`}
       >
-        {parts.map((part, i) => {
-          const sqlMatch = part.match(/^```sql\n([\s\S]*?)```$/);
-          if (sqlMatch) {
-            const sql = (sqlMatch[1] ?? '').trim();
+        {isUser ? (
+          <span className="whitespace-pre-wrap">{msg.content}</span>
+        ) : (
+          <MarkdownMessage content={msg.content} onLoadSql={onLoadSql} />
+        )}
+      </div>
+      {usage ? (
+        <span className="mt-0.5 px-1 text-[10px] text-text-faint" title="Prompt + completion tokens">
+          {usage.promptTokens} + {usage.completionTokens} = {usage.totalTokens} tokens
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/** Extracts the raw text of a rendered markdown node (highlight.js turns code into nested spans). */
+function nodeText(node: React.ReactNode): string {
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (Array.isArray(node)) return node.map(nodeText).join('');
+  if (node && typeof node === 'object' && 'props' in node) {
+    return nodeText((node as { props: { children?: React.ReactNode } }).props.children);
+  }
+  return '';
+}
+
+/** Renders an assistant reply as GitHub-flavored markdown; code blocks get copy + SQL load actions. */
+function MarkdownMessage({ content, onLoadSql }: { content: string; onLoadSql: (sql: string) => void }) {
+  return (
+    <div className="chat-markdown space-y-sm break-words leading-relaxed">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[[rehypeHighlight, { detect: true, ignoreMissing: true }]]}
+        components={{
+          p: ({ children }) => <p className="whitespace-pre-wrap">{children}</p>,
+          a: ({ children, href }) => (
+            <a href={href} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+              {children}
+            </a>
+          ),
+          ul: ({ children }) => <ul className="list-disc space-y-0.5 pl-4">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal space-y-0.5 pl-4">{children}</ol>,
+          h1: ({ children }) => <h1 className="mt-sm text-base font-semibold">{children}</h1>,
+          h2: ({ children }) => <h2 className="mt-sm text-sm font-semibold">{children}</h2>,
+          h3: ({ children }) => <h3 className="mt-sm text-sm font-semibold">{children}</h3>,
+          table: ({ children }) => (
+            <div className="overflow-x-auto">
+              <table className="my-sm w-full border-collapse text-xs">{children}</table>
+            </div>
+          ),
+          th: ({ children }) => (
+            <th className="border border-border px-2 py-1 text-left font-medium">{children}</th>
+          ),
+          td: ({ children }) => <td className="border border-border px-2 py-1">{children}</td>,
+          // Let the `code` renderer own block markup so it isn't double-wrapped in a <pre>.
+          pre: ({ children }) => <>{children}</>,
+          code: ({ className, children }) => {
+            const match = /language-(\w+)/.exec(className ?? '');
+            const raw = nodeText(children).replace(/\n$/, '');
+            const isBlock = Boolean(match) || raw.includes('\n');
+            if (!isBlock) {
+              return (
+                <code className="rounded-sm bg-surface-sunken px-1 py-0.5 font-mono text-xs">
+                  {children}
+                </code>
+              );
+            }
+            // `children` carries highlight.js token spans; `raw` is the plain text for the buttons.
             return (
-              <div key={i} className="mt-sm">
-                <pre className="overflow-x-auto rounded-sm bg-surface-sunken p-sm font-mono text-xs text-text">
-                  {sql}
-                </pre>
-                <button
-                  type="button"
-                  onClick={() => onLoadSql(sql)}
-                  className="mt-xs flex items-center gap-xs text-xs text-accent hover:underline"
-                >
-                  <Download size={11} />
-                  Load into editor
-                </button>
-              </div>
+              <CodeBlock lang={match?.[1]} code={raw} codeClassName={className} onLoadSql={onLoadSql}>
+                {children}
+              </CodeBlock>
             );
-          }
-          return <span key={i} className="whitespace-pre-wrap">{part}</span>;
-        })}
+          },
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+function CodeBlock({
+  lang,
+  code,
+  codeClassName,
+  onLoadSql,
+  children,
+}: {
+  lang?: string;
+  code: string;
+  codeClassName?: string;
+  onLoadSql: (sql: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="mt-sm">
+      <pre className="overflow-x-auto rounded-sm bg-surface-sunken p-sm font-mono text-xs text-text">
+        <code className={codeClassName}>{children}</code>
+      </pre>
+      <div className="mt-xs flex items-center gap-md">
+        {lang === 'sql' ? (
+          <button
+            type="button"
+            onClick={() => onLoadSql(code)}
+            className="flex items-center gap-xs text-xs text-accent hover:underline"
+          >
+            <Download size={11} />
+            Load into editor
+          </button>
+        ) : null}
+        <CopyButton text={code} />
       </div>
     </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className="flex items-center gap-xs text-xs text-text-muted hover:text-text"
+    >
+      {copied ? <Check size={11} /> : <Copy size={11} />}
+      {copied ? 'Copied' : 'Copy'}
+    </button>
   );
 }
 

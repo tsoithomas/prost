@@ -1,7 +1,7 @@
 import type { ErrorCode, ErrorEnvelope } from '@prost/shared-types';
 import { useAuthStore } from '../stores/authStore';
 
-const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001';
+export const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3001';
 
 export class ApiError extends Error {
   constructor(

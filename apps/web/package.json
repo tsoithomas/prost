@@ -23,7 +23,10 @@
     "lucide-react": "*",
     "react": "^19",
     "react-dom": "^19",
+    "react-markdown": "^10.1.0",
     "react-router-dom": "^7",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
     "sql-formatter": "^15.8.1",
     "zustand": "^5"
   },

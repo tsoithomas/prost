@@ -16,6 +16,8 @@ function buildRow(overrides: Partial<LlmEndpoint> = {}): LlmEndpoint {
     encryptedApiKey: ENC as unknown as LlmEndpoint['encryptedApiKey'],
     // Stored as a JSON-encoded string array (SQLite has no scalar lists); the service parses it back.
     models: JSON.stringify(['gpt-4o', 'gpt-4o-mini']),
+    contextBudget: null,
+    maxOutputTokens: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     ...overrides,
@@ -48,6 +50,8 @@ describe('toLlmEndpointDto', () => {
       baseUrl: 'https://api.openai.com/v1',
       models: ['gpt-4o', 'gpt-4o-mini'],
       hasApiKey: true,
+      contextBudget: null,
+      maxOutputTokens: null,
       createdAt: '2026-01-01T00:00:00.000Z',
     });
   });
@@ -140,6 +144,8 @@ describe('LlmEndpointService', () => {
         baseUrl: 'https://api.openai.com/v1',
         apiKey: 'sk-secret',
         models: ['gpt-4o', 'gpt-4o-mini'],
+        contextBudget: null,
+        maxOutputTokens: null,
       });
     });
 

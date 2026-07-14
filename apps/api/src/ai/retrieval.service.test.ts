@@ -22,6 +22,7 @@ const USERS_STRUCTURE = {
     { name: 'users_pkey', columns: ['id'], isUnique: true, isPrimary: true, method: 'btree', definition: '' },
     { name: 'users_email_idx', columns: ['email'], isUnique: true, isPrimary: false, method: 'btree', definition: '' },
   ],
+  foreignKeys: [],
 };
 
 const ORDERS_STRUCTURE = {
@@ -33,11 +34,31 @@ const ORDERS_STRUCTURE = {
   indexes: [
     { name: 'orders_pkey', columns: ['id'], isUnique: true, isPrimary: true, method: 'btree', definition: '' },
   ],
+  foreignKeys: [
+    {
+      constraintName: 'orders_user_id_fkey',
+      columns: ['user_id'],
+      referencedSchema: 'public',
+      referencedTable: 'users',
+      referencedColumns: ['id'],
+    },
+  ],
+};
+
+const OVERVIEW = {
+  schema: 'public',
+  tables: [
+    { schema: 'public', name: 'users', rowEstimate: 1200, sizeBytes: null, columnCount: 3, indexCount: 2, engine: null, collation: null, comment: 'Registered accounts' },
+    { schema: 'public', name: 'orders', rowEstimate: 45000, sizeBytes: null, columnCount: 3, indexCount: 1, engine: null, collation: null, comment: null },
+  ],
+  totalRowEstimate: 46200,
+  totalSizeBytes: null,
 };
 
 function createService() {
   const metadataService = {
     getSchemas: vi.fn().mockResolvedValue(MOCK_SCHEMAS),
+    getSchemaOverview: vi.fn().mockResolvedValue(OVERVIEW),
     getTableStructure: vi.fn().mockImplementation(
       (_id: string, _schema: string, table: string) =>
         Promise.resolve(table === 'users' ? USERS_STRUCTURE : ORDERS_STRUCTURE),
@@ -48,53 +69,73 @@ function createService() {
 
 describe('RetrievalService', () => {
   describe('buildContext', () => {
-    it('includes schema.table header for every table', async () => {
+    it('lists every table by name', async () => {
       const { service } = createService();
       const ctx = await service.buildContext('conn-1');
       expect(ctx).toContain('public.users');
       expect(ctx).toContain('public.orders');
     });
 
-    it('includes column names and types', async () => {
+    it('sends names only — no columns, foreign keys, indexes, or row counts', async () => {
       const { service } = createService();
       const ctx = await service.buildContext('conn-1');
-      expect(ctx).toContain('email text NOT NULL');
-      expect(ctx).toContain('user_id integer NOT NULL');
-      expect(ctx).toContain('name text');
+      expect(ctx).not.toContain('email text NOT NULL');
+      expect(ctx).not.toContain('FOREIGN KEY');
+      expect(ctx).not.toContain('users_email_idx');
+      expect(ctx).not.toContain('rows');
     });
 
-    it('marks primary key columns', async () => {
+    it('instructs the model to use get_table_schema for columns', async () => {
       const { service } = createService();
       const ctx = await service.buildContext('conn-1');
-      expect(ctx).toMatch(/id integer PRIMARY KEY/);
+      expect(ctx).toContain('get_table_schema');
     });
 
-    it('omits primary indexes from context', async () => {
-      const { service } = createService();
-      const ctx = await service.buildContext('conn-1');
-      expect(ctx).not.toContain('users_pkey');
-      expect(ctx).not.toContain('orders_pkey');
-    });
+    it('lists every table even on a large schema, and notes the overflow', async () => {
+      const tables = [
+        ...Array.from({ length: 60 }, (_, i) => ({ schema: 'loanstudio', name: `a_table_${i}` })),
+        { schema: 'loanstudio', name: 'clients' },
+      ];
+      const metadataService = {
+        getSchemas: vi.fn().mockResolvedValue([{ name: 'loanstudio', tables }]),
+      } as unknown as MetadataService;
+      const service = new RetrievalService(metadataService);
 
-    it('includes non-primary unique indexes', async () => {
-      const { service } = createService();
-      const ctx = await service.buildContext('conn-1');
-      expect(ctx).toContain('users_email_idx');
-      expect(ctx).toContain('UNIQUE');
-    });
-
-    it('respects token budget and stops before overflow', async () => {
-      const { service } = createService();
-      const ctx = await service.buildContext('conn-1', 50);
-      // With 50-char budget the first block alone (>50 chars) can't be added,
-      // so context should be empty or contain at most the first table.
-      expect(ctx.length).toBeLessThanOrEqual(300);
+      // Even a small char budget still names `clients` (with a truncation note if it overflows).
+      const ctx = await service.buildContext('conn-1', { maxChars: 400 });
+      const listedClients = ctx.includes('loanstudio.clients');
+      const notedOverflow = /more tables/.test(ctx);
+      expect(listedClients || notedOverflow).toBe(true);
     });
 
     it('built context passes containsOnlySchemaMetadata guard (Decision 1)', async () => {
       const { service } = createService();
       const ctx = await service.buildContext('conn-1');
       expect(service.containsOnlySchemaMetadata(ctx)).toBe(true);
+    });
+
+    it('does not fetch per-table structure or overview when building the index', async () => {
+      const { service, metadataService } = createService();
+      await service.buildContext('conn-1');
+      expect(metadataService.getTableStructure).not.toHaveBeenCalled();
+      expect(metadataService.getSchemaOverview).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('describeTables', () => {
+    it('renders full blocks for named tables (bare and schema-qualified)', async () => {
+      const { service } = createService();
+      const out = await service.describeTables('conn-1', ['orders', 'public.users']);
+      expect(out).toContain('public.orders');
+      expect(out).toContain('FOREIGN KEY (user_id) REFERENCES public.users(id)');
+      expect(out).toContain('public.users');
+      expect(out).toContain('email text NOT NULL');
+    });
+
+    it('reports tables that do not exist without throwing', async () => {
+      const { service } = createService();
+      const out = await service.describeTables('conn-1', ['nope']);
+      expect(out).toContain('nope: no such table');
     });
   });
 

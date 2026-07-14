@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Bot, ExternalLink, Plus, Save, Sparkles, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Bot, ExternalLink, Plus, RefreshCw, Save, Sparkles, Trash2, X } from 'lucide-react';
 import clsx from 'clsx';
 import type { LlmEndpointDto } from '@prost/shared-types';
 import { Badge, Button, IconButton, Input, Surface } from '@prost/ui';
@@ -7,6 +7,7 @@ import {
   useCreateLlmEndpoint,
   useDeleteLlmEndpoint,
   useLlmEndpoints,
+  useProbeLlmEndpoint,
   useUpdateLlmEndpoint,
 } from '../api/ai';
 import { FormField } from '../components/FormField';
@@ -24,6 +25,8 @@ interface FormState {
   baseUrl: string;
   apiKey: string;
   models: string;
+  /** Schema-context budget in characters; empty string → server default. */
+  contextBudget: string;
 }
 
 const blankForm: FormState = {
@@ -31,6 +34,7 @@ const blankForm: FormState = {
   baseUrl: 'https://api.openai.com/v1',
   apiKey: '',
   models: '',
+  contextBudget: '',
 };
 
 function toFormState(endpoint: LlmEndpointDto): FormState {
@@ -39,7 +43,14 @@ function toFormState(endpoint: LlmEndpointDto): FormState {
     baseUrl: endpoint.baseUrl,
     apiKey: '',
     models: endpoint.models.join('\n'),
+    contextBudget: endpoint.contextBudget != null ? String(endpoint.contextBudget) : '',
   };
+}
+
+/** Parses the context-budget field to a number, or null when blank/invalid (→ server default). */
+function parseBudget(raw: string): number | null {
+  const n = Number(raw.trim());
+  return raw.trim() && Number.isFinite(n) && n >= 500 ? Math.round(n) : null;
 }
 
 function parseModels(raw: string): string[] {
@@ -54,6 +65,7 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
   const createEndpoint = useCreateLlmEndpoint();
   const updateEndpoint = useUpdateLlmEndpoint();
   const deleteEndpoint = useDeleteLlmEndpoint();
+  const probe = useProbeLlmEndpoint();
   const { confirm, dialog: confirmDialog } = useConfirm();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -108,6 +120,7 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
       baseUrl: preset.baseUrl,
       apiKey: '',
       models: preset.models.join('\n'),
+      contextBudget: '',
     });
     setActivePreset(preset);
     setPresetChosen(true);
@@ -142,6 +155,8 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
     setFormError(null);
     const models = parseModels(form.models);
 
+    const contextBudget = parseBudget(form.contextBudget);
+
     if (selectedId) {
       updateEndpoint.mutate(
         {
@@ -150,6 +165,7 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
             name: form.name.trim(),
             baseUrl: form.baseUrl.trim(),
             models,
+            contextBudget,
             ...(form.apiKey ? { apiKey: form.apiKey } : {}),
           },
         },
@@ -160,13 +176,39 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
       );
     } else {
       createEndpoint.mutate(
-        { name: form.name.trim(), baseUrl: form.baseUrl.trim(), apiKey: form.apiKey, models },
+        { name: form.name.trim(), baseUrl: form.baseUrl.trim(), apiKey: form.apiKey, models, contextBudget },
         {
           onSuccess: (created) => selectEndpoint(created),
           onError: (err) => setFormError(apiErrorDetail(err, 'Failed to add endpoint.')),
         },
       );
     }
+  }
+
+  function handleFetchModels() {
+    if (!form.baseUrl.trim()) {
+      setFormError('Enter a base URL first.');
+      return;
+    }
+    setFormError(null);
+    probe.mutate(
+      { baseUrl: form.baseUrl.trim(), apiKey: form.apiKey },
+      {
+        onSuccess: (result) => {
+          setForm((prev) => ({
+            ...prev,
+            models: result.models.length > 0 ? result.models.join('\n') : prev.models,
+            // Convert the reported window (tokens) to a conservative char budget (~half the window).
+            contextBudget:
+              result.contextLength != null ? String(result.contextLength * 2) : prev.contextBudget,
+          }));
+          if (result.models.length === 0) {
+            setFormError('Endpoint returned no models. Enter them manually.');
+          }
+        },
+        onError: (err) => setFormError(apiErrorDetail(err, 'Could not reach the endpoint.')),
+      },
+    );
   }
 
   async function handleDelete(endpoint: LlmEndpointDto) {
@@ -349,6 +391,17 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
                 </FormField>
 
                 <FormField label="Models (one per line, or comma-separated)">
+                  <div className="mb-1 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleFetchModels}
+                      disabled={probe.isPending}
+                      className="flex items-center gap-xs text-xs text-accent hover:underline disabled:opacity-50"
+                    >
+                      <RefreshCw size={11} className={probe.isPending ? 'animate-spin' : ''} />
+                      {probe.isPending ? 'Fetching…' : 'Fetch from endpoint'}
+                    </button>
+                  </div>
                   <textarea
                     value={form.models}
                     onChange={(e) => updateField('models', e.target.value)}
@@ -356,6 +409,19 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
                     placeholder={'gpt-4o\ngpt-4o-mini'}
                     className="w-full resize-y rounded-sm border border-border bg-surface px-sm py-xs font-mono text-xs text-text placeholder-text-faint focus:border-accent focus:outline-none"
                   />
+                </FormField>
+
+                <FormField label="Context budget (characters, optional)">
+                  <Input
+                    type="number"
+                    value={form.contextBudget}
+                    onChange={(e) => updateField('contextBudget', e.target.value)}
+                    placeholder="server default (~24000)"
+                  />
+                  <p className="mt-1 text-xs text-text-faint">
+                    Max schema context sent to the model. Prefilled from the endpoint when it reports a
+                    context window; leave blank to use the server default.
+                  </p>
                 </FormField>
 
                 {formError ? (

@@ -14,11 +14,12 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  connections  Connection[]
-  queryHistory QueryHistory[]
-  snippets     Snippet[]
-  preference   UserPreference?
-  llmEndpoints LlmEndpoint[]
+  connections   Connection[]
+  queryHistory  QueryHistory[]
+  snippets      Snippet[]
+  preference    UserPreference?
+  llmEndpoints  LlmEndpoint[]
+  conversations Conversation[]
 
   @@map("users")
 }
@@ -38,8 +39,9 @@ model Connection {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  queryHistory QueryHistory[]
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  queryHistory  QueryHistory[]
+  conversations Conversation[]
 
   @@map("connections")
 }
@@ -83,12 +85,48 @@ model LlmEndpoint {
   // SQLite has no scalar-list type; stored as a JSON-encoded string array. The
   // LlmEndpointService (de)serializes it so the external `models: string[]` contract is unchanged.
   models          String
+  // Optional per-endpoint overrides for the AI context/output budgets. Null → fall back to the
+  // env default (AI_CONTEXT_BUDGET_CHARS / AI_MAX_OUTPUT_TOKENS). `contextBudget` is in characters.
+  contextBudget   Int?
+  maxOutputTokens Int?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("llm_endpoints")
+}
+
+// Persisted AI chat threads (Phase AI-improvement #6). App-DB only (principle §1) — stores the
+// conversation text, never target-DB rows. User-scoped and ownership-checked like QueryHistory.
+model Conversation {
+  id           String   @id @default(uuid())
+  userId       String
+  connectionId String
+  title        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  connection Connection            @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  messages   ConversationMessage[]
+
+  @@index([userId, connectionId, updatedAt])
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id             String   @id @default(uuid())
+  conversationId String
+  // Mirrors ChatRole ('user' | 'assistant') from @prost/shared-types.
+  role           String
+  content        String
+  createdAt      DateTime @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("conversation_messages")
 }
 
 model UserPreference {

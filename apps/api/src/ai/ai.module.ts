@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConnectionsModule } from '../connections/connections.module';
+import { HistoryModule } from '../history/history.module';
 import { MetadataModule } from '../metadata/metadata.module';
 import { AiController } from './ai.controller';
 import { AiProviderService } from './ai-provider.service';
@@ -9,7 +10,7 @@ import { LlmEndpointService } from './llm-endpoint.service';
 import { RetrievalService } from './retrieval.service';
 
 @Module({
-  imports: [ConnectionsModule, MetadataModule],
+  imports: [ConnectionsModule, MetadataModule, HistoryModule],
   controllers: [AiController, LlmEndpointController],
   providers: [AiProviderService, AiService, LlmEndpointService, RetrievalService],
 })
