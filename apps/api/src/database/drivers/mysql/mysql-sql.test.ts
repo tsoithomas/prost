@@ -306,6 +306,21 @@ describe('mysql ddl builders and normalization', () => {
     ).sql).toBe('ALTER TABLE `app_db`.`users` MODIFY COLUMN `age` BIGINT');
   });
 
+  it('builds ADD CONSTRAINT FOREIGN KEY with backtick quoting + actions', () => {
+    expect(mysqlBuildAlterTable({ namespace: 'app_db', name: 'orders' }, {
+      kind: 'addForeignKey', constraintName: 'orders_user_fk', columns: ['user_id'],
+      referencedSchema: 'app_db', referencedTable: 'users', referencedColumns: ['id'], onDelete: 'CASCADE',
+    }).sql).toBe(
+      'ALTER TABLE `app_db`.`orders` ADD CONSTRAINT `orders_user_fk` FOREIGN KEY (`user_id`) REFERENCES `app_db`.`users` (`id`) ON DELETE CASCADE',
+    );
+  });
+
+  it('uses DROP FOREIGN KEY (not DROP CONSTRAINT) for a dropped FK', () => {
+    expect(mysqlBuildAlterTable({ namespace: 'app_db', name: 'orders' }, {
+      kind: 'dropForeignKey', constraintName: 'orders_user_fk',
+    }).sql).toBe('ALTER TABLE `app_db`.`orders` DROP FOREIGN KEY `orders_user_fk`');
+  });
+
   it('creates BTREE indexes and drops them on a qualified table', () => {
     expect(mysqlBuildCreateIndex(
       { schema: 'app_db', table: 'users', columns: ['email'], unique: true },

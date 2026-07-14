@@ -327,6 +327,42 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       expect(asArray(row!.referenced_columns)).toEqual(['id']);
     });
 
+    it('adds and drops a foreign key through buildAlterTable (engines that support FK DDL)', async (ctx) => {
+      skipIfUnreachable(ctx);
+      if (!driver.descriptor.ddl.supportsForeignKeyDdl) {
+        (ctx as TestContext & { skip: (note?: string) => void }).skip('engine does not support foreign-key DDL');
+        return;
+      }
+      const partsRef = { namespace: schema, name: 'widget_parts' };
+      const partsCols: ColumnMetadata[] = [
+        { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+        { name: 'widget_id', dataType: 'integer', nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+      ];
+      const asArray = (raw: unknown): string[] =>
+        typeof raw === 'string' ? (JSON.parse(raw) as string[]) : (raw as string[]);
+
+      // Add a second FK on widget_parts.widget_id → widgets.id with a distinct name.
+      const addOp = driver.normalizeAlterTable(partsRef, {
+        kind: 'addForeignKey', constraintName: 'wp_extra_fk', columns: ['widget_id'],
+        referencedSchema: supportsSchemas ? schema : null, referencedTable: 'widgets', referencedColumns: ['id'],
+        onDelete: 'CASCADE',
+      }, partsCols);
+      await driver.query(pool!, driver.buildAlterTable(partsRef, addOp));
+
+      const afterAdd = await driver.query(pool!, driver.buildListForeignKeys(partsRef));
+      const added = afterAdd.rows.find((r) => (r as Record<string, unknown>).constraint_name === 'wp_extra_fk') as
+        | Record<string, unknown> | undefined;
+      expect(added).toBeDefined();
+      expect(asArray(added!.columns)).toEqual(['widget_id']);
+      expect(added!.referenced_table).toBe('widgets');
+
+      // Drop it and confirm it's gone.
+      const dropOp = driver.normalizeAlterTable(partsRef, { kind: 'dropForeignKey', constraintName: 'wp_extra_fk' }, partsCols);
+      await driver.query(pool!, driver.buildAlterTable(partsRef, dropOp));
+      const afterDrop = await driver.query(pool!, driver.buildListForeignKeys(partsRef));
+      expect(afterDrop.rows.some((r) => (r as Record<string, unknown>).constraint_name === 'wp_extra_fk')).toBe(false);
+    });
+
     it('lists the view as a schema object with kind "view"', async (ctx) => {
       skipIfUnreachable(ctx);
       const objects = await driver.query(pool!, driver.buildListAllSchemaObjects());

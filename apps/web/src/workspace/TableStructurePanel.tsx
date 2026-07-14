@@ -4,8 +4,10 @@ import { Pencil, Plus, Trash2 } from 'lucide-react';
 import type { ColumnMetadata } from '@prost/shared-types';
 import { Badge, Button, IconButton } from '@prost/ui';
 import { ColumnTypePill } from '../grid/columnDefs';
-import { useDropIndex } from '../api/ddl';
+import { useEngineDescriptor } from '../api/databaseEngines';
+import { useAlterTable, useDropIndex } from '../api/ddl';
 import { AddColumnModal } from '../ddl/AddColumnModal';
+import { AddForeignKeyModal } from '../ddl/AddForeignKeyModal';
 import { CreateIndexModal } from '../ddl/CreateIndexModal';
 import { EditColumnModal } from '../ddl/EditColumnModal';
 import { useConfirm } from '../hooks/useConfirm';
@@ -26,10 +28,14 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
   const [addColumnOpen, setAddColumnOpen] = useState(false);
   const [editingColumn, setEditingColumn] = useState<ColumnMetadata | null>(null);
   const [createIndexOpen, setCreateIndexOpen] = useState(false);
+  const [addForeignKeyOpen, setAddForeignKeyOpen] = useState(false);
   const [highlightedColumn, setHighlightedColumn] = useState<string | null>(null);
   const columnsRef = useRef<HTMLDivElement>(null);
 
+  const descriptor = useEngineDescriptor(connectionId);
+  const supportsForeignKeyDdl = descriptor?.ddl.supportsForeignKeyDdl ?? false;
   const dropIndex = useDropIndex(connectionId, schema, table);
+  const alterTable = useAlterTable(connectionId, schema, table);
   const { confirm, dialog: confirmDialog } = useConfirm();
 
   const revealColumn = useWorkspaceStore((state) => state.revealColumn);
@@ -55,6 +61,16 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
     });
     if (!ok) return;
     dropIndex.mutate({ schema, table, index: indexName });
+  }
+
+  async function handleDropForeignKey(constraintName: string) {
+    const ok = await confirm({
+      title: `Drop foreign key "${constraintName}"?`,
+      description: `ALTER TABLE ${schema}.${table} DROP CONSTRAINT ${constraintName}`,
+      danger: true,
+    });
+    if (!ok) return;
+    alterTable.mutate({ kind: 'dropForeignKey', constraintName });
   }
 
   if (isLoading) {
@@ -88,6 +104,14 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
       <CreateIndexModal
         open={createIndexOpen}
         onClose={() => setCreateIndexOpen(false)}
+        connectionId={connectionId}
+        schema={schema}
+        table={table}
+        availableColumns={data.columns}
+      />
+      <AddForeignKeyModal
+        open={addForeignKeyOpen}
+        onClose={() => setAddForeignKeyOpen(false)}
         connectionId={connectionId}
         schema={schema}
         table={table}
@@ -187,6 +211,12 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
             <h2 className="text-xs font-medium uppercase tracking-wider text-text-faint">
               Foreign keys ({data.foreignKeys.length})
             </h2>
+            {writable && supportsForeignKeyDdl ? (
+              <Button variant="ghost" size="sm" onClick={() => setAddForeignKeyOpen(true)}>
+                <Plus size={13} />
+                Add foreign key
+              </Button>
+            ) : null}
           </div>
           {data.foreignKeys.length === 0 ? (
             <p className="text-sm italic text-text-faint">No foreign keys.</p>
@@ -201,6 +231,15 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
                     <span className="flex-1 font-medium text-text">{fk.constraintName}</span>
                     {fk.onDelete ? <Badge variant="neutral">ON DELETE {fk.onDelete}</Badge> : null}
                     {fk.onUpdate ? <Badge variant="neutral">ON UPDATE {fk.onUpdate}</Badge> : null}
+                    {writable && supportsForeignKeyDdl ? (
+                      <IconButton
+                        aria-label={`Drop foreign key ${fk.constraintName}`}
+                        onClick={() => void handleDropForeignKey(fk.constraintName)}
+                        disabled={alterTable.isPending}
+                      >
+                        <Trash2 size={13} />
+                      </IconButton>
+                    ) : null}
                   </div>
                   <span className="font-mono text-xs text-text-faint">
                     {fk.columns.join(', ')} →{' '}

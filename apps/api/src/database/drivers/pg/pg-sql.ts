@@ -10,6 +10,7 @@ import type {
   SchemaObjectKind,
 } from '@prost/shared-types';
 import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
+import { buildAddForeignKeyClause, normalizeAddForeignKey, normalizeDropForeignKey } from '../fk-ddl';
 
 const ALLOWED_TYPES = new Set([
   'integer', 'bigint', 'smallint', 'serial', 'bigserial',
@@ -78,13 +79,18 @@ export function pgNormalizeCreateTable(req: CreateTableRequest): CreateTableRequ
 }
 
 export function pgNormalizeAlterTable(
-  _ref: TableRef,
+  ref: TableRef,
   op: AlterTableOperation,
   columns: ColumnMetadata[],
 ): AlterTableOperation {
   const colNames = new Set(columns.map((column) => column.name));
 
   switch (op.kind) {
+    case 'addForeignKey':
+      return normalizeAddForeignKey(ref, op, columns);
+    case 'dropForeignKey':
+      normalizeDropForeignKey(op);
+      return op;
     case 'addColumn': {
       if (colNames.has(op.column.name)) {
         throw new ConflictException(`Column "${op.column.name}" already exists`);
@@ -555,6 +561,12 @@ export function pgBuildAlterTable(ref: TableRef, op: AlterTableOperation): SqlFr
       if (op.using) sql += ` USING ${op.using}`;
       return { sql, params: [] };
     }
+    case 'addForeignKey': {
+      const clause = buildAddForeignKeyClause(op, pgQuoteIdent, qualify);
+      return { sql: `${prefix} ${clause.sql}`, params: [] };
+    }
+    case 'dropForeignKey':
+      return { sql: `${prefix} DROP CONSTRAINT ${pgQuoteIdent(op.constraintName)}`, params: [] };
   }
 }
 

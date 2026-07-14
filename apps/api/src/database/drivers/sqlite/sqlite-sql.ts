@@ -116,6 +116,9 @@ export function sqliteNormalizeAlterTable(
         throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
       }
       return { ...op, type: validateType(op.type, columnTypes) };
+    case 'addForeignKey':
+    case 'dropForeignKey':
+      throw new UnprocessableEntityException('SQLite does not support adding or dropping foreign key constraints');
     default:
       throw new UnprocessableEntityException('Unknown operation kind');
   }
@@ -407,6 +410,8 @@ export function sqliteBuildAlterTable(ref: TableRef, op: AlterTableOperation): S
     case 'setNotNull':
     case 'setDefault':
     case 'changeType':
+    case 'addForeignKey':
+    case 'dropForeignKey':
       throw new Error(`SQLite does not support the "${op.kind}" alter-table operation`);
   }
 }

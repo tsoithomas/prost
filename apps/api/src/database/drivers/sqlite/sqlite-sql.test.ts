@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  sqliteBuildAlterTable,
   sqliteBuildCreateIndex,
   sqliteBuildCreateTable,
   sqliteBuildDeleteRow,
@@ -222,5 +223,15 @@ describe('sqlite ddl builders', () => {
   it('drops a schema-qualified index', () => {
     const frag = sqliteBuildDropIndex({ namespace: 'main', name: 'users_email_idx' }, 'users_email_idx');
     expect(frag.sql).toBe('DROP INDEX "main"."users_email_idx"');
+  });
+
+  it('throws for foreign-key add/drop (SQLite has no ALTER TABLE ADD/DROP CONSTRAINT)', () => {
+    expect(() => sqliteBuildAlterTable({ namespace: 'main', name: 'orders' }, {
+      kind: 'addForeignKey', constraintName: 'fk', columns: ['user_id'],
+      referencedSchema: null, referencedTable: 'users', referencedColumns: ['id'],
+    })).toThrow(/does not support/);
+    expect(() => sqliteBuildAlterTable({ namespace: 'main', name: 'orders' }, {
+      kind: 'dropForeignKey', constraintName: 'fk',
+    })).toThrow(/does not support/);
   });
 });

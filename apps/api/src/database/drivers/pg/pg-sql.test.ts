@@ -186,6 +186,27 @@ describe('pg-sql ddl builders', () => {
   it('builds DROP INDEX', () => {
     expect(pgBuildDropIndex({ namespace: 'public', name: 'i' }, 'i').sql).toBe('DROP INDEX "public"."i"');
   });
+  it('builds ADD CONSTRAINT FOREIGN KEY with referenced table + actions', () => {
+    const { sql } = pgBuildAlterTable({ namespace: 'public', name: 'orders' }, {
+      kind: 'addForeignKey', constraintName: 'orders_user_id_fkey', columns: ['user_id'],
+      referencedSchema: 'public', referencedTable: 'users', referencedColumns: ['id'],
+      onDelete: 'CASCADE', onUpdate: 'NO ACTION',
+    });
+    expect(sql).toBe(
+      'ALTER TABLE "public"."orders" ADD CONSTRAINT "orders_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."users" ("id") ON DELETE CASCADE ON UPDATE NO ACTION',
+    );
+  });
+  it('builds a composite FK without actions and without a schema qualifier when referencedSchema is null', () => {
+    const { sql } = pgBuildAlterTable({ namespace: 'public', name: 'oi' }, {
+      kind: 'addForeignKey', constraintName: 'oi_fk', columns: ['a', 'b'],
+      referencedSchema: null, referencedTable: 'gc', referencedColumns: ['x', 'y'],
+    });
+    expect(sql).toBe('ALTER TABLE "public"."oi" ADD CONSTRAINT "oi_fk" FOREIGN KEY ("a", "b") REFERENCES "gc" ("x", "y")');
+  });
+  it('builds DROP CONSTRAINT for a dropped FK', () => {
+    const { sql } = pgBuildAlterTable({ namespace: 'public', name: 'orders' }, { kind: 'dropForeignKey', constraintName: 'orders_user_id_fkey' });
+    expect(sql).toBe('ALTER TABLE "public"."orders" DROP CONSTRAINT "orders_user_id_fkey"');
+  });
   it('resolves type names by oid array', () => {
     const { sql, params } = pgBuildResolveTypeNames([23, 25]);
     expect(sql).toContain('pg_type');

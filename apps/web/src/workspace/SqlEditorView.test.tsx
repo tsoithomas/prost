@@ -170,6 +170,7 @@ function makeDescriptor(
       indexMethods: [],
       supportsAutoIncrement: true,
       supportsUsingExpression: false,
+      supportsForeignKeyDdl: true,
     },
     objects: { views: true, materializedViews: false, sequences: false, functions: true, procedures: true, triggers: true, enums: false },
   };

@@ -21,6 +21,8 @@ export interface DbEngineDescriptor {
     indexMethods: string[];
     supportsAutoIncrement: boolean;
     supportsUsingExpression: boolean;
+    /** Whether the engine supports `ALTER TABLE ADD/DROP` foreign-key constraints (SQLite does not). */
+    supportsForeignKeyDdl: boolean;
   };
   /** Which non-table schema-object kinds this engine exposes for read-only browsing (Phase 24). */
   objects: {

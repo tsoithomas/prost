@@ -8,6 +8,7 @@ import type {
   SchemaObjectKind,
 } from '@prost/shared-types';
 import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
+import { buildAddForeignKeyClause, normalizeAddForeignKey, normalizeDropForeignKey } from '../fk-ddl';
 
 const ALLOWED_TYPES = new Set([
   'BIGINT',
@@ -165,13 +166,18 @@ export function mysqlNormalizeCreateTable(req: CreateTableRequest): CreateTableR
 }
 
 export function mysqlNormalizeAlterTable(
-  _ref: TableRef,
+  ref: TableRef,
   op: AlterTableOperation,
   columns: ColumnMetadata[],
 ): AlterTableOperation {
   const columnNames = new Set(columns.map((column) => column.name));
 
   switch (op.kind) {
+    case 'addForeignKey':
+      return normalizeAddForeignKey(ref, op, columns);
+    case 'dropForeignKey':
+      normalizeDropForeignKey(op);
+      return op;
     case 'addColumn': {
       if (columnNames.has(op.column.name)) {
         throw new ConflictException(`Column "${op.column.name}" already exists`);
@@ -619,6 +625,13 @@ export function mysqlBuildAlterTable(ref: TableRef, op: AlterTableOperation): Sq
         params: [],
       };
     }
+    case 'addForeignKey': {
+      const clause = buildAddForeignKeyClause(op, mysqlQuoteIdent, qualify);
+      return { sql: `${prefix} ${clause.sql}`, params: [] };
+    }
+    case 'dropForeignKey':
+      // MySQL uses DROP FOREIGN KEY (not DROP CONSTRAINT on pre-8.0.19 / MariaDB).
+      return { sql: `${prefix} DROP FOREIGN KEY ${mysqlQuoteIdent(op.constraintName)}`, params: [] };
   }
 }
 

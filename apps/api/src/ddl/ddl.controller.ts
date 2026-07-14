@@ -8,6 +8,7 @@ import type {
   DdlPreviewResult,
   DropIndexResult,
   DropTableResult,
+  ForeignKeyAction,
   TruncateTableResult,
 } from '@prost/shared-types';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
@@ -139,6 +140,19 @@ export class DdlController {
         return { kind: 'setDefault', column: dto.columnName!, default: dto.default ?? null };
       case 'changeType':
         return { kind: 'changeType', column: dto.columnName!, type: dto.type!, using: dto.using };
+      case 'addForeignKey':
+        return {
+          kind: 'addForeignKey',
+          ...(dto.constraintName ? { constraintName: dto.constraintName } : {}),
+          columns: dto.columns!,
+          referencedSchema: dto.referencedSchema ?? null,
+          referencedTable: dto.referencedTable!,
+          referencedColumns: dto.referencedColumns!,
+          ...(dto.onDelete ? { onDelete: dto.onDelete as ForeignKeyAction } : {}),
+          ...(dto.onUpdate ? { onUpdate: dto.onUpdate as ForeignKeyAction } : {}),
+        };
+      case 'dropForeignKey':
+        return { kind: 'dropForeignKey', constraintName: dto.constraintName! };
       default:
         throw new Error(`Unknown operation kind: ${dto.kind}`);
     }

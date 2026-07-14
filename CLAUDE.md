@@ -35,7 +35,11 @@ engine and its default port) to fill in the host/port/database/user/password/SSL
 indexes for the active table tab. `DdlModule` (`DdlService`, `DdlController`) handles all DDL
 writes: create table with column builder and preview (Phase 8); alter table (add/drop/rename
 columns, set NOT NULL / DEFAULT / type), create index, drop index — all with live SQL preview
-and `useConfirm` danger gates (Phase 9). Phase 10 adds an `AiModule` with `RetrievalService`
+and `useConfirm` danger gates (Phase 9). Alter-table also covers **foreign-key constraints**:
+`addForeignKey`/`dropForeignKey` `AlterTableOperation`s (shared PG/MySQL build+normalize in
+`drivers/fk-ddl.ts`; SQLite rejects — no `ALTER TABLE ADD/DROP CONSTRAINT`), gated by
+`DbEngineDescriptor.ddl.supportsForeignKeyDdl`. An `AddForeignKeyModal` + per-FK drop button in
+`TableStructurePanel` mirror the add/drop-index flow; both route through `useAlterTable`. Phase 10 adds an `AiModule` with `RetrievalService`
 (schema-only context, ≤8k chars, Decision-1 guard that no credentials or row data leak into the
 prompt) and `AiService` (`POST :id/ai/chat`). LLM providers are **user-managed**: an
 `LlmEndpoint` Prisma model (per-user, OpenAI-compatible `baseUrl` + `models[]` + API key

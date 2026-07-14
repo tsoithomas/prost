@@ -45,6 +45,7 @@ const POSTGRES_DESCRIPTOR: DbEngineDescriptor = {
     indexMethods: ['btree', 'hash'],
     supportsAutoIncrement: false,
     supportsUsingExpression: true,
+    supportsForeignKeyDdl: true,
   },
   objects: { views: true, materializedViews: true, sequences: true, functions: true, procedures: true, triggers: true, enums: true },
 };
@@ -64,6 +65,7 @@ const MYSQL_DESCRIPTOR: DbEngineDescriptor = {
     indexMethods: ['btree'],
     supportsAutoIncrement: true,
     supportsUsingExpression: false,
+    supportsForeignKeyDdl: true,
   },
 };
 

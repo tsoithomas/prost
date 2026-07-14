@@ -25,6 +25,7 @@ const BASE: DbEngineDescriptor = {
     indexMethods: ['btree'],
     supportsAutoIncrement: false,
     supportsUsingExpression: true,
+    supportsForeignKeyDdl: true,
   },
   objects: { views: true, materializedViews: true, sequences: true, functions: true, procedures: true, triggers: true, enums: true },
 };

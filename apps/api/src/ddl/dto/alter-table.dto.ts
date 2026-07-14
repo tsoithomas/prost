@@ -1,8 +1,12 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsOptional, IsString, MinLength, ValidateIf, ValidateNested } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsOptional, IsString, MinLength, ValidateIf, ValidateNested } from 'class-validator';
+import { FOREIGN_KEY_ACTIONS } from '@prost/shared-types';
 import { NewColumnDto } from './create-table.dto';
 
-const KINDS = ['addColumn', 'dropColumn', 'setNotNull', 'setDefault', 'changeType'] as const;
+const KINDS = ['addColumn', 'dropColumn', 'setNotNull', 'setDefault', 'changeType', 'addForeignKey', 'dropForeignKey'] as const;
+
+/** Kinds that address a single column via `columnName`. */
+const COLUMN_NAME_KINDS = ['dropColumn', 'setNotNull', 'setDefault', 'changeType'];
 
 export class AlterTableDto {
   @IsString()
@@ -16,7 +20,7 @@ export class AlterTableDto {
   column?: NewColumnDto;
 
   // dropColumn / setNotNull / setDefault / changeType — target column name
-  @ValidateIf((o: AlterTableDto) => o.kind !== 'addColumn')
+  @ValidateIf((o: AlterTableDto) => COLUMN_NAME_KINDS.includes(o.kind))
   @IsString()
   @MinLength(1)
   columnName?: string;
@@ -42,4 +46,41 @@ export class AlterTableDto {
   @IsOptional()
   @IsString()
   using?: string;
+
+  // addForeignKey — local columns (referencing) + referenced target
+  @ValidateIf((o: AlterTableDto) => o.kind === 'addForeignKey')
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  columns?: string[];
+
+  @ValidateIf((o: AlterTableDto) => o.kind === 'addForeignKey')
+  @IsString()
+  @MinLength(1)
+  referencedTable?: string;
+
+  @ValidateIf((o: AlterTableDto) => o.kind === 'addForeignKey')
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  referencedColumns?: string[];
+
+  @ValidateIf((o: AlterTableDto) => o.kind === 'addForeignKey' && (o as AlterTableDto).referencedSchema != null)
+  @IsOptional()
+  @IsString()
+  referencedSchema?: string | null;
+
+  @ValidateIf((o: AlterTableDto) => o.kind === 'addForeignKey' && (o as AlterTableDto).onDelete !== undefined)
+  @IsIn(FOREIGN_KEY_ACTIONS)
+  onDelete?: string;
+
+  @ValidateIf((o: AlterTableDto) => o.kind === 'addForeignKey' && (o as AlterTableDto).onUpdate !== undefined)
+  @IsIn(FOREIGN_KEY_ACTIONS)
+  onUpdate?: string;
+
+  // addForeignKey (optional) / dropForeignKey (required)
+  @ValidateIf((o: AlterTableDto) => o.kind === 'dropForeignKey')
+  @IsString()
+  @MinLength(1)
+  constraintName?: string;
 }

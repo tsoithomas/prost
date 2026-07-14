@@ -51,6 +51,7 @@ export class SqliteDriver implements DbDriver {
       indexMethods: [],
       supportsAutoIncrement: false,
       supportsUsingExpression: false,
+      supportsForeignKeyDdl: false,
     },
     objects: {
       views: true, materializedViews: false, sequences: false,

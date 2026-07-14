@@ -465,6 +465,54 @@ describe('DdlService.alterTable — setNotNull / setDefault / changeType', () =>
   });
 });
 
+describe('DdlService.alterTable — foreign keys', () => {
+  it('emits ADD CONSTRAINT … FOREIGN KEY, synthesizing the name and quoting identifiers', async () => {
+    const { service, runParameterized } = createService();
+    const result = await service.alterTable('conn-1', {
+      schema: 'public',
+      table: 'users',
+      operation: {
+        kind: 'addForeignKey', columns: ['email'], referencedSchema: 'public',
+        referencedTable: 'accounts', referencedColumns: ['email'], onDelete: 'CASCADE',
+      },
+    });
+    expect(result.sql).toBe(
+      'ALTER TABLE "public"."users" ADD CONSTRAINT "users_email_fkey" FOREIGN KEY ("email") REFERENCES "public"."accounts" ("email") ON DELETE CASCADE',
+    );
+    expect(runParameterized).toHaveBeenCalledWith('conn-1', { sql: result.sql, params: [] });
+  });
+
+  it('emits DROP CONSTRAINT for a dropped FK', async () => {
+    const { service } = createService();
+    const result = await service.alterTable('conn-1', {
+      schema: 'public', table: 'users', operation: { kind: 'dropForeignKey', constraintName: 'users_email_fkey' },
+    });
+    expect(result.sql).toBe('ALTER TABLE "public"."users" DROP CONSTRAINT "users_email_fkey"');
+  });
+
+  it('rejects a FK on a non-existent local column with 422 before executing', async () => {
+    const { service, runParameterized } = createService();
+    await expect(
+      service.alterTable('conn-1', {
+        schema: 'public', table: 'users',
+        operation: { kind: 'addForeignKey', columns: ['ghost'], referencedTable: 'accounts', referencedColumns: ['id'] },
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+    expect(runParameterized).not.toHaveBeenCalled();
+  });
+
+  it('maps Postgres 23503 (FK violation on existing rows) to 422', async () => {
+    const err = Object.assign(new Error('fk violation'), { code: '23503' });
+    const { service } = createService(vi.fn().mockRejectedValue(err));
+    await expect(
+      service.alterTable('conn-1', {
+        schema: 'public', table: 'users',
+        operation: { kind: 'addForeignKey', columns: ['email'], referencedTable: 'accounts', referencedColumns: ['id'] },
+      }),
+    ).rejects.toBeInstanceOf(UnprocessableEntityException);
+  });
+});
+
 describe('DdlService.createIndex', () => {
   it('emits CREATE UNIQUE INDEX with quoted identifiers and USING btree', async () => {
     const { service } = createService();
