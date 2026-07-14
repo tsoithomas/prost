@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Bot, Plus, Save, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Bot, ExternalLink, Plus, Save, Sparkles, Trash2, X } from 'lucide-react';
 import clsx from 'clsx';
 import type { LlmEndpointDto } from '@prost/shared-types';
 import { Badge, Button, IconButton, Input, Surface } from '@prost/ui';
@@ -12,6 +12,7 @@ import {
 import { FormField } from '../components/FormField';
 import { useConfirm } from '../hooks/useConfirm';
 import { apiErrorDetail } from '../lib/apiClient';
+import { llmPresets, type LlmPreset } from './llmPresets';
 
 export interface LlmEndpointsModalProps {
   open: boolean;
@@ -58,12 +59,18 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(blankForm);
   const [formError, setFormError] = useState<string | null>(null);
+  // In new-endpoint mode, the provider card grid shows until a preset (or
+  // "Custom endpoint") is chosen. `activePreset` drives the API-key hints.
+  const [presetChosen, setPresetChosen] = useState(false);
+  const [activePreset, setActivePreset] = useState<LlmPreset | null>(null);
 
   useEffect(() => {
     if (open) return;
     setSelectedId(null);
     setForm(blankForm);
     setFormError(null);
+    setPresetChosen(false);
+    setActivePreset(null);
     createEndpoint.reset();
     updateEndpoint.reset();
   }, [open]);
@@ -83,11 +90,34 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
     setSelectedId(endpoint.id);
     setForm(toFormState(endpoint));
     setFormError(null);
+    setPresetChosen(true);
+    setActivePreset(null);
   }
 
   function startNew() {
     setSelectedId(null);
     setForm(blankForm);
+    setFormError(null);
+    setPresetChosen(false);
+    setActivePreset(null);
+  }
+
+  function choosePreset(preset: LlmPreset) {
+    setForm({
+      name: preset.name,
+      baseUrl: preset.baseUrl,
+      apiKey: '',
+      models: preset.models.join('\n'),
+    });
+    setActivePreset(preset);
+    setPresetChosen(true);
+    setFormError(null);
+  }
+
+  function chooseCustom() {
+    setForm(blankForm);
+    setActivePreset(null);
+    setPresetChosen(true);
     setFormError(null);
   }
 
@@ -156,6 +186,7 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
   }
 
   const saving = createEndpoint.isPending || updateEndpoint.isPending;
+  const showGrid = !selectedId && !presetChosen;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-md">
@@ -232,56 +263,120 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
           </div>
 
           <div className="flex-1 overflow-y-auto p-lg">
-            <form className="flex flex-col gap-lg" onSubmit={(event) => event.preventDefault()}>
-              <FormField label="Name">
-                <Input value={form.name} onChange={(e) => updateField('name', e.target.value)} placeholder="My OpenAI" />
-              </FormField>
-
-              <FormField label="Base URL">
-                <Input
-                  className="font-mono"
-                  value={form.baseUrl}
-                  onChange={(e) => updateField('baseUrl', e.target.value)}
-                  placeholder="https://api.openai.com/v1"
-                />
-              </FormField>
-
-              <FormField label="API Key">
-                <Input
-                  className="font-mono"
-                  type="password"
-                  value={form.apiKey}
-                  onChange={(e) => updateField('apiKey', e.target.value)}
-                  placeholder={selectedId ? 'leave blank to keep current' : 'sk-…'}
-                />
-              </FormField>
-
-              <FormField label="Models (one per line, or comma-separated)">
-                <textarea
-                  value={form.models}
-                  onChange={(e) => updateField('models', e.target.value)}
-                  rows={4}
-                  placeholder={'gpt-4o\ngpt-4o-mini'}
-                  className="w-full resize-y rounded-sm border border-border bg-surface px-sm py-xs font-mono text-xs text-text placeholder-text-faint focus:border-accent focus:outline-none"
-                />
-              </FormField>
-
-              {formError ? (
-                <p className="text-xs text-danger" role="alert">
-                  {formError}
+            {showGrid ? (
+              <div className="flex flex-col gap-md">
+                <p className="text-xs text-text-faint">
+                  Pick a provider to prefill its base URL and models — then just add your API key.
                 </p>
-              ) : null}
-            </form>
+                <div className="grid grid-cols-2 gap-sm sm:grid-cols-3">
+                  {llmPresets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => choosePreset(preset)}
+                      className="flex flex-col items-start gap-1 rounded-sm border border-border bg-surface p-sm text-left transition-colors hover:border-accent hover:bg-surface-hover"
+                    >
+                      <span className="flex items-center gap-xs text-sm font-medium text-text">
+                        <Bot size={15} className="text-accent" />
+                        {preset.name}
+                      </span>
+                      <span className="truncate text-xs text-text-faint">
+                        {preset.keyless ? 'Local' : `${preset.models.length} models`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={chooseCustom}
+                  className="flex items-center gap-xs rounded-sm border border-dashed border-border bg-surface p-sm text-sm text-text-muted transition-colors hover:border-accent hover:text-text"
+                >
+                  <Sparkles size={15} className="text-text-faint" />
+                  Custom endpoint
+                </button>
+              </div>
+            ) : (
+              <form className="flex flex-col gap-lg" onSubmit={(event) => event.preventDefault()}>
+                {!selectedId ? (
+                  <button
+                    type="button"
+                    onClick={startNew}
+                    className="flex items-center gap-xs self-start text-xs text-accent hover:underline"
+                  >
+                    <ArrowLeft size={12} />
+                    Choose a different provider
+                  </button>
+                ) : null}
+
+                <FormField label="Name">
+                  <Input value={form.name} onChange={(e) => updateField('name', e.target.value)} placeholder="My OpenAI" />
+                </FormField>
+
+                <FormField label="Base URL">
+                  <Input
+                    className="font-mono"
+                    value={form.baseUrl}
+                    onChange={(e) => updateField('baseUrl', e.target.value)}
+                    placeholder="https://api.openai.com/v1"
+                  />
+                </FormField>
+
+                <FormField label="API Key">
+                  <Input
+                    className="font-mono"
+                    type="password"
+                    value={form.apiKey}
+                    onChange={(e) => updateField('apiKey', e.target.value)}
+                    placeholder={
+                      selectedId
+                        ? 'leave blank to keep current'
+                        : activePreset?.keyless
+                          ? 'any value (local server needs no key)'
+                          : 'sk-…'
+                    }
+                  />
+                  {activePreset?.apiKeyUrl ? (
+                    <a
+                      href={activePreset.apiKeyUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-1 flex w-fit items-center gap-xs text-xs text-accent hover:underline"
+                    >
+                      Get an API key
+                      <ExternalLink size={11} />
+                    </a>
+                  ) : null}
+                </FormField>
+
+                <FormField label="Models (one per line, or comma-separated)">
+                  <textarea
+                    value={form.models}
+                    onChange={(e) => updateField('models', e.target.value)}
+                    rows={4}
+                    placeholder={'gpt-4o\ngpt-4o-mini'}
+                    className="w-full resize-y rounded-sm border border-border bg-surface px-sm py-xs font-mono text-xs text-text placeholder-text-faint focus:border-accent focus:outline-none"
+                  />
+                </FormField>
+
+                {formError ? (
+                  <p className="text-xs text-danger" role="alert">
+                    {formError}
+                  </p>
+                ) : null}
+              </form>
+            )}
           </div>
 
           <Surface level="raised" className="flex h-16 shrink-0 items-center justify-end gap-md border-t border-border px-lg">
             <Button variant="ghost" size="sm" onClick={onClose}>
               Close
             </Button>
-            <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
-              <Save size={14} />
-              {saving ? 'Saving…' : selectedId ? 'Save' : 'Add Endpoint'}
-            </Button>
+            {showGrid ? null : (
+              <Button variant="primary" size="sm" onClick={handleSave} disabled={saving}>
+                <Save size={14} />
+                {saving ? 'Saving…' : selectedId ? 'Save' : 'Add Endpoint'}
+              </Button>
+            )}
           </Surface>
         </div>
       </Surface>
