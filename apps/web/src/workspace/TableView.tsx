@@ -248,14 +248,16 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
     [columnsQuery.data, openTable, schema],
   );
 
+  // AG Grid gives us the row + column reliably on right-click; open the FK menu on FK cells. The
+  // browser's own context menu is suppressed grid-wide by the `preventDefaultOnContextMenu` grid
+  // option (AG Grid calls preventDefault itself, at the right time — no event-timing races).
   const onCellContextMenu = useCallback(
     (event: CellContextMenuEvent) => {
       const row = event.data as Record<string, unknown> | undefined;
       if (!row) return;
       const items = buildCellMenuItems(event.column.getColId(), row);
-      if (items.length === 0) return; // no FK actions → let the native menu show
+      if (items.length === 0) return;
       const native = event.event as MouseEvent | undefined;
-      native?.preventDefault();
       setCellMenu({ x: native?.clientX ?? 0, y: native?.clientY ?? 0, items });
     },
     [buildCellMenuItems],
@@ -703,6 +705,9 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
               getRowId={getRowId}
               pinnedTopRowData={pinnedTopRowData}
               rowSelection={editable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: false } : undefined}
+              // AG Grid calls preventDefault on cell right-clicks, reliably suppressing the browser's
+              // context menu so only our FK menu (opened in onCellContextMenu) shows.
+              preventDefaultOnContextMenu
               onGridReady={onGridReady}
               onSelectionChanged={onSelectionChanged}
               onCellValueChanged={onCellValueChanged}

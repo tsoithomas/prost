@@ -18,9 +18,37 @@ export interface TableSummary {
   name: string;
 }
 
+/** A non-table schema object (read-only browsing — Phase 24). */
+export type SchemaObjectKind =
+  | 'view'
+  | 'materializedView'
+  | 'sequence'
+  | 'function'
+  | 'procedure'
+  | 'trigger'
+  | 'enum';
+
+export interface SchemaObjectSummary {
+  kind: SchemaObjectKind;
+  /** `null` where the engine has no schema namespace (MySQL/SQLite). */
+  schema: string | null;
+  name: string;
+  comment?: string;
+}
+
+/** One object's definition, fetched on demand for the definition panel. */
+export interface SchemaObjectDetail extends SchemaObjectSummary {
+  /** View/function/trigger source or `CREATE` text, from the engine's catalog. */
+  definition?: string;
+  /** Engine-specific extras: enum labels, sequence current value, routine language, … */
+  extra?: Record<string, string>;
+}
+
 export interface SchemaMetadata {
   name: string;
   tables: TableMetadata[];
+  /** Non-table objects in this schema (views/functions/triggers/…), for the tree groups. */
+  objects: SchemaObjectSummary[];
 }
 
 export interface IndexMetadata {

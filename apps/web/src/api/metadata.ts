@@ -1,5 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import type { SchemaMetadata, SchemaOverview, TableStructure } from '@prost/shared-types';
+import type {
+  SchemaMetadata,
+  SchemaObjectDetail,
+  SchemaObjectKind,
+  SchemaOverview,
+  TableStructure,
+} from '@prost/shared-types';
 import { apiFetch } from '../lib/apiClient';
 
 export function useMetadata(connectionId: string | null) {
@@ -25,6 +31,22 @@ export function useTableStructure(connectionId: string | null, schema: string, t
     queryFn: () =>
       apiFetch<TableStructure>(
         `/connections/${connectionId}/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/structure`,
+      ),
+    enabled: connectionId !== null,
+  });
+}
+
+export function useObjectDefinition(
+  connectionId: string | null,
+  schema: string,
+  kind: SchemaObjectKind,
+  name: string,
+) {
+  return useQuery({
+    queryKey: ['object-definition', connectionId, schema, kind, name],
+    queryFn: () =>
+      apiFetch<SchemaObjectDetail>(
+        `/connections/${connectionId}/schemas/${encodeURIComponent(schema)}/objects/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`,
       ),
     enabled: connectionId !== null,
   });

@@ -1,12 +1,15 @@
 import { create } from 'zustand';
-import type { ExecuteQueryResponse, RowFilter } from '@prost/shared-types';
+import type { ExecuteQueryResponse, RowFilter, SchemaObjectKind } from '@prost/shared-types';
 
 export interface WorkspaceTab {
   id: string;
   label: string;
-  kind: 'table' | 'query' | 'overview';
+  kind: 'table' | 'query' | 'overview' | 'object';
   schema?: string;
   table?: string;
+  /** Non-table object identity (object tabs only). */
+  objectKind?: SchemaObjectKind;
+  objectName?: string;
   viewMode?: 'rows' | 'structure';
   sql?: string;
   result?: ExecuteQueryResponse | null;
@@ -49,6 +52,8 @@ interface WorkspaceState {
     opts?: { search?: string; filter?: RowFilter },
   ) => void;
   openOverview: (schema: string) => void;
+  /** Open a read-only definition panel for a non-table object (Phase 24). */
+  openObject: (schema: string, kind: SchemaObjectKind, name: string) => void;
   closeTableTab: (schema: string, table: string) => void;
   /** Clears a table tab's one-shot `search` hand-off once the TableView has consumed it. */
   clearTabSearch: (id: string) => void;
@@ -138,6 +143,19 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
       }
       return {
         tabs: [...state.tabs, { id, label: schema, kind: 'overview', schema }],
+        activeTabId: id,
+      };
+    });
+  },
+
+  openObject: (schema, kind, name) => {
+    const id = `object:${schema}.${name}`;
+    set((state) => {
+      if (state.tabs.some((tab) => tab.id === id)) {
+        return { activeTabId: id };
+      }
+      return {
+        tabs: [...state.tabs, { id, label: name, kind: 'object', schema, objectKind: kind, objectName: name }],
         activeTabId: id,
       };
     });

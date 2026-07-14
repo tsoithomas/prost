@@ -74,6 +74,11 @@ const fallbackNetworkEngine: DbEngineDescriptor = {
     indexMethods: [],
     supportsAutoIncrement: false,
     supportsUsingExpression: true,
+    supportsForeignKeyDdl: true,
+  },
+  objects: {
+    views: false, materializedViews: false, sequences: false,
+    functions: false, procedures: false, triggers: false, enums: false,
   },
 };
 

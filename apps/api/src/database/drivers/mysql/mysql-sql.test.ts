@@ -12,6 +12,8 @@ import {
   mysqlBuildListColumns,
   mysqlBuildListForeignKeys,
   mysqlBuildListReferencingForeignKeys,
+  mysqlBuildListAllSchemaObjects,
+  mysqlBuildObjectDefinition,
   mysqlBuildListIndexes,
   mysqlBuildListTables,
   mysqlBuildRowCountEstimate,
@@ -130,6 +132,25 @@ describe('mysql metadata builders', () => {
       expect(frag.sql).toContain(alias);
     }
     expect(frag.params).toEqual(['app_db', 'users']);
+  });
+
+  it('lists views/routines/triggers scoped to DATABASE() with kind/schema/name/comment aliases', () => {
+    const frag = mysqlBuildListAllSchemaObjects();
+    for (const src of ['information_schema.VIEWS', 'information_schema.ROUTINES', 'information_schema.TRIGGERS']) {
+      expect(frag.sql).toContain(src);
+    }
+    expect(frag.sql).toContain('DATABASE()');
+    expect(frag.sql).toContain("'procedure'");
+    expect(frag.params).toEqual([]);
+  });
+
+  it('builds a parameterized definition query for the supported kinds and rejects the rest', () => {
+    expect(mysqlBuildObjectDefinition('view', { namespace: 'app_db', name: 'v' })).toMatchObject({ params: ['app_db', 'v'] });
+    expect(mysqlBuildObjectDefinition('view', { namespace: 'app_db', name: 'v' }).sql).toContain('VIEW_DEFINITION');
+    expect(mysqlBuildObjectDefinition('function', { namespace: 'app_db', name: 'f' }).sql).toContain('ROUTINE_DEFINITION');
+    expect(mysqlBuildObjectDefinition('trigger', { namespace: 'app_db', name: 't' }).sql).toContain('ACTION_STATEMENT');
+    expect(() => mysqlBuildObjectDefinition('enum', { namespace: 'app_db', name: 'e' })).toThrow(/does not support/);
+    expect(() => mysqlBuildObjectDefinition('sequence', { namespace: 'app_db', name: 's' })).toThrow(/does not support/);
   });
 });
 
@@ -283,6 +304,21 @@ describe('mysql ddl builders and normalization', () => {
       { namespace: 'app_db', name: 'users' },
       { kind: 'changeType', column: 'age', type: 'BIGINT' },
     ).sql).toBe('ALTER TABLE `app_db`.`users` MODIFY COLUMN `age` BIGINT');
+  });
+
+  it('builds ADD CONSTRAINT FOREIGN KEY with backtick quoting + actions', () => {
+    expect(mysqlBuildAlterTable({ namespace: 'app_db', name: 'orders' }, {
+      kind: 'addForeignKey', constraintName: 'orders_user_fk', columns: ['user_id'],
+      referencedSchema: 'app_db', referencedTable: 'users', referencedColumns: ['id'], onDelete: 'CASCADE',
+    }).sql).toBe(
+      'ALTER TABLE `app_db`.`orders` ADD CONSTRAINT `orders_user_fk` FOREIGN KEY (`user_id`) REFERENCES `app_db`.`users` (`id`) ON DELETE CASCADE',
+    );
+  });
+
+  it('uses DROP FOREIGN KEY (not DROP CONSTRAINT) for a dropped FK', () => {
+    expect(mysqlBuildAlterTable({ namespace: 'app_db', name: 'orders' }, {
+      kind: 'dropForeignKey', constraintName: 'orders_user_fk',
+    }).sql).toBe('ALTER TABLE `app_db`.`orders` DROP FOREIGN KEY `orders_user_fk`');
   });
 
   it('creates BTREE indexes and drops them on a qualified table', () => {

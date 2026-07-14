@@ -12,6 +12,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  SchemaObjectKind,
 } from '@prost/shared-types';
 import {
   createConnection,
@@ -187,6 +188,11 @@ export class MysqlDriver implements DbDriver {
       indexMethods: ['btree'],
       supportsAutoIncrement: true,
       supportsUsingExpression: false,
+      supportsForeignKeyDdl: true,
+    },
+    objects: {
+      views: true, materializedViews: false, sequences: false,
+      functions: true, procedures: true, triggers: true, enums: false,
     },
   };
 
@@ -376,6 +382,8 @@ export class MysqlDriver implements DbDriver {
   buildListIndexes = (ref: TableRef) => sql.mysqlBuildListIndexes(ref);
   buildListForeignKeys = (ref: TableRef) => sql.mysqlBuildListForeignKeys(ref);
   buildListReferencingForeignKeys = (ref: TableRef) => sql.mysqlBuildListReferencingForeignKeys(ref);
+  buildListAllSchemaObjects = () => sql.mysqlBuildListAllSchemaObjects();
+  buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.mysqlBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.mysqlBuildSchemaTableStats(namespace);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.mysqlBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, whereClause: string, params: unknown[]) =>
@@ -492,6 +500,23 @@ export class MysqlDriver implements DbDriver {
 
     if (code === 'ER_DUP_ENTRY' || code === 'ER_DUP_KEYNAME' || errno === 1062 || errno === 1061) {
       throw new ConflictException('A row or key with that value already exists');
+    }
+
+    // Foreign-key DDL failures — clearer messages than the generic validation fallback below.
+    if (errno === 1826 || code === 'ER_FK_DUP_NAME') {
+      throw new ConflictException('A constraint with that name already exists');
+    }
+    if (errno === 1452 || code === 'ER_NO_REFERENCED_ROW_2') {
+      throw new UnprocessableEntityException('Existing rows violate this foreign key — no matching referenced row');
+    }
+    if (errno === 1822 || code === 'ER_FK_NO_INDEX_PARENT') {
+      throw new UnprocessableEntityException('The referenced columns must be a unique or primary key');
+    }
+    if (errno === 1215 || code === 'ER_CANNOT_ADD_FOREIGN') {
+      throw new UnprocessableEntityException('Cannot add the foreign key — check the referenced table and column types');
+    }
+    if (errno === 3730 || errno === 1091 || code === 'ER_DROP_FK_NOT_EXIST') {
+      throw new UnprocessableEntityException('The foreign-key constraint does not exist');
     }
 
     const validationCodes = new Set([

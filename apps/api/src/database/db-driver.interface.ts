@@ -4,6 +4,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  SchemaObjectKind,
 } from '@prost/shared-types';
 import type {
   ConnectionParams,
@@ -74,6 +75,17 @@ export interface DbDriver {
    * referencing rows" navigation.
    */
   buildListReferencingForeignKeys(ref: TableRef): SqlFragment;
+  /**
+   * All non-table schema objects (views/materialized views/sequences/functions/procedures/triggers/
+   * enums) the engine supports, across all schemas, aliased `kind, schema, name, comment`. `kind` is
+   * a `SchemaObjectKind` literal. Powers the read-only object groups in the schema tree (Phase 24).
+   */
+  buildListAllSchemaObjects(): SqlFragment;
+  /**
+   * One object's definition, aliased `definition` (+ optional engine extras the service folds into
+   * `extra`). `kind` selects the catalog source; `ref.name` is the object name. Read-only.
+   */
+  buildObjectDefinition(kind: SchemaObjectKind, ref: TableRef): SqlFragment;
   /**
    * Per-schema table stats for the overview page — one row per base table with columns aliased
    * `table_name, row_estimate, size_bytes, column_count, index_count, engine, collation, comment`.

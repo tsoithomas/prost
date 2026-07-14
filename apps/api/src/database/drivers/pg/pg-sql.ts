@@ -7,8 +7,10 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   NewColumn,
+  SchemaObjectKind,
 } from '@prost/shared-types';
 import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
+import { buildAddForeignKeyClause, normalizeAddForeignKey, normalizeDropForeignKey } from '../fk-ddl';
 
 const ALLOWED_TYPES = new Set([
   'integer', 'bigint', 'smallint', 'serial', 'bigserial',
@@ -77,13 +79,18 @@ export function pgNormalizeCreateTable(req: CreateTableRequest): CreateTableRequ
 }
 
 export function pgNormalizeAlterTable(
-  _ref: TableRef,
+  ref: TableRef,
   op: AlterTableOperation,
   columns: ColumnMetadata[],
 ): AlterTableOperation {
   const colNames = new Set(columns.map((column) => column.name));
 
   switch (op.kind) {
+    case 'addForeignKey':
+      return normalizeAddForeignKey(ref, op, columns);
+    case 'dropForeignKey':
+      normalizeDropForeignKey(op);
+      return op;
     case 'addColumn': {
       if (colNames.has(op.column.name)) {
         throw new ConflictException(`Column "${op.column.name}" already exists`);
@@ -341,6 +348,82 @@ export function pgBuildListReferencingForeignKeys(ref: TableRef): SqlFragment {
   };
 }
 
+const PG_SYS_SCHEMAS = `NOT IN ('pg_catalog', 'information_schema') AND %C% NOT LIKE 'pg_toast%' AND %C% NOT LIKE 'pg_temp%'`;
+
+/** All non-table schema objects across user schemas, one aliased row each: `kind, schema, name, comment`. */
+export function pgBuildListAllSchemaObjects(): SqlFragment {
+  const sys = (col: string) => `${col} ${PG_SYS_SCHEMAS.replace(/%C%/g, col)}`;
+  return {
+    sql: `SELECT CASE c.relkind WHEN 'v' THEN 'view' WHEN 'm' THEN 'materializedView' WHEN 'S' THEN 'sequence' END AS kind,
+             n.nspname AS schema, c.relname AS name, obj_description(c.oid, 'pg_class') AS comment
+           FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+           WHERE c.relkind IN ('v', 'm', 'S') AND ${sys('n.nspname')}
+         UNION ALL
+           SELECT CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END AS kind,
+             n.nspname, p.proname, obj_description(p.oid, 'pg_proc')
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+           WHERE p.prokind IN ('f', 'p') AND ${sys('n.nspname')}
+         UNION ALL
+           SELECT 'trigger', n.nspname, t.tgname, obj_description(t.oid, 'pg_trigger')
+           FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+           WHERE NOT t.tgisinternal AND ${sys('n.nspname')}
+         UNION ALL
+           SELECT 'enum', n.nspname, t.typname, obj_description(t.oid, 'pg_type')
+           FROM pg_type t JOIN pg_namespace n ON n.oid = t.typnamespace
+           WHERE t.typtype = 'e' AND ${sys('n.nspname')}
+         ORDER BY schema, kind, name`,
+    params: [],
+  };
+}
+
+/** One object's `definition` (+ `extra` JSON) for the definition panel. Read-only catalog lookups. */
+export function pgBuildObjectDefinition(kind: SchemaObjectKind, ref: TableRef): SqlFragment {
+  const params = [ref.namespace, ref.name];
+  switch (kind) {
+    case 'view':
+    case 'materializedView':
+      return {
+        sql: `SELECT pg_get_viewdef((quote_ident($1) || '.' || quote_ident($2))::regclass, true) AS definition,
+                NULL::json AS extra`,
+        params,
+      };
+    case 'function':
+    case 'procedure':
+      return {
+        sql: `SELECT pg_get_functiondef(p.oid) AS definition,
+                json_build_object('language', l.lanname) AS extra
+              FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace JOIN pg_language l ON l.oid = p.prolang
+              WHERE n.nspname = $1 AND p.proname = $2 ORDER BY p.oid LIMIT 1`,
+        params,
+      };
+    case 'trigger':
+      return {
+        sql: `SELECT pg_get_triggerdef(t.oid) AS definition, NULL::json AS extra
+              FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE NOT t.tgisinternal AND n.nspname = $1 AND t.tgname = $2 ORDER BY t.oid LIMIT 1`,
+        params,
+      };
+    case 'sequence':
+      return {
+        sql: `SELECT format('CREATE SEQUENCE %I.%I START %s INCREMENT %s MINVALUE %s MAXVALUE %s%s',
+                schemaname, sequencename, start_value, increment_by, min_value, max_value,
+                CASE WHEN cycle THEN ' CYCLE' ELSE '' END) AS definition,
+                json_build_object('lastValue', COALESCE(last_value::text, 'unused')) AS extra
+              FROM pg_sequences WHERE schemaname = $1 AND sequencename = $2`,
+        params,
+      };
+    case 'enum':
+      return {
+        sql: `SELECT format('CREATE TYPE %I.%I AS ENUM (%s)', $1, $2,
+                string_agg(quote_literal(e.enumlabel), ', ' ORDER BY e.enumsortorder)) AS definition,
+                json_build_object('labels', string_agg(e.enumlabel, ', ' ORDER BY e.enumsortorder)) AS extra
+              FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid JOIN pg_namespace n ON n.oid = t.typnamespace
+              WHERE n.nspname = $1 AND t.typname = $2`,
+        params,
+      };
+  }
+}
+
 /** Re-projects the row's `xmin` transaction id as the reserved `__version` token (text-cast for JSON safety). */
 const PG_VERSION_PROJECTION = `, xmin::text AS ${pgQuoteIdent(ROW_VERSION_KEY)}`;
 
@@ -478,6 +561,12 @@ export function pgBuildAlterTable(ref: TableRef, op: AlterTableOperation): SqlFr
       if (op.using) sql += ` USING ${op.using}`;
       return { sql, params: [] };
     }
+    case 'addForeignKey': {
+      const clause = buildAddForeignKeyClause(op, pgQuoteIdent, qualify);
+      return { sql: `${prefix} ${clause.sql}`, params: [] };
+    }
+    case 'dropForeignKey':
+      return { sql: `${prefix} DROP CONSTRAINT ${pgQuoteIdent(op.constraintName)}`, params: [] };
   }
 }
 

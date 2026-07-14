@@ -7,6 +7,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  SchemaObjectKind,
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
@@ -50,6 +51,11 @@ export class SqliteDriver implements DbDriver {
       indexMethods: [],
       supportsAutoIncrement: false,
       supportsUsingExpression: false,
+      supportsForeignKeyDdl: false,
+    },
+    objects: {
+      views: true, materializedViews: false, sequences: false,
+      functions: false, procedures: false, triggers: true, enums: false,
     },
   };
   readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: false, parserDialect: 'sqlite', concurrency: 'preimage', supportsCursors: true };
@@ -201,6 +207,8 @@ export class SqliteDriver implements DbDriver {
   buildListIndexes = (ref: TableRef) => sql.sqliteBuildListIndexes(ref);
   buildListForeignKeys = (ref: TableRef) => sql.sqliteBuildListForeignKeys(ref);
   buildListReferencingForeignKeys = (ref: TableRef) => sql.sqliteBuildListReferencingForeignKeys(ref);
+  buildListAllSchemaObjects = () => sql.sqliteBuildListAllSchemaObjects();
+  buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.sqliteBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.sqliteBuildSchemaTableStats(namespace);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.sqliteBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) => sql.sqliteBuildFilteredRowCount(ref, w, p);

@@ -42,6 +42,7 @@ vi.mock('../api/databaseEngines', () => ({
           supportsAutoIncrement: false,
           supportsUsingExpression: true,
         },
+        objects: { views: true, materializedViews: true, sequences: true, functions: true, procedures: true, triggers: true, enums: true },
       },
       {
         engine: 'mysql',
@@ -61,6 +62,7 @@ vi.mock('../api/databaseEngines', () => ({
           supportsAutoIncrement: true,
           supportsUsingExpression: false,
         },
+        objects: { views: true, materializedViews: false, sequences: false, functions: true, procedures: true, triggers: true, enums: false },
       },
     ],
     isLoading: false,

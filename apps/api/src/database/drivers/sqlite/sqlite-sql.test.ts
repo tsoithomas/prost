@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  sqliteBuildAlterTable,
   sqliteBuildCreateIndex,
   sqliteBuildCreateTable,
   sqliteBuildDeleteRow,
@@ -10,6 +11,8 @@ import {
   sqliteBuildListColumns,
   sqliteBuildListForeignKeys,
   sqliteBuildListReferencingForeignKeys,
+  sqliteBuildListAllSchemaObjects,
+  sqliteBuildObjectDefinition,
   sqliteBuildRowCountEstimate,
   sqliteBuildSchemaTableStats,
   sqliteBuildDropTable,
@@ -76,6 +79,24 @@ describe('sqlite metadata builders', () => {
     expect(frag.sql).toContain('m.name AS table_name');
     expect(frag.sql).not.toContain("'users'");
     expect(frag.params).toEqual(['users']);
+  });
+
+  it('lists only views and triggers from sqlite_master with a main schema', () => {
+    const frag = sqliteBuildListAllSchemaObjects();
+    expect(frag.sql).toContain('FROM sqlite_master');
+    expect(frag.sql).toContain("type IN ('view', 'trigger')");
+    expect(frag.sql).toContain("'main' AS schema");
+    expect(frag.sql).toContain("name NOT LIKE 'sqlite_%'");
+    expect(frag.params).toEqual([]);
+  });
+
+  it('binds the object kind and name for a view/trigger definition and rejects unsupported kinds', () => {
+    const frag = sqliteBuildObjectDefinition('view', { namespace: 'main', name: 'v' });
+    expect(frag.sql).toContain('SELECT sql AS definition');
+    expect(frag.sql).toContain('type = ? AND name = ?');
+    expect(frag.params).toEqual(['view', 'v']);
+    expect(sqliteBuildObjectDefinition('trigger', { namespace: 'main', name: 't' }).params).toEqual(['trigger', 't']);
+    expect(() => sqliteBuildObjectDefinition('function', { namespace: 'main', name: 'f' })).toThrow(/does not support/);
   });
 });
 
@@ -202,5 +223,15 @@ describe('sqlite ddl builders', () => {
   it('drops a schema-qualified index', () => {
     const frag = sqliteBuildDropIndex({ namespace: 'main', name: 'users_email_idx' }, 'users_email_idx');
     expect(frag.sql).toBe('DROP INDEX "main"."users_email_idx"');
+  });
+
+  it('throws for foreign-key add/drop (SQLite has no ALTER TABLE ADD/DROP CONSTRAINT)', () => {
+    expect(() => sqliteBuildAlterTable({ namespace: 'main', name: 'orders' }, {
+      kind: 'addForeignKey', constraintName: 'fk', columns: ['user_id'],
+      referencedSchema: null, referencedTable: 'users', referencedColumns: ['id'],
+    })).toThrow(/does not support/);
+    expect(() => sqliteBuildAlterTable({ namespace: 'main', name: 'orders' }, {
+      kind: 'dropForeignKey', constraintName: 'fk',
+    })).toThrow(/does not support/);
   });
 });

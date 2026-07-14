@@ -8,6 +8,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  SchemaObjectKind,
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
@@ -64,6 +65,11 @@ export class PgDriver implements DbDriver {
       indexMethods: ['btree', 'hash', 'gin', 'gist', 'brin'],
       supportsAutoIncrement: true,
       supportsUsingExpression: true,
+      supportsForeignKeyDdl: true,
+    },
+    objects: {
+      views: true, materializedViews: true, sequences: true,
+      functions: true, procedures: true, triggers: true, enums: true,
     },
   };
   readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: true, parserDialect: 'postgresql', concurrency: 'token', supportsCursors: true };
@@ -230,6 +236,8 @@ export class PgDriver implements DbDriver {
   buildListIndexes = (ref: TableRef) => sql.pgBuildListIndexes(ref);
   buildListForeignKeys = (ref: TableRef) => sql.pgBuildListForeignKeys(ref);
   buildListReferencingForeignKeys = (ref: TableRef) => sql.pgBuildListReferencingForeignKeys(ref);
+  buildListAllSchemaObjects = () => sql.pgBuildListAllSchemaObjects();
+  buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.pgBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.pgBuildSchemaTableStats(namespace);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.pgBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) => sql.pgBuildFilteredRowCount(ref, w, p);
@@ -314,6 +322,12 @@ export class PgDriver implements DbDriver {
       if (code === '42846') throw new UnprocessableEntityException('Cannot cast automatically; provide a USING expression');
       if (code === '23502') throw new UnprocessableEntityException('Column has existing null values; cannot set NOT NULL');
       if (code === '42701') throw new ConflictException('Column already exists');
+      // Foreign-key DDL failures.
+      if (code === '23503') throw new UnprocessableEntityException('Existing rows violate this foreign key — no matching referenced row');
+      if (code === '42710') throw new ConflictException('A constraint with that name already exists');
+      if (code === '42P01') throw new UnprocessableEntityException('The referenced table does not exist');
+      if (code === '42830') throw new UnprocessableEntityException('The referenced columns are not a unique or primary key');
+      if (code === '2BP01' || code === '42704') throw new UnprocessableEntityException('The foreign-key constraint does not exist');
     }
     if (ctx.operation === 'createIndex' && code === '42P07') {
       throw new ConflictException('An index with that name already exists');

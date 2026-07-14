@@ -167,7 +167,13 @@ add-on.
 - Supported target engines are PostgreSQL, MySQL 8.0+, and SQLite — added through the driver
   seam, not by branching feature code. Out of scope until explicitly revisited: other engines
   (e.g. MariaDB, SQL Server, Oracle), SSH tunneling, ER diagrams, team/multi-tenant features,
-  stored-procedure/trigger editors, advanced RBAC, background jobs, scheduling.
+  stored-procedure/trigger **editing or execution**, advanced RBAC, background jobs, scheduling.
+- **Read-only browsing of schema objects is in scope** (Phase 24). Listing and *displaying the
+  definition* of views, materialized views, sequences, functions/procedures, triggers, and enum
+  types — sourced from the same server-validated driver/catalog seam as table metadata (§1, §4) —
+  is browsing, not editing. What stays frozen is *creating/altering/dropping* these objects and
+  *executing* functions/procedures or *refreshing* materialized views from the UI; browsing adds no
+  write or execute path.
 - **AI features are no longer blanket out-of-scope** — they're tracked for upcoming
   development in [`docs/future-features.md`](./future-features.md) (e.g. a schema-aware
   chat/RAG assistant). They remain subject to every other principle: no path to a target DB

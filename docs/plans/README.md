@@ -37,7 +37,7 @@ passes **and** it violates none of the architecture principles.
 | [21](./phase-21-preferences-theming.md) | Preferences & theming expansion | ✅ Complete |
 | [22](./phase-22-streaming-results.md) | Streaming / cursor-based large result sets | ✅ Complete |
 | [23](./phase-23-foreign-keys.md) | Foreign-key metadata + relational navigation | ✅ Complete |
-| [24](./phase-24-schema-objects.md) | Broader schema-object browsing (views/functions/triggers/…) | 📋 Planned |
+| [24](./phase-24-schema-objects.md) | Broader schema-object browsing (views/functions/triggers/…) | ✅ Complete |
 | [25](./phase-25-data-export-import.md) | Data export & import (CSV/JSON) | 📋 Planned |
 | [26](./phase-26-query-plan-viz.md) | Query-plan visualization | 📋 Planned |
 | [27](./phase-27-readonly-guardrails.md) | Read-only / environment connection guardrails | 📋 Planned |
@@ -55,7 +55,8 @@ remaining backlog (13–22); **all complete**, with the backlog now exhausted. T
 in [`roadmap-phase-11-22.md`](./roadmap-phase-11-22.md). Phases 23–33 are the **third wave** — a
 fresh, backlog-independent set across three tracks (DBA depth, production safety/ops, AI depth),
 sequenced in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). Phase 23 (FK metadata +
-relational navigation) is **complete**; 24–33 remain **planned**.
+relational navigation) and Phase 24 (read-only schema-object browsing) are **complete**; 25–33
+remain **planned**.
 
 ## Sequencing notes
 

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Code, LayoutGrid, Plus, Table2, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Code, FileText, LayoutGrid, Plus, Table2, X } from 'lucide-react';
 import clsx from 'clsx';
 
 export interface WorkspaceTab {
   id: string;
   label: string;
-  kind: 'table' | 'query' | 'overview';
+  kind: 'table' | 'query' | 'overview' | 'object';
 }
 
 export interface WorkspaceTabBarProps {
@@ -167,7 +167,11 @@ export function WorkspaceTabBar({
       >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
-          const Icon = tab.kind === 'overview' ? LayoutGrid : tab.kind === 'table' ? Table2 : Code;
+          const Icon =
+            tab.kind === 'overview' ? LayoutGrid
+            : tab.kind === 'table' ? Table2
+            : tab.kind === 'object' ? FileText
+            : Code;
           const canClose = tab.kind !== 'query' || queryTabCount > 1;
           const isDropTarget = dragOverId === tab.id && draggedId !== null && draggedId !== tab.id;
           return (

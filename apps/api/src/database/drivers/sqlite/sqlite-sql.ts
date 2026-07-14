@@ -6,6 +6,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   NewColumn,
+  SchemaObjectKind,
 } from '@prost/shared-types';
 import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
 
@@ -115,6 +116,9 @@ export function sqliteNormalizeAlterTable(
         throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
       }
       return { ...op, type: validateType(op.type, columnTypes) };
+    case 'addForeignKey':
+    case 'dropForeignKey':
+      throw new UnprocessableEntityException('SQLite does not support adding or dropping foreign key constraints');
     default:
       throw new UnprocessableEntityException('Unknown operation kind');
   }
@@ -258,6 +262,28 @@ export function sqliteBuildListReferencingForeignKeys(ref: TableRef): SqlFragmen
   };
 }
 
+/** SQLite exposes views and triggers via `sqlite_master`; no sequences/routines/enums/matviews. */
+export function sqliteBuildListAllSchemaObjects(): SqlFragment {
+  return {
+    sql: `SELECT type AS kind, 'main' AS schema, name AS name, NULL AS comment
+          FROM sqlite_master
+          WHERE type IN ('view', 'trigger') AND name NOT LIKE 'sqlite_%'
+          ORDER BY type, name`,
+    params: [],
+  };
+}
+
+export function sqliteBuildObjectDefinition(kind: SchemaObjectKind, ref: TableRef): SqlFragment {
+  if (kind !== 'view' && kind !== 'trigger') {
+    throw new Error(`SQLite does not support schema object kind "${kind}"`);
+  }
+  // `kind` is one of the literal `sqlite_master.type` values ('view'/'trigger') — bind it directly.
+  return {
+    sql: `SELECT sql AS definition, NULL AS extra FROM sqlite_master WHERE type = ? AND name = ?`,
+    params: [kind, ref.name],
+  };
+}
+
 export function sqliteBuildSelectRows(ref: TableRef, opts: SelectRowsOptions): SqlFragment {
   let sql = `SELECT * FROM ${qualify(ref)}`;
   if (opts.whereClause) sql += ` ${opts.whereClause}`;
@@ -384,6 +410,8 @@ export function sqliteBuildAlterTable(ref: TableRef, op: AlterTableOperation): S
     case 'setNotNull':
     case 'setDefault':
     case 'changeType':
+    case 'addForeignKey':
+    case 'dropForeignKey':
       throw new Error(`SQLite does not support the "${op.kind}" alter-table operation`);
   }
 }

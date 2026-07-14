@@ -12,7 +12,7 @@ implementation plans + status live in [`docs/plans/`](docs/plans/README.md). Dur
 architectural rules (read before making non-trivial changes — a violation is a defect
 even if it works): [`docs/architecture-principles.md`](docs/architecture-principles.md).
 
-**Current status**: All phases 0–23 complete. Login (JWT via `/auth/login`, guarded `/app/*`
+**Current status**: All phases 0–24 complete. Login (JWT via `/auth/login`, guarded `/app/*`
 routes), connection CRUD + test (`/connections`), real schema tree
 (`/connections/:id/metadata`), paginated table rows via AG Grid's Infinite Row Model
 (`/connections/:id/tables/:schema/:table/rows`) with inline cell editing + row insert/delete,
@@ -35,7 +35,11 @@ engine and its default port) to fill in the host/port/database/user/password/SSL
 indexes for the active table tab. `DdlModule` (`DdlService`, `DdlController`) handles all DDL
 writes: create table with column builder and preview (Phase 8); alter table (add/drop/rename
 columns, set NOT NULL / DEFAULT / type), create index, drop index — all with live SQL preview
-and `useConfirm` danger gates (Phase 9). Phase 10 adds an `AiModule` with `RetrievalService`
+and `useConfirm` danger gates (Phase 9). Alter-table also covers **foreign-key constraints**:
+`addForeignKey`/`dropForeignKey` `AlterTableOperation`s (shared PG/MySQL build+normalize in
+`drivers/fk-ddl.ts`; SQLite rejects — no `ALTER TABLE ADD/DROP CONSTRAINT`), gated by
+`DbEngineDescriptor.ddl.supportsForeignKeyDdl`. An `AddForeignKeyModal` + per-FK drop button in
+`TableStructurePanel` mirror the add/drop-index flow; both route through `useAlterTable`. Phase 10 adds an `AiModule` with `RetrievalService`
 (schema-only context, ≤8k chars, Decision-1 guard that no credentials or row data leak into the
 prompt) and `AiService` (`POST :id/ai/chat`). LLM providers are **user-managed**: an
 `LlmEndpoint` Prisma model (per-user, OpenAI-compatible `baseUrl` + `models[]` + API key
@@ -73,6 +77,20 @@ menu (right-click / long-press) offers "open referenced row" (forward) and "show
 (reverse); both compile to a parameterized Phase-14 `RowFilter` via `buildFkNavTargets` (in
 `grid/fkNavigation.ts`) and open the target as a table tab seeded through `workspaceStore`'s
 one-shot `presetFilter`. Read + navigate only — FK-constraint DDL and ER diagrams stay out of scope.
+
+**Phase 24 (read-only schema-object browsing)**: views, materialized views, sequences, functions,
+procedures, triggers, and enums are surfaced read-only (the §13 freeze was amended to clarify
+browsing ≠ editing). Two capability-uniform driver builders — `buildListAllSchemaObjects` (one UNION
+per engine → `SchemaObjectSummary`) and `buildObjectDefinition(kind, ref)` (catalog sources:
+PG `pg_get_*def`/`pg_sequences`/`pg_enum`, MySQL `information_schema.VIEWS`/`ROUTINES`/`TRIGGERS`,
+SQLite `sqlite_master`) — feed `MetadataService.getSchemas` (now attaches `objects` to each
+`SchemaMetadata`) and `getObjectDefinition` (`GET :id/schemas/:schema/objects/:kind/:name`). Each
+engine's `DbEngineDescriptor.objects` advertises which kinds it exposes. In the schema tree
+(`SchemaTree`, shared desktop/mobile) objects render as collapsible per-kind groups (empty groups
+hidden); views/materialized views open in the grid read-only (they resolve as a `TableRef`, so the
+editability analyzer already marks them non-editable — no new path) while other kinds open a new
+`'object'` workspace tab rendering `DefinitionPanel` (a token-styled `<pre>` source view, no Monaco).
+Routing lives in `explorer/objectNavigation.ts`. No create/alter/drop, no execution — browsing only.
 
 ## Commands
 

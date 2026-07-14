@@ -116,6 +116,26 @@ describe('workspaceStore — openTable search hand-off / closeTableTab', () => {
   });
 });
 
+describe('workspaceStore — openObject', () => {
+  it('opens a read-only object tab keyed by schema.name and makes it active', () => {
+    useWorkspaceStore.getState().openObject('public', 'function', 'add');
+    const state = useWorkspaceStore.getState();
+    expect(state.activeTabId).toBe('object:public.add');
+    expect(state.tabs[1]).toMatchObject({
+      id: 'object:public.add', kind: 'object', schema: 'public', objectKind: 'function', objectName: 'add', label: 'add',
+    });
+  });
+
+  it('dedupes: reopening the same object reactivates the existing tab', () => {
+    useWorkspaceStore.getState().openObject('public', 'view', 'v');
+    useWorkspaceStore.getState().openTable('public', 'users');
+    useWorkspaceStore.getState().openObject('public', 'view', 'v');
+    const state = useWorkspaceStore.getState();
+    expect(state.tabs.filter((t) => t.id === 'object:public.v')).toHaveLength(1);
+    expect(state.activeTabId).toBe('object:public.v');
+  });
+});
+
 describe('workspaceStore — newQueryTab', () => {
   it('adds a new query tab with an incrementing label and makes it active', () => {
     useWorkspaceStore.getState().newQueryTab();

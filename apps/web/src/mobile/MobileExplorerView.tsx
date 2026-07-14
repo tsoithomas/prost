@@ -6,6 +6,7 @@ import { connectionEndpoint } from '../connection/connectionDisplay';
 import { useMetadata } from '../api/metadata';
 import { CreateTableModal } from '../ddl/CreateTableModal';
 import { SchemaTree } from '../explorer/SchemaTree';
+import { openSchemaObject, selectedObjectKey } from '../explorer/objectNavigation';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 
@@ -21,6 +22,7 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
   const workspaceTabs = useWorkspaceStore((state) => state.tabs);
   const activeWorkspaceTabId = useWorkspaceStore((state) => state.activeTabId);
   const openTable = useWorkspaceStore((state) => state.openTable);
+  const openObject = useWorkspaceStore((state) => state.openObject);
   const openOverview = useWorkspaceStore((state) => state.openOverview);
 
   const [createTableState, setCreateTableState] = useState<{ open: boolean; schema: string }>({
@@ -33,6 +35,7 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
     activeWorkspaceTab?.kind === 'table' && activeWorkspaceTab.schema
       ? `${activeWorkspaceTab.schema}.${activeWorkspaceTab.table}`
       : null;
+  const selectedObject = selectedObjectKey(activeWorkspaceTab);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -59,12 +62,17 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
           <SchemaTree
             schemas={schemas ?? []}
             selectedTable={selectedTable}
+            selectedObject={selectedObject}
             onSelectTable={(table) => {
               openTable(table.schema, table.name, 'rows');
               onSelectTable?.();
             }}
             onOpenStructure={(table) => {
               openTable(table.schema, table.name, 'structure');
+              onSelectTable?.();
+            }}
+            onSelectObject={(object) => {
+              openSchemaObject({ openTable, openObject }, object);
               onSelectTable?.();
             }}
             onNewTable={(schema) => setCreateTableState({ open: true, schema })}
