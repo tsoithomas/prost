@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Box, ChevronDown, ChevronRight, Eye, FunctionSquare, Layers, LayoutGrid, List, ListOrdered,
-  Plus, Rows3, Search, SquareCode, StretchHorizontal, Table2, X, Zap,
+  Pin, PinOff, Plus, Rows3, Search, SquareCode, StretchHorizontal, Table2, X, Zap,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { SchemaMetadata, SchemaObjectKind, SchemaObjectSummary, TableSummary } from '@prost/shared-types';
@@ -34,6 +34,10 @@ export interface SchemaTreeProps {
   hasSchemas?: boolean;
   /** Read-only connections (the app DB) hide write affordances like "New table". */
   writable?: boolean;
+  /** Composite `schema.table` keys of pinned tables, shown in a "Pinned" section at the top. */
+  pinnedKeys?: Set<string>;
+  /** Toggle a table's pinned state. When omitted, pinning affordances are hidden. */
+  onTogglePin?: (table: TableSummary) => void;
 }
 
 interface ContextMenuState {
@@ -53,6 +57,8 @@ export function SchemaTree({
   onOpenOverview,
   hasSchemas = true,
   writable = true,
+  pinnedKeys,
+  onTogglePin,
 }: SchemaTreeProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
@@ -63,6 +69,18 @@ export function SchemaTree({
     query === '' || table.name.toLowerCase().includes(query);
   const matchesObject = (object: SchemaObjectSummary) =>
     query === '' || object.name.toLowerCase().includes(query);
+
+  const tableKey = (table: TableSummary) => `${table.schema}.${table.name}`;
+  const pinningEnabled = !!onTogglePin;
+  const isPinned = (table: TableSummary) => pinnedKeys?.has(tableKey(table)) ?? false;
+  // Resolve pinned keys back to their `TableSummary` (drop any that no longer exist),
+  // preserving the pinned-order from the store.
+  const pinnedTables: TableSummary[] =
+    pinnedKeys && pinnedKeys.size > 0
+      ? schemas
+          .flatMap((schema) => schema.tables)
+          .filter((table) => pinnedKeys.has(tableKey(table)) && matchesQuery(table))
+      : [];
 
   useEffect(() => {
     if (!contextMenu) return;
@@ -87,7 +105,7 @@ export function SchemaTree({
     });
   }
 
-  const renderTableButton = (table: TableSummary) => (
+  const renderTableButton = (table: TableSummary, className?: string) => (
     <button
       key={`${table.schema}.${table.name}`}
       type="button"
@@ -102,12 +120,43 @@ export function SchemaTree({
         selectedTable === `${table.schema}.${table.name}`
           ? 'bg-accent-muted text-accent'
           : 'text-text-muted hover:bg-surface-hover hover:text-text',
+        className,
       )}
     >
-      <Table2 size={14} />
-      <span>{table.name}</span>
+      <Table2 size={14} className="shrink-0" />
+      <span className="truncate">{table.name}</span>
     </button>
   );
+
+  // A table button plus a right-aligned pin/unpin toggle: shown on hover for unpinned
+  // tables, always visible (accent) for pinned ones.
+  const renderTableRow = (table: TableSummary) => {
+    const pinned = isPinned(table);
+    return (
+      <div key={`row:${tableKey(table)}`} className="group/row relative flex items-center">
+        {renderTableButton(table, 'min-w-0 flex-1 pr-7')}
+        {pinningEnabled ? (
+          <button
+            type="button"
+            aria-label={pinned ? `Unpin ${table.name}` : `Pin ${table.name}`}
+            title={pinned ? 'Unpin' : 'Pin to top'}
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePin?.(table);
+            }}
+            className={clsx(
+              'absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm transition-opacity hover:bg-surface-hover',
+              pinned
+                ? 'text-accent opacity-100'
+                : 'text-text-faint opacity-0 hover:text-text group-hover/row:opacity-100',
+            )}
+          >
+            {pinned ? <PinOff size={12} /> : <Pin size={12} />}
+          </button>
+        ) : null}
+      </div>
+    );
+  };
 
   const renderObjectButton = (object: SchemaObjectSummary, Icon: typeof Eye) => {
     const key = `${object.schema ?? ''}.${object.name}`;
@@ -164,7 +213,7 @@ export function SchemaTree({
     const allObjects = schemas.flatMap((schema) => schema.objects);
     return (
       <div>
-        {renderFilterBox()}
+        {renderStickyTop()}
         <div className="mb-2 flex items-center justify-between px-sm">
           <span className="text-xs font-medium uppercase tracking-wider text-text-faint">Tables</span>
           <button
@@ -182,7 +231,7 @@ export function SchemaTree({
         ) : tables.length === 0 ? (
           <p className="px-sm py-1 text-xs italic text-text-faint">No tables match "{filter.trim()}"</p>
         ) : (
-          <div className="flex flex-col gap-0.5">{tables.map(renderTableButton)}</div>
+          <div className="flex flex-col gap-0.5">{tables.map(renderTableRow)}</div>
         )}
         <div className="mt-1 flex flex-col gap-0.5">{renderObjectGroups(flatSchema, allObjects)}</div>
         {renderContextMenu()}
@@ -203,7 +252,7 @@ export function SchemaTree({
 
   return (
     <div>
-      {renderFilterBox()}
+      {renderStickyTop()}
       <div className="mb-2 px-sm text-xs font-medium uppercase tracking-wider text-text-faint">Schemas</div>
       {query !== '' && visibleSchemas.length === 0 ? (
         <p className="px-sm py-1 text-xs italic text-text-faint">No tables match "{filter.trim()}"</p>
@@ -249,7 +298,7 @@ export function SchemaTree({
             </div>
             {isCollapsed ? null : (
               <div className="ml-2 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-3">
-                {schema.tables.map(renderTableButton)}
+                {schema.tables.map(renderTableRow)}
                 {renderObjectGroups(schema.name, schema.objects)}
               </div>
             )}
@@ -263,7 +312,7 @@ export function SchemaTree({
 
   function renderFilterBox() {
     return (
-      <div className="sticky top-0 z-10 mb-2 bg-surface-sunken pb-1 pt-1">
+      <div className="mb-2 pb-1 pt-1">
         <div className="relative">
           <Search size={13} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-text-faint" />
           <Input
@@ -319,6 +368,45 @@ export function SchemaTree({
           <StretchHorizontal size={13} />
           View structure
         </button>
+        {pinningEnabled ? (
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text hover:bg-surface-hover"
+            onClick={() => {
+              onTogglePin?.(contextMenu.table);
+              setContextMenu(null);
+            }}
+          >
+            {isPinned(contextMenu.table) ? <PinOff size={13} /> : <Pin size={13} />}
+            {isPinned(contextMenu.table) ? 'Unpin from top' : 'Pin to top'}
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  // Filter box + pinned tables, kept together in one sticky header so pinned tables
+  // stay at the top while the rest of the tree scrolls beneath them.
+  function renderStickyTop() {
+    return (
+      <div className="sticky top-0 z-10 bg-surface-sunken">
+        {renderFilterBox()}
+        {renderPinnedSection()}
+      </div>
+    );
+  }
+
+  function renderPinnedSection() {
+    if (!pinningEnabled || pinnedTables.length === 0) return null;
+    return (
+      <div className="mb-2">
+        <div className="mb-1 flex items-center gap-1 px-sm text-xs font-medium uppercase tracking-wider text-text-faint">
+          <Pin size={11} />
+          <span>Pinned</span>
+        </div>
+        <div className="flex max-h-44 flex-col gap-0.5 overflow-y-auto">
+          {pinnedTables.map(renderTableRow)}
+        </div>
       </div>
     );
   }

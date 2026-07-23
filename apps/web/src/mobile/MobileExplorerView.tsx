@@ -8,6 +8,7 @@ import { CreateTableModal } from '../ddl/CreateTableModal';
 import { SchemaTree } from '../explorer/SchemaTree';
 import { openSchemaObject, selectedObjectKey } from '../explorer/objectNavigation';
 import { useConnectionStore } from '../stores/connectionStore';
+import { usePinnedTablesStore } from '../stores/pinnedTablesStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 
 export interface MobileExplorerViewProps {
@@ -24,6 +25,9 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
   const openTable = useWorkspaceStore((state) => state.openTable);
   const openObject = useWorkspaceStore((state) => state.openObject);
   const openOverview = useWorkspaceStore((state) => state.openOverview);
+  const pinnedByConnection = usePinnedTablesStore((state) => state.pinned);
+  const togglePinned = usePinnedTablesStore((state) => state.toggle);
+  const pinnedKeys = new Set(activeConnectionId ? pinnedByConnection[activeConnectionId] ?? [] : []);
 
   const [createTableState, setCreateTableState] = useState<{ open: boolean; schema: string }>({
     open: false,
@@ -82,6 +86,12 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
             }}
             hasSchemas={activeConnection?.capabilities.hasSchemas ?? true}
             writable={!activeConnection?.capabilities.readOnly}
+            pinnedKeys={pinnedKeys}
+            onTogglePin={
+              activeConnectionId
+                ? (table) => togglePinned(activeConnectionId, `${table.schema}.${table.name}`)
+                : undefined
+            }
           />
         )}
       </div>

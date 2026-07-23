@@ -117,6 +117,20 @@ body {
   color: var(--color-text);
 }
 
+/*
+ * Tailwind v4's Preflight resets <button> to `cursor: default` (matching the browser
+ * default), so clickable controls no longer show a pointer. Restore it for enabled
+ * buttons / role="button" elements. In @layer base so any explicit `cursor-*` utility
+ * (e.g. `cursor-not-allowed` on a disabled state) still wins.
+ */
+@layer base {
+  button:not(:disabled),
+  [role='button']:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+}
+
 /* Themed scrollbars — colors come from the active theme's tokens (light + .dark). */
 * {
   scrollbar-width: thin;
