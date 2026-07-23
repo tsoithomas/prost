@@ -476,7 +476,7 @@ export function SqlEditorView() {
         />
       </div>
       <div className="flex h-1/2 min-h-0 flex-col overflow-hidden max-md:h-3/5">
-        <div className="flex h-8 max-md:h-11 shrink-0 items-center gap-sm overflow-x-auto border-b border-border bg-surface px-sm">
+        <div className="flex h-8 max-md:h-11 shrink-0 items-center gap-sm overflow-x-auto border-b border-border bg-surface px-sm [&>*]:shrink-0">
           <Button
             variant="primary"
             size="sm"

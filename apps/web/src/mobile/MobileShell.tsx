@@ -19,11 +19,7 @@ export function MobileShell({ onOpenConnections }: MobileShellProps) {
 
   return (
     <div className="flex h-screen flex-col bg-bg text-text">
-      <MobileTopBar
-        activeTab={activeTab}
-        onOpenConnections={onOpenConnections}
-        onShowExplorer={() => setActiveTab('explorer')}
-      />
+      <MobileTopBar onOpenConnections={onOpenConnections} />
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {activeTab === 'explorer' ? <MobileExplorerView onSelectTable={() => setActiveTab('editor')} /> : null}
         {activeTab === 'editor' ? <Workspace /> : null}

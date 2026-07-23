@@ -116,7 +116,7 @@ export function SchemaTree({
         setContextMenu({ x: e.clientX, y: e.clientY, table });
       }}
       className={clsx(
-        'flex items-center gap-1 rounded-sm px-1 py-1 text-left text-xs transition-colors',
+        'flex items-center gap-1 rounded-sm px-1 py-1 text-left text-xs transition-colors max-md:py-2 max-md:text-sm',
         selectedTable === `${table.schema}.${table.name}`
           ? 'bg-accent-muted text-accent'
           : 'text-text-muted hover:bg-surface-hover hover:text-text',
@@ -145,10 +145,11 @@ export function SchemaTree({
               onTogglePin?.(table);
             }}
             className={clsx(
-              'absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm transition-opacity hover:bg-surface-hover',
+              'absolute right-1 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-sm transition-opacity hover:bg-surface-hover max-md:h-8 max-md:w-8',
+              // No hover on touch devices, so pin affordances must be visible by default there.
               pinned
                 ? 'text-accent opacity-100'
-                : 'text-text-faint opacity-0 hover:text-text group-hover/row:opacity-100',
+                : 'text-text-faint opacity-0 hover:text-text group-hover/row:opacity-100 max-md:opacity-100',
             )}
           >
             {pinned ? <PinOff size={12} /> : <Pin size={12} />}
@@ -169,7 +170,7 @@ export function SchemaTree({
         onClick={() => onSelectObject(object)}
         title={object.comment ?? object.name}
         className={clsx(
-          'flex items-center gap-1 rounded-sm px-1 py-1 text-left text-xs transition-colors',
+          'flex items-center gap-1 rounded-sm px-1 py-1 text-left text-xs transition-colors max-md:py-2 max-md:text-sm',
           active ? 'bg-accent-muted text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text',
         )}
       >
@@ -266,7 +267,7 @@ export function SchemaTree({
               <button
                 type="button"
                 onClick={() => toggleSchema(schema.name)}
-                className="flex min-w-0 flex-1 items-center gap-1 rounded-sm px-1 py-1 text-xs text-text transition-colors hover:bg-surface-hover"
+                className="flex min-w-0 flex-1 items-center gap-1 rounded-sm px-1 py-1 text-xs text-text transition-colors hover:bg-surface-hover max-md:py-2 max-md:text-sm"
               >
                 {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                 <Box size={14} className="shrink-0 text-accent" />

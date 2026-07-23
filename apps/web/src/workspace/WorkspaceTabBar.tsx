@@ -157,10 +157,10 @@ export function WorkspaceTabBar({
     );
   }
 
-  const controlButton = 'flex h-7 shrink-0 items-center rounded-t-sm px-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text disabled:cursor-not-allowed disabled:opacity-40';
+  const controlButton = 'flex h-7 max-md:h-9 max-md:px-2 shrink-0 items-center rounded-t-sm px-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text disabled:cursor-not-allowed disabled:opacity-40';
 
   return (
-    <div className="flex h-8 shrink-0 items-end border-b border-border bg-surface-sunken px-sm pt-1">
+    <div className="flex h-8 max-md:h-11 shrink-0 items-end border-b border-border bg-surface-sunken px-sm pt-1">
       <div
         ref={scrollRef}
         className="no-scrollbar flex flex-1 items-end gap-1 overflow-x-auto"
@@ -206,7 +206,7 @@ export function WorkspaceTabBar({
                 setMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
               }}
               className={clsx(
-                'flex h-7 shrink-0 items-center gap-sm whitespace-nowrap rounded-t-sm border border-b-0 px-sm text-xs transition-colors',
+                'flex h-7 max-md:h-9 shrink-0 items-center gap-sm whitespace-nowrap rounded-t-sm border border-b-0 px-sm text-xs transition-colors max-md:text-sm',
                 isActive
                   ? 'border-border border-b-2 border-b-accent bg-bg text-text'
                   : 'border-transparent text-text-muted hover:bg-surface-hover hover:text-text',
@@ -214,7 +214,7 @@ export function WorkspaceTabBar({
                 draggedId === tab.id && 'opacity-50',
               )}
             >
-              <button type="button" onClick={() => onSelect(tab.id)} className="flex items-center gap-1 whitespace-nowrap">
+              <button type="button" onClick={() => onSelect(tab.id)} className="flex items-center gap-1 self-stretch whitespace-nowrap">
                 <Icon size={14} className="shrink-0" />
                 {tab.label}
               </button>
@@ -223,7 +223,7 @@ export function WorkspaceTabBar({
                   type="button"
                   aria-label={`Close ${tab.label}`}
                   onClick={() => onClose(tab.id)}
-                  className="shrink-0 text-text-faint transition-colors hover:text-text"
+                  className="shrink-0 rounded-sm text-text-faint transition-colors hover:text-text max-md:-mr-1 max-md:p-1"
                 >
                   <X size={12} />
                 </button>

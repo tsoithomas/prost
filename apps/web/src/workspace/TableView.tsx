@@ -554,7 +554,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex h-8 max-md:h-11 shrink-0 items-center gap-1 border-b border-border bg-surface px-sm">
+      <div className="flex h-8 max-md:h-11 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-surface px-sm [&>*]:shrink-0">
         {viewMode === 'rows' ? (
           <>
             <IconButton

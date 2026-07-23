@@ -340,12 +340,15 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-md max-md:p-0">
       <Surface
         level="overlay"
         bordered
-        className="flex h-[min(560px,90vh)] w-full max-w-3xl flex-col overflow-hidden rounded-lg shadow-2xl md:flex-row"
+        className="relative flex h-[min(560px,90vh)] w-full max-w-3xl flex-col overflow-hidden rounded-lg shadow-2xl md:flex-row max-md:h-full max-md:max-w-none max-md:rounded-none"
       >
+        <IconButton aria-label="Close" title="Close" onClick={onClose} className="absolute right-3 top-6 z-10 -translate-y-1/2">
+          <X size={16} />
+        </IconButton>
         <div className="flex h-1/3 shrink-0 flex-col border-b border-border md:h-full md:w-1/3 md:border-b-0 md:border-r">
           <Surface level="raised" className="flex h-12 shrink-0 items-center border-b border-border px-lg">
             <Database size={18} className="mr-sm text-accent" />
@@ -424,7 +427,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-lg">
+          <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-lg md:pr-14">
             <span className="text-sm font-semibold text-text">
               {selectedReadOnly ? 'Connection' : selectedId ? 'Edit Connection' : 'New Connection'}
             </span>
@@ -451,9 +454,6 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
               ) : (
                 <Badge variant="accent">{engineLabel}</Badge>
               )}
-              <IconButton aria-label="Close" onClick={onClose}>
-                <X size={16} />
-              </IconButton>
             </div>
           </div>
 
@@ -532,7 +532,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
 
               <div className="h-px bg-border" />
 
-              <div className="grid grid-cols-2 gap-md">
+              <div className="grid grid-cols-2 gap-md max-md:grid-cols-1">
                 <FormField label="User">
                   <Input
                     className="font-mono"
@@ -602,25 +602,28 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
             )}
           </div>
 
-          <Surface level="raised" className="flex h-16 shrink-0 items-center justify-between border-t border-border px-lg">
+          <Surface level="raised" className="flex h-16 shrink-0 items-center justify-between border-t border-border px-lg max-md:gap-sm max-md:px-md">
             {selectedReadOnly ? (
               <span />
             ) : (
-              <Button variant="secondary" size="sm" onClick={handleTest} disabled={testConnection.isPending}>
+              <Button variant="secondary" size="sm" onClick={handleTest} disabled={testConnection.isPending} className="shrink-0">
                 <Zap size={14} />
-                {testConnection.isPending ? 'Testing…' : 'Test Connection'}
+                {testConnection.isPending ? (
+                  'Testing…'
+                ) : (
+                  <>
+                    Test<span className="max-md:hidden"> Connection</span>
+                  </>
+                )}
               </Button>
             )}
-            <div className="flex items-center gap-md">
+            <div className="flex items-center gap-md max-md:gap-sm">
               {selectedId && !selectedReadOnly ? (
                 <Button variant="secondary" size="sm" onClick={handleSave} disabled={updateConnection.isPending}>
                   <Save size={14} />
                   {updateConnection.isPending ? 'Saving…' : 'Save'}
                 </Button>
               ) : null}
-              <Button variant="ghost" size="sm" onClick={onClose}>
-                Cancel
-              </Button>
               <Button variant="primary" size="sm" onClick={handleConnect} disabled={createConnection.isPending}>
                 {createConnection.isPending ? 'Connecting…' : 'Connect'}
                 <ArrowRight size={14} />
