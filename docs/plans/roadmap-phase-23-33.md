@@ -25,7 +25,7 @@ table.
 trigger editors" (among others). This wave needs a **dedicated docs PR** amending §13, with rationale,
 per §13's own change rule:
 
-- **Unfreeze SSH tunneling** (Phase 28). New rule: an SSH tunnel is owned by `PoolManager` and is
+- **Unfreeze SSH tunneling** (Phase 32). New rule: an SSH tunnel is owned by `PoolManager` and is
   merely another way to reach a target DB — it never becomes a second choke point (principle §1
   holds).
 - **Clarify read-only schema-object browsing** (Phase 24): *browsing* views/functions/triggers/
@@ -43,14 +43,14 @@ stored-procedure/trigger **editing**.
 | --- | --- | --- | --- | --- |
 | [23](./phase-23-foreign-keys.md) | Foreign-key metadata + relational navigation | A · DBA depth | M | — |
 | [24](./phase-24-schema-objects.md) | Broader schema-object browsing (views/functions/triggers/…) | A · DBA depth | M | §13 amendment |
-| [25](./phase-25-data-export-import.md) | Data export & import (CSV/JSON) | A · DBA depth | L | 27 |
+| [25](./phase-25-readonly-guardrails.md) | Read-only / environment connection guardrails | B · Safety/ops | M | — |
 | [26](./phase-26-query-plan-viz.md) | Query-plan visualization | A · DBA depth | M | — |
-| [27](./phase-27-readonly-guardrails.md) | Read-only / environment connection guardrails | B · Safety/ops | M | — |
-| [28](./phase-28-ssh-tunneling.md) | SSH tunneling | B · Safety/ops | L | §13 amendment |
-| [29](./phase-29-session-monitoring.md) | Active-session monitoring & kill-query | B · Safety/ops | M | — |
-| [30](./phase-30-audit-trail.md) | Mutation & DDL audit trail | B · Safety/ops | M | — |
-| [31](./phase-31-agentic-queries.md) | Agentic read-only query execution | C · AI depth | L | 27 |
-| [32](./phase-32-error-insights.md) | Error explanation & result insights | C · AI depth | M | — |
+| [27](./phase-27-session-monitoring.md) | Active-session monitoring & kill-query | B · Safety/ops | M | — |
+| [28](./phase-28-audit-trail.md) | Mutation & DDL audit trail | B · Safety/ops | M | — |
+| [29](./phase-29-error-insights.md) | Error explanation & result insights | C · AI depth | M | — |
+| [30](./phase-30-data-export-import.md) | Data export & import (CSV/JSON) | A · DBA depth | L | 25 |
+| [31](./phase-31-agentic-queries.md) | Agentic read-only query execution | C · AI depth | L | 25 |
+| [32](./phase-32-ssh-tunneling.md) | SSH tunneling | B · Safety/ops | L | §13 amendment |
 | [33](./phase-33-ai-schema-suggestions.md) | AI schema-change suggestions | C · AI depth | M | 26, 31 |
 
 *(Optional, unscheduled)* **ER diagram** — render FK relationships (Phase 23) as an interactive
@@ -58,23 +58,25 @@ diagram; needs the §13 amendment. Flagged as a candidate, not a numbered phase.
 
 ## Recommended order & rationale
 
-1. **§13 amendment first.** A short docs PR that unblocks Phase 28 and clarifies Phase 24's read-only
-   browsing. Cheap, and the principles doc requires it before the code.
-2. **Phase 23 (FK metadata) + Phase 27 (read-only guardrails) — the two foundations.** 23 unlocks
-   relational navigation (and, later, ER diagrams); 27 is a hard dependency of Phase 25 (import must
-   refuse writes on read-only) and Phase 31 (the agent must refuse writes). They are mutually
-   independent and parallelizable.
-3. **Independent depth/ops/AI items — Phases 24, 26, 29, 30, 32 — scheduled by appetite.** None block
-   each other; each is a self-contained slice with visible payoff (object browsing, plan viz, session
-   monitor, audit trail, charts/error-explain).
-4. **Phase 25 (export/import) and Phase 31 (agentic) after Phase 27.** Both lean on the read-only
-   guard. **Phase 28 (SSH)** after the amendment.
+The phases are now **numbered in implementation order** — build them in ascending order and every
+`Depends on` is satisfied. The numbering encodes:
+
+1. **§13 amendment first.** A short docs PR that unblocks Phase 32 (SSH) and clarifies Phase 24's
+   read-only browsing. Cheap, and the principles doc requires it before the code.
+2. **Foundations — Phase 23 (FK metadata, done) and Phase 25 (read-only guardrails).** 23 unlocks
+   relational navigation (and, later, ER diagrams); 25 is a hard dependency of Phase 30 (import must
+   refuse writes on read-only) and Phase 31 (the agent must refuse writes).
+3. **Independent depth/ops/AI items — Phases 26, 27, 28, 29 — scheduled by appetite.** None block each
+   other; each is a self-contained slice with visible payoff (plan viz, session monitor, audit trail,
+   charts/error-explain).
+4. **Phase 30 (export/import) and Phase 31 (agentic) after Phase 25.** Both lean on the read-only
+   guard. **Phase 32 (SSH)** after the amendment.
 5. **Phase 33 last.** It composes the DDL preview pipeline (via Phase 26's plans as input) and the
    bounded AI loop (Phase 31).
 
 Tracks {A}, {B}, {C} can be resourced in parallel; they converge only on shared types in
-`@prost/shared-types`. Suggested pickup grouping: {§13 → 23, 27} first, then {24, 26, 29, 30, 32} in
-any order, then {25, 31, 28}, then {33}.
+`@prost/shared-types`. Since the numbers encode the order, just take them in sequence (23 and 24 are
+already complete).
 
 ## Invariants carried forward
 

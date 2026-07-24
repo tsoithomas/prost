@@ -1,4 +1,4 @@
-# Prost — Phase 28: SSH Tunneling
+# Prost — Phase 32: SSH Tunneling
 
 ## Context
 
@@ -13,7 +13,7 @@ it with one rule: **the tunnel is owned by `PoolManager` and is just another way
 — never a second choke point** (principle §1 preserved). This phase must not land before that
 amendment merges.
 
-Roadmap item: Phase 28 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). Depends on the §13
+Roadmap item: Phase 32 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). Depends on the §13
 amendment.
 
 ## Decisions (to confirm before building)

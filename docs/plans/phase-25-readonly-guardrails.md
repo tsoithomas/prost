@@ -1,4 +1,4 @@
-# Prost — Phase 27: Read-Only / Environment Connection Guardrails
+# Prost — Phase 25: Read-Only / Environment Connection Guardrails
 
 ## Context
 
@@ -9,10 +9,10 @@ adds two per-connection guardrails: an **`environment`** label (`dev`/`staging`/
 in the UI (principle §4). It also wires `environment` into the **existing per-connection theming**
 (`connectionOverrides`, already built in Phase 21) so a prod connection is visually unmistakable.
 
-This is the foundation for safe production use and a dependency of Phase 25 (import) and Phase 31
+This is the foundation for safe production use and a dependency of Phase 30 (import) and Phase 31
 (agentic AI), both of which must refuse writes on a read-only connection. It depends on nothing.
 
-Roadmap item: Phase 27 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
+Roadmap item: Phase 25 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
 
 ## Decisions (to confirm before building)
 

@@ -1,4 +1,4 @@
-# Prost — Phase 29: Active-Session Monitoring & Kill-Query
+# Prost — Phase 27: Active-Session Monitoring & Kill-Query
 
 ## Context
 
@@ -11,7 +11,7 @@ It is a capability-gated ops feature behind the driver seam (principle §1): Pos
 `pg_stat_activity` + `pg_cancel_backend`/`pg_terminate_backend`; MySQL exposes `SHOW PROCESSLIST` +
 `KILL`; SQLite has no server sessions, so the capability is simply off. It depends on nothing.
 
-Roadmap item: Phase 29 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
+Roadmap item: Phase 27 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
 
 ## Decisions (to confirm before building)
 
@@ -41,7 +41,7 @@ Roadmap item: Phase 29 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
    needed, but the query is still bounded.
 5. **Killing is a write-class action and respects read-only intent (principle §4).** Terminating a
    session changes server state, so the kill action requires the connection **not** be `readOnly`
-   (Phase 27) — monitoring (read) is always allowed; killing (write) is gated. Enforced server-side.
+   (Phase 25) — monitoring (read) is always allowed; killing (write) is gated. Enforced server-side.
 
 ## Backend (`apps/api`)
 
@@ -50,7 +50,7 @@ Roadmap item: Phase 29 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
   aliasing to `DbSession`; advertise `supportsSessionMonitoring`. SQLite: capability off.
 - A connection-scoped, ownership-guarded endpoint pair: `GET …/sessions` (snapshot) and
   `POST …/sessions/:id/kill` (mode: `cancel|terminate`) — the kill validates the connection is
-  writable (Phase 27), binds the pid as a param, and maps engine errors to safe messages
+  writable (Phase 25), binds the pid as a param, and maps engine errors to safe messages
   (principle §11).
 
 ### Tests (Vitest, `apps/api`)

@@ -38,14 +38,14 @@ passes **and** it violates none of the architecture principles.
 | [22](./phase-22-streaming-results.md) | Streaming / cursor-based large result sets | ✅ Complete |
 | [23](./phase-23-foreign-keys.md) | Foreign-key metadata + relational navigation | ✅ Complete |
 | [24](./phase-24-schema-objects.md) | Broader schema-object browsing (views/functions/triggers/…) | ✅ Complete |
-| [25](./phase-25-data-export-import.md) | Data export & import (CSV/JSON) | 📋 Planned |
+| [25](./phase-25-readonly-guardrails.md) | Read-only / environment connection guardrails | 📋 Planned |
 | [26](./phase-26-query-plan-viz.md) | Query-plan visualization | 📋 Planned |
-| [27](./phase-27-readonly-guardrails.md) | Read-only / environment connection guardrails | 📋 Planned |
-| [28](./phase-28-ssh-tunneling.md) | SSH tunneling (needs §13 amendment) | 📋 Planned |
-| [29](./phase-29-session-monitoring.md) | Active-session monitoring & kill-query | 📋 Planned |
-| [30](./phase-30-audit-trail.md) | Mutation & DDL audit trail | 📋 Planned |
+| [27](./phase-27-session-monitoring.md) | Active-session monitoring & kill-query | 📋 Planned |
+| [28](./phase-28-audit-trail.md) | Mutation & DDL audit trail | 📋 Planned |
+| [29](./phase-29-error-insights.md) | Error explanation & result insights | 📋 Planned |
+| [30](./phase-30-data-export-import.md) | Data export & import (CSV/JSON) | 📋 Planned |
 | [31](./phase-31-agentic-queries.md) | Agentic read-only query execution | 📋 Planned |
-| [32](./phase-32-error-insights.md) | Error explanation & result insights | 📋 Planned |
+| [32](./phase-32-ssh-tunneling.md) | SSH tunneling (needs §13 amendment) | 📋 Planned |
 | [33](./phase-33-ai-schema-suggestions.md) | AI schema-change suggestions | 📋 Planned |
 
 Phases 0–5 are the **MVP** (complete). Phases 6–10 are the **first post-MVP wave** drawn from

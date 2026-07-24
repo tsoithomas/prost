@@ -1,4 +1,4 @@
-# Prost — Phase 30: Mutation & DDL Audit Trail
+# Prost — Phase 28: Mutation & DDL Audit Trail
 
 ## Context
 
@@ -11,10 +11,10 @@ viewer.
 
 Even as a single-user tool this matters: it is the record of what Prost did to a database, essential
 after a bad change. It writes only to the **app DB** (Prisma), storing SQL text + identifiers — never
-row values or credentials (principles §1, §12). It depends on nothing but complements Phase 27 (it's
+row values or credentials (principles §1, §12). It depends on nothing but complements Phase 25 (it's
 where a blocked prod write, or an allowed one, is recorded).
 
-Roadmap item: Phase 30 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
+Roadmap item: Phase 28 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
 
 ## Decisions (to confirm before building)
 
@@ -25,7 +25,7 @@ Roadmap item: Phase 30 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
    `durationMs`, `createdAt`. It never stores bound values, row data, or credentials (principle §1).
    History stays as-is; audit is a separate concern in its own module.
 2. **Auditing is a cross-cutting write-path concern, recorded at the choke point (principle §10).**
-   Grid writes, `DdlService`, `ImportModule` (Phase 25), and mutating editor statements emit an audit
+   Grid writes, `DdlService`, `ImportModule` (Phase 30), and mutating editor statements emit an audit
    entry through a small `AuditService` — recorded on **both success and failure** (a failed prod
    `DROP` is exactly what you want logged). It reuses the Phase 12/§12 correlation id so an audit row
    maps to a server trace.
@@ -37,7 +37,7 @@ Roadmap item: Phase 30 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
    parameterized Prisma queries). No unbounded load.
 5. **Retention is bounded and honest (principles §7, §12).** An optional cap/retention window
    (config-driven) prunes old entries; pruning is itself not audited as a DB mutation (it's app-DB
-   housekeeping). Export of the audit log reuses the Phase 25 CSV/JSON formatter for portability.
+   housekeeping). Export of the audit log reuses the Phase 30 CSV/JSON formatter for portability.
 
 ## Backend (`apps/api`)
 
@@ -49,7 +49,7 @@ Roadmap item: Phase 30 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
   failure with duration + correlation id. Storing SQL text + identifiers only (assert no values,
   principle §1).
 - `GET /audit` (user-scoped, ownership-guarded, paged/filtered); optional retention prune
-  (config-driven) and CSV/JSON export via the Phase 25 formatter.
+  (config-driven) and CSV/JSON export via the Phase 30 formatter.
 
 ### Tests (Vitest, `apps/api`)
 - A successful grid update records a `success` entry with the right action/target/duration; a failed

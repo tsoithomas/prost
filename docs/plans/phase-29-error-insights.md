@@ -1,4 +1,4 @@
-# Prost — Phase 32: Error Explanation & Result Insights
+# Prost — Phase 29: Error Explanation & Result Insights
 
 ## Context
 
@@ -16,7 +16,7 @@ built **client-side over the already-loaded page** (never a re-fetch or a full-t
 principle §7), and anything sent to the model for the error case is the **error text + schema-only
 context** (Decision-1 posture, principle §3) — not row data. This depends on nothing.
 
-Roadmap item: Phase 32 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
+Roadmap item: Phase 29 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
 
 ## Decisions (to confirm before building)
 

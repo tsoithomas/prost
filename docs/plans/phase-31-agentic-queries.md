@@ -11,9 +11,9 @@ over the results it fetched.
 
 The guardrails are the entire point. It only ever invokes the existing read path through the driver
 seam (principle §1); it **never** writes; it refuses on `readOnly`/`prod` connections unless a
-statement is provably read-only (Phase 27); and the Decision-1 guard extends to tool results —
+statement is provably read-only (Phase 25); and the Decision-1 guard extends to tool results —
 **no credentials, bound values, or raw row data are sent back to the model** beyond a bounded,
-sanitized summary the user has approved. It depends on Phase 27.
+sanitized summary the user has approved. It depends on Phase 25.
 
 Roadmap item: Phase 31 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
 
@@ -49,7 +49,7 @@ Roadmap item: Phase 31 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
 ### `AiModule` / `AiService`
 - Add a tool-call loop to `AiService.chat` with the `run_read_query` tool wired to
   `QueryService`'s read path via `PoolManager.driverFor`. The tool validates read-only via the
-  Phase 11 analyzer + Phase 27 connection guard, executes under the statement timeout, and returns a
+  Phase 11 analyzer + Phase 25 connection guard, executes under the statement timeout, and returns a
   **sanitized/truncated** result to the model. Enforce loop bounds (iterations, rows, time).
 - Extend `RetrievalService`/sanitization so tool outputs obey Decision-1 (no credentials/values
   beyond the bounded sample). Log tool calls with the correlation id.

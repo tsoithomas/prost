@@ -12,7 +12,7 @@ where the user confirms and the server executes exactly as with a hand-authored 
 This is the capstone of the AI track: it composes Phase 26 (a plan to reason about) and Phase 31 (the
 bounded loop), and inherits every DDL guardrail already built. It never auto-applies (principle §8),
 never sends row data to the model (principle §3), and — like all DDL — is blocked on read-only
-connections (Phase 27). It depends on Phases 26 and 31.
+connections (Phase 25). It depends on Phases 26 and 31.
 
 Roadmap item: Phase 33 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
 
@@ -33,7 +33,7 @@ Roadmap item: Phase 33 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
    is today) before preview; an invalid suggestion surfaces a specific error and nothing executes
    (principle §11). A model hallucinating a column can't create bad DDL.
 4. **Blocked on read-only, executed only on confirm (principles §4, §8).** Because these are writes,
-   they are rejected on `readOnly`/`prod` connections (Phase 27) at the server, and require explicit
+   they are rejected on `readOnly`/`prod` connections (Phase 25) at the server, and require explicit
    user confirmation via the DDL flow. No auto-apply, ever.
 5. **Advice is explainable and bounded (principle §11).** Each suggestion carries a rationale ("this
    query seq-scans `orders.user_id`; an index would…") tied to the plan/metadata it came from, so the
@@ -46,7 +46,7 @@ Roadmap item: Phase 33 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
 - Extend `AiService` to emit **structured DDL-change suggestions** (typed requests, not SQL) from
   schema context + an optional `QueryPlanResult`. Route accepted suggestions into `DdlService`'s
   existing preview/execute path — no new DDL execution route, reusing `normalize*`/`build*` +
-  validation. Enforce the Phase 27 read-only guard and the type allow-list.
+  validation. Enforce the Phase 25 read-only guard and the type allow-list.
 
 ### Tests (Vitest, `apps/api`)
 - A suggestion is emitted as a typed `CreateIndexRequest`/`AlterTableOperation` (not raw SQL); it

@@ -1,4 +1,4 @@
-# Prost — Phase 25: Data Export & Import
+# Prost — Phase 30: Data Export & Import
 
 ## Context
 
@@ -9,10 +9,10 @@ or query results, and no import path. This phase adds both — a core database-c
 The whole game is principle §7 (**never load more than a page**): export must **stream** rather than
 buffer whole tables, so it rides the forward-only server-side cursor built in Phase 22
 (`apps/api/src/query/cursor-session.service.ts`). Import reuses the established **preview → confirm →
-execute** DDL/write pattern and the parameterized insert path (principle §2), and honors the Phase 27
+execute** DDL/write pattern and the parameterized insert path (principle §2), and honors the Phase 25
 read-only connection guard (it must not exist as an import target on a read-only connection).
 
-Roadmap item: Phase 25 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). Depends on Phase 27.
+Roadmap item: Phase 30 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). Depends on Phase 25.
 
 ## Decisions (to confirm before building)
 
@@ -35,7 +35,7 @@ Roadmap item: Phase 25 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). 
    Transaction`), all-or-nothing per batch, with a progress + error report. No raw SQL from the
    client, ever.
 5. **Import respects read-only and validates against live schema (principles §3, §4).** The target
-   connection must not be `readOnly` (Phase 27) — the server rejects the write, not just the UI.
+   connection must not be `readOnly` (Phase 25) — the server rejects the write, not just the UI.
    Column names/types are validated against live metadata before any insert; a type-incompatible
    mapping or unknown column → specific `400`, nothing executed.
 
@@ -51,7 +51,7 @@ Roadmap item: Phase 25 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). 
 - Endpoints to (a) parse an uploaded CSV header + sample and propose a column mapping, and (b)
   execute the import: validate mapping against `MetadataService`, then batched
   `PoolManager.withTransaction` inserts through the driver's `buildInsertRow`/`insertRow`. Rejects a
-  `readOnly` connection (Phase 27) and invalid mappings with specific errors (principle §11).
+  `readOnly` connection (Phase 25) and invalid mappings with specific errors (principle §11).
 - Bounded upload size + row/batch caps (principle §7).
 
 ### Tests (Vitest, `apps/api`)
@@ -86,7 +86,7 @@ Roadmap item: Phase 25 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). 
 3. Export a very large table → streams (no memory spike), truncation notice appears at the budget.
 4. Import a CSV into a new/empty table → mapping + preview correct; confirm inserts rows; a
    type-mismatched row is reported, not silently dropped.
-5. Attempt import on a `readOnly` connection (Phase 27) → blocked in UI **and** rejected by the
+5. Attempt import on a `readOnly` connection (Phase 25) → blocked in UI **and** rejected by the
    server.
 
 `pnpm -w build`, `pnpm -w lint`, `pnpm -w test` all pass.

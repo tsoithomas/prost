@@ -29,7 +29,7 @@ Roadmap item: Phase 26 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
 3. **`EXPLAIN ANALYZE` is explicit and honest about side effects (principles §8, §11).** Because
    `ANALYZE` actually **runs** the statement, it is a separate, clearly-labelled action, gated by
    `useConfirm` for non-`SELECT` statements (an `ANALYZE` of an `UPDATE` mutates data), and blocked
-   entirely on read-only connections (Phase 27). Plain `EXPLAIN` (estimate only) needs no gate.
+   entirely on read-only connections (Phase 25). Plain `EXPLAIN` (estimate only) needs no gate.
 4. **Editing/execution semantics are unchanged.** Running `EXPLAIN` produces a plan panel, never an
    editable grid; the editability analyzer is not involved. The normal query path is untouched — this
    is an additional lens on the same statement.
@@ -44,7 +44,7 @@ Roadmap item: Phase 26 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
   returns its structured plan; advertise `supportsExplainJson`/`supportsExplainAnalyze` on the
   descriptor. Keep `formatExplain` as the text fallback for engines/paths without JSON.
 - `QueryService` returns a `QueryPlanResult` for explain requests; `ANALYZE` requests are rejected on
-  read-only connections (Phase 27) and run under the normal statement timeout (principle §3).
+  read-only connections (Phase 25) and run under the normal statement timeout (principle §3).
 
 ### Tests (Vitest, `apps/api`)
 - PG returns a parseable JSON plan tree; MySQL JSON plan parsed; SQLite step-list mapped to the tree
