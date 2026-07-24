@@ -46,7 +46,12 @@ function createService(
       return fn(query as (frag: SqlFragment) => Promise<DriverResult>);
     },
   );
-  const pool = { run, withTransaction, driverFor: vi.fn().mockResolvedValue(driver) } as unknown as PoolManager;
+  const pool = {
+    run,
+    withTransaction,
+    driverFor: vi.fn().mockResolvedValue(driver),
+    assertWritable: vi.fn().mockResolvedValue(undefined),
+  } as unknown as PoolManager;
 
   return { service: new GridService(pool, metadataService), run, q, withTransaction };
 }

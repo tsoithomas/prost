@@ -22,6 +22,10 @@ vi.mock('../api/preferences', () => ({
   usePreferences: vi.fn(() => ({ data: undefined })),
 }));
 
+vi.mock('../api/connections', () => ({
+  useActiveConnection: vi.fn(() => undefined),
+}));
+
 import { useIsMobile } from '../hooks/useMediaQuery';
 import { usePreferences } from '../api/preferences';
 

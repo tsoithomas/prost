@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { ConnectionDto } from '@prost/shared-types';
+import { isSystemConnectionId } from '@prost/shared-types';
 import { Badge, IconButton } from '@prost/ui';
 import { useActiveConnection, useConnections, useDeleteConnection } from '../api/connections';
 import { connectionEndpoint } from '../connection/connectionDisplay';
@@ -254,7 +255,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
                         <Check size={14} className="ml-auto shrink-0 text-accent" />
                       ) : null}
                     </button>
-                    {connection.capabilities.readOnly ? null : (
+                    {isSystemConnectionId(connection.id) ? null : (
                       <IconButton
                         aria-label={`Delete ${connection.name}`}
                         className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"

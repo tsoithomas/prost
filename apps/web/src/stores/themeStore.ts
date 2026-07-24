@@ -47,7 +47,7 @@ interface ThemeState {
   applyPalette: (name: string | null) => void;
   setKeybindings: (keybindings: KeybindingMap) => void;
   setConnectionOverrides: (overrides: Record<string, ConnectionThemeOverride>) => void;
-  /** Re-themes for the active connection: applies its override, or reverts to the global theme. */
+  /** Re-themes for the active connection: applies its per-connection override, or reverts to the global theme. */
   applyConnectionTheme: (connectionId: string | null) => void;
   /** Replace the whole render-override map (used by server hydration). */
   setColumnRenderOverrides: (overrides: ColumnRenderOverrides) => void;

@@ -1,5 +1,6 @@
 import { StatusDot } from '@prost/ui';
 import { useActiveConnection } from '../api/connections';
+import { ConnectionEnvBadge } from '../connection/ConnectionEnvBadge';
 import { connectionLocation } from '../connection/connectionDisplay';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 
@@ -25,6 +26,7 @@ export function StatusBar() {
       <div className="flex items-center gap-md">
         {activeConnection ? (
           <>
+            <ConnectionEnvBadge connection={activeConnection} />
             <span>{connectionLocation(activeConnection)}</span>
             <span className="flex items-center gap-xs">
               <StatusDot variant="success" />

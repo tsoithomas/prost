@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, Cable, Database, Eye, EyeOff, Plus, Save, Trash2, X, Zap } from 'lucide-react';
 import clsx from 'clsx';
-import type { ConnectionDto, DbEngine, DbEngineDescriptor } from '@prost/shared-types';
+import type { ConnectionDto, ConnectionEnvironment, DbEngine, DbEngineDescriptor } from '@prost/shared-types';
+import { CONNECTION_ENVIRONMENTS, isSystemConnectionId } from '@prost/shared-types';
 import { parseConnectionString } from '@prost/utils';
 import { Badge, Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
 import {
@@ -33,6 +34,8 @@ interface ConnectionFormState {
   password: string;
   sslEnabled: boolean;
   sslRejectUnauthorized: boolean;
+  environment: ConnectionEnvironment;
+  readOnly: boolean;
 }
 
 const blankForm: ConnectionFormState = {
@@ -45,6 +48,23 @@ const blankForm: ConnectionFormState = {
   password: '',
   sslEnabled: true,
   sslRejectUnauthorized: true,
+  environment: 'dev',
+  readOnly: false,
+};
+
+const ENVIRONMENT_LABELS: Record<ConnectionEnvironment, string> = {
+  dev: 'Dev',
+  staging: 'Staging',
+  prod: 'Prod',
+};
+
+// Active-state colors per environment so dev/staging/prod are differentiated at a glance
+// (dev = accent, staging = amber, prod = red) — matches the status-bar badges. Fixed palette
+// colors so staging/prod never collapse to the same hue the way the danger/warning tokens do in dark mode.
+const ENVIRONMENT_ACTIVE_STYLE: Record<ConnectionEnvironment, string> = {
+  dev: 'border-accent bg-accent-muted text-accent',
+  staging: 'border-amber-500 bg-amber-500/15 text-amber-600',
+  prod: 'border-red-600 bg-red-600/15 text-red-600',
 };
 
 // Per-engine placeholder hints for the host/database/user fields, swapped when the engine
@@ -93,6 +113,8 @@ function toFormState(connection: ConnectionDto): ConnectionFormState {
     password: '',
     sslEnabled: connection.sslEnabled,
     sslRejectUnauthorized: connection.sslRejectUnauthorized,
+    environment: connection.environment,
+    readOnly: connection.capabilities.readOnly,
   };
 }
 
@@ -155,13 +177,15 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
   const descriptors = databaseEngines ?? [fallbackNetworkEngine];
   const networkEngines = descriptors.filter((descriptor) => descriptor.connectionMode === 'network');
   const selectedConnection = connections.find((c) => c.id === selectedId) ?? null;
-  const selectedReadOnly = selectedConnection?.capabilities.readOnly ?? false;
+  // The virtual app-DB self-connection is uneditable/undeletable and shown as an info panel. A
+  // *user* connection with the read-only flag set is still a normal, editable/deletable connection.
+  const isSystemConnection = selectedConnection ? isSystemConnectionId(selectedConnection.id) : false;
   const currentEngine = selectedConnection?.engine ?? form.engine;
   const currentEngineDescriptor = descriptors.find((descriptor) => descriptor.engine === currentEngine);
   const engineLabel =
     currentEngineDescriptor?.label ?? `${currentEngine.charAt(0).toUpperCase()}${currentEngine.slice(1)}`;
   const placeholders = enginePlaceholders[form.engine] ?? enginePlaceholders.postgres;
-  const showEnginePicker = !selectedReadOnly && !selectedId && networkEngines.length >= 2;
+  const showEnginePicker = !isSystemConnection && !selectedId && networkEngines.length >= 2;
 
   function selectConnection(connection: ConnectionDto) {
     setSelectedId(connection.id);
@@ -272,6 +296,8 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
           password: form.password || undefined,
           sslEnabled: form.sslEnabled,
           sslRejectUnauthorized: form.sslRejectUnauthorized,
+          environment: form.environment,
+          readOnly: form.readOnly,
         },
       },
       {
@@ -328,6 +354,8 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
         password: form.password,
         sslEnabled: form.sslEnabled,
         sslRejectUnauthorized: form.sslRejectUnauthorized,
+        environment: form.environment,
+        readOnly: form.readOnly,
       },
       {
         onSuccess: (created) => {
@@ -344,7 +372,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
       <Surface
         level="overlay"
         bordered
-        className="relative flex h-[min(560px,90vh)] w-full max-w-3xl flex-col overflow-hidden rounded-lg shadow-2xl md:flex-row max-md:h-full max-md:max-w-none max-md:rounded-none"
+        className="relative flex w-full max-w-3xl flex-col overflow-hidden rounded-lg shadow-2xl md:max-h-[90vh] md:flex-row max-md:h-full max-md:max-w-none max-md:rounded-none"
       >
         <IconButton aria-label="Close" title="Close" onClick={onClose} className="absolute right-3 top-6 z-10 -translate-y-1/2">
           <X size={16} />
@@ -407,7 +435,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                         </Badge>
                       ) : null}
                     </button>
-                    {connection.capabilities.readOnly ? null : (
+                    {isSystemConnectionId(connection.id) ? null : (
                       <IconButton
                         aria-label={`Delete ${connection.name}`}
                         className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 transition-opacity group-hover:opacity-100"
@@ -429,7 +457,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-lg md:pr-14">
             <span className="text-sm font-semibold text-text">
-              {selectedReadOnly ? 'Connection' : selectedId ? 'Edit Connection' : 'New Connection'}
+              {isSystemConnection ? 'Connection' : selectedId ? 'Edit Connection' : 'New Connection'}
             </span>
             <div className="flex items-center gap-md">
               {showEnginePicker ? (
@@ -458,7 +486,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
           </div>
 
           <div className="flex-1 overflow-y-auto p-lg">
-            {selectedReadOnly && selectedConnection ? (
+            {isSystemConnection && selectedConnection ? (
               <div className="flex flex-col gap-lg">
                 <FormField label="Connection Name">
                   <Input value={selectedConnection.name} disabled readOnly />
@@ -582,6 +610,37 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                 ) : null}
               </div>
 
+              <div className="h-px bg-border" />
+
+              <div className="flex flex-col gap-sm">
+                <FormField label="Environment">
+                  <div className="flex gap-xs">
+                    {CONNECTION_ENVIRONMENTS.map((env) => (
+                      <button
+                        key={env}
+                        type="button"
+                        onClick={() => updateField('environment', env)}
+                        className={clsx(
+                          'flex-1 rounded-sm border px-sm py-1.5 text-xs font-medium transition-colors',
+                          form.environment === env
+                            ? ENVIRONMENT_ACTIVE_STYLE[env]
+                            : 'border-border text-text-muted hover:bg-surface-hover hover:text-text',
+                        )}
+                      >
+                        {ENVIRONMENT_LABELS[env]}
+                      </button>
+                    ))}
+                  </div>
+                </FormField>
+                <label className="flex w-max items-center gap-sm text-sm text-text">
+                  <Checkbox
+                    checked={form.readOnly}
+                    onChange={(event) => updateField('readOnly', event.target.checked)}
+                  />
+                  Read-only (block all writes on this connection)
+                </label>
+              </div>
+
               {testConnection.data ? (
                 <Badge variant={testConnection.data.ok ? 'success' : 'danger'} className="w-max">
                   {testConnection.data.message}
@@ -603,7 +662,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
           </div>
 
           <Surface level="raised" className="flex h-16 shrink-0 items-center justify-between border-t border-border px-lg max-md:gap-sm max-md:px-md">
-            {selectedReadOnly ? (
+            {isSystemConnection ? (
               <span />
             ) : (
               <Button variant="secondary" size="sm" onClick={handleTest} disabled={testConnection.isPending} className="shrink-0">
@@ -618,7 +677,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
               </Button>
             )}
             <div className="flex items-center gap-md max-md:gap-sm">
-              {selectedId && !selectedReadOnly ? (
+              {selectedId && !isSystemConnection ? (
                 <Button variant="secondary" size="sm" onClick={handleSave} disabled={updateConnection.isPending}>
                   <Save size={14} />
                   {updateConnection.isPending ? 'Saving…' : 'Save'}

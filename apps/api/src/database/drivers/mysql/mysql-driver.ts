@@ -225,6 +225,21 @@ export class MysqlDriver implements DbDriver {
       this.logger.error(`target pool error message=${error.message}`);
     });
 
+    // Phase 25 defense-in-depth (best-effort): open each new pooled session read-only so the server
+    // rejects writes too. In autocommit each statement is its own transaction, so this applies broadly.
+    // The app-level guard in PoolManager remains the primary gate.
+    if (params.readOnly) {
+      (
+        pool as unknown as {
+          on(event: 'connection', listener: (conn: { query: (sql: string, cb: (err: unknown) => void) => void }) => void): void;
+        }
+      ).on('connection', (conn) => {
+        conn.query('SET SESSION TRANSACTION READ ONLY', (error) => {
+          if (error) this.logger.warn('failed to set MySQL session read-only');
+        });
+      });
+    }
+
     try {
       const connection = await pool.getConnection();
       try {

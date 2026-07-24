@@ -3,6 +3,7 @@ import { Check, Database, Plug, Plus, Search } from 'lucide-react';
 import clsx from 'clsx';
 import { IconButton } from '@prost/ui';
 import { useActiveConnection, useConnections } from '../api/connections';
+import { ConnectionEnvBadge } from '../connection/ConnectionEnvBadge';
 import { connectionEndpoint } from '../connection/connectionDisplay';
 import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { useConnectionStore } from '../stores/connectionStore';
@@ -60,6 +61,9 @@ export function MobileTopBar({ onOpenConnections }: MobileTopBarProps) {
           )}
         </span>
       </button>
+      <div className="shrink-0">
+        <ConnectionEnvBadge connection={activeConnection} />
+      </div>
       <IconButton aria-label="Search" onClick={openPalette}>
         <Search size={18} />
       </IconButton>

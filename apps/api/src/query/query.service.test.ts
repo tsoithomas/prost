@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { describe, expect, it, vi } from 'vitest';
 import type { ColumnMetadata, StatementResult } from '@prost/shared-types';
@@ -44,6 +45,7 @@ function createService(
     withSession: vi.fn(),
     driverFor: vi.fn().mockResolvedValue(driver),
     defaultNamespace: vi.fn().mockResolvedValue(defaultNamespace),
+    isReadOnly: vi.fn().mockResolvedValue(false),
   } as unknown as PoolManager;
 
   // Mirrors `PoolManager.withSession`: runs `fn` against a `query` callback that proxies to
@@ -62,6 +64,7 @@ function createService(
     service: new QueryService(pool, metadataService, historyService),
     run,
     withSession: pool.withSession as ReturnType<typeof vi.fn>,
+    isReadOnly: pool.isReadOnly as ReturnType<typeof vi.fn>,
     metadataService,
     record,
   };
@@ -257,6 +260,66 @@ describe('QueryService.execute — single statement, non-SELECT', () => {
     expect(stmt).toMatchObject({ message: 'syntax error', sql: 'SELEKT * FROM users', correlationId: 'corr-1' });
 
     expect(record).toHaveBeenCalledWith({ userId: 'user-1', connectionId: 'conn-1', sql: 'SELEKT * FROM users' });
+  });
+});
+
+describe('QueryService.execute — read-only guardrail (Phase 25)', () => {
+  it('rejects a write on a read-only connection before running anything', async () => {
+    const run = vi.fn();
+    const { service, isReadOnly } = createService(run);
+    isReadOnly.mockResolvedValue(true);
+
+    await expect(service.execute('conn-1', 'UPDATE users SET email = 1', 'user-1')).rejects.toThrow(ForbiddenException);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('rejects EXPLAIN ANALYZE of a write on a read-only connection', async () => {
+    const run = vi.fn();
+    const { service, isReadOnly } = createService(run);
+    isReadOnly.mockResolvedValue(true);
+
+    await expect(service.execute('conn-1', 'EXPLAIN ANALYZE DELETE FROM users', 'user-1')).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('rejects a whole script if any statement is a write, even when others are reads', async () => {
+    const run = vi.fn();
+    const { service, isReadOnly } = createService(run);
+    isReadOnly.mockResolvedValue(true);
+
+    await expect(service.execute('conn-1', 'SELECT * FROM users; DELETE FROM users', 'user-1')).rejects.toThrow(
+      ForbiddenException,
+    );
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('rejects a data-modifying CTE that parses as a top-level SELECT', async () => {
+    const run = vi.fn();
+    const { service, isReadOnly } = createService(run);
+    isReadOnly.mockResolvedValue(true);
+
+    await expect(
+      service.execute(
+        'conn-1',
+        "WITH x AS (INSERT INTO users (email) VALUES ('a@x.com') RETURNING id) SELECT * FROM x",
+        'user-1',
+      ),
+    ).rejects.toThrow(ForbiddenException);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('allows a plain SELECT on a read-only connection', async () => {
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce(result([{ id: 1 }], { fields: [{ name: 'id', dataTypeID: 23 }] }))
+      .mockResolvedValueOnce(pgTypeResult({ 23: 'int4' }));
+    const { service, isReadOnly } = createService(run);
+    isReadOnly.mockResolvedValue(true);
+
+    const response = await service.execute('conn-1', 'SELECT * FROM users', 'user-1');
+    expectKind(response.statements[0]!, 'rows');
   });
 });
 

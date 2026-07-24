@@ -8,6 +8,7 @@ import type { DbDriverRegistry } from '../database/db-driver.registry';
 import type { PoolManager } from '../database/pool-manager.service';
 import type { PrismaService } from '../prisma/prisma.service';
 import { ConnectionsService, toConnectionDto } from './connections.service';
+import { SYSTEM_CONNECTION_ID } from './system-connection';
 
 function buildConnection(overrides: Partial<Connection> = {}): Connection {
   return {
@@ -22,6 +23,8 @@ function buildConnection(overrides: Partial<Connection> = {}): Connection {
     encryptedCredentials: { iv: 'iv', tag: 'tag', data: 'data' },
     sslEnabled: false,
     sslRejectUnauthorized: true,
+    environment: 'dev',
+    readOnly: false,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     ...overrides,
@@ -75,6 +78,7 @@ describe('toConnectionDto', () => {
       username: 'demo',
       sslEnabled: false,
       sslRejectUnauthorized: true,
+      environment: 'dev',
       capabilities: { hasSchemas: true, readOnly: false },
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
@@ -101,6 +105,8 @@ describe('ConnectionsService', () => {
     password: 'secret',
     sslEnabled: false,
     sslRejectUnauthorized: true,
+    environment: 'dev' as const,
+    readOnly: false,
   };
 
   const validUnsavedFields = {
@@ -161,5 +167,37 @@ describe('ConnectionsService', () => {
     await service.test('user-1', { id: 'conn-1', engine: 'mysql', password: 'x' });
 
     expect(poolManager.testConnection).toHaveBeenCalledWith('postgres', expect.any(Object));
+  });
+
+  it('persists environment and readOnly on create', async () => {
+    const { service, connection } = createService();
+
+    await service.create('user-1', { ...validFields, environment: 'prod', readOnly: true });
+
+    expect(connection.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ environment: 'prod', readOnly: true }),
+    });
+  });
+
+  it('reports the stored readOnly flag through capabilities', async () => {
+    const { service } = createService(buildConnection({ readOnly: true }));
+    const dto = await service.create('user-1', { ...validFields, readOnly: true, environment: 'prod' });
+    expect(dto.capabilities.readOnly).toBe(true);
+    expect(dto.environment).toBe('prod');
+  });
+});
+
+describe('ConnectionsService.isReadOnly', () => {
+  it('is true for the system app-DB connection', async () => {
+    const { service } = createService();
+    await expect(service.isReadOnly(SYSTEM_CONNECTION_ID)).resolves.toBe(true);
+  });
+
+  it("reflects a stored connection's readOnly flag", async () => {
+    const readOnly = createService(buildConnection({ readOnly: true }));
+    await expect(readOnly.service.isReadOnly('conn-1')).resolves.toBe(true);
+
+    const writable = createService(buildConnection({ readOnly: false }));
+    await expect(writable.service.isReadOnly('conn-1')).resolves.toBe(false);
   });
 });

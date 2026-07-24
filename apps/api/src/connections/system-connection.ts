@@ -1,19 +1,16 @@
 import path from 'node:path';
-import type { ConnectionDto } from '@prost/shared-types';
+import { SYSTEM_CONNECTION_ID, isSystemConnectionId, type ConnectionDto } from '@prost/shared-types';
 import type { ConnectionParams } from '../database/types';
 
 /**
  * The app's own SQLite database, surfaced to every user as a permanent, read-only connection for
  * self-inspection. It is *virtual* — not a Prisma row — so it is inherently single, always-present,
  * and undeletable. Reads flow through the normal target-DB seam (PoolManager → SqliteDriver opened
- * `readonly`); the boundary holds because the handle never writes and never borrows Prisma.
+ * `readonly`); the boundary holds because the handle never writes and never borrows Prisma. The id
+ * + guard live in `@prost/shared-types` so both boundaries agree; re-exported here for existing importers.
  */
-export const SYSTEM_CONNECTION_ID = '__app_db__';
+export { SYSTEM_CONNECTION_ID, isSystemConnectionId };
 export const SYSTEM_CONNECTION_NAME = 'App Database';
-
-export function isSystemConnectionId(id: string): boolean {
-  return id === SYSTEM_CONNECTION_ID;
-}
 
 /**
  * Resolves the SQLite file path from `DATABASE_URL`. Prisma resolves a relative `file:` URL against
@@ -37,6 +34,8 @@ export function buildSystemConnectionDto(databaseUrl: string): ConnectionDto {
     username: '',
     sslEnabled: false,
     sslRejectUnauthorized: true,
+    // The app's own live database — labeled prod so it gets the unmistakable treatment; already read-only.
+    environment: 'prod',
     capabilities: { hasSchemas: false, readOnly: true },
     createdAt: epoch,
     updatedAt: epoch,

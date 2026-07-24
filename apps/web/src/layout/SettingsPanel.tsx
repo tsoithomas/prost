@@ -40,7 +40,7 @@ export function SettingsPanel({ onClose, triggerRef }: SettingsPanelProps) {
       ref={ref}
       level="overlay"
       bordered
-      className="absolute right-0 top-full z-50 mt-1 w-64 rounded-md p-md shadow-lg"
+      className="absolute right-0 top-full z-50 mt-1 max-h-[calc(100vh-4rem)] w-64 overflow-y-auto rounded-md p-md shadow-lg"
     >
       <ThemeSettings />
       <div className="mt-md flex flex-col gap-xs border-t border-border pt-md">

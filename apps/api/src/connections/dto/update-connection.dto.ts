@@ -1,5 +1,9 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
-import type { UpdateConnectionDto as UpdateConnectionDtoShape } from '@prost/shared-types';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import {
+  CONNECTION_ENVIRONMENTS,
+  type ConnectionEnvironment,
+  type UpdateConnectionDto as UpdateConnectionDtoShape,
+} from '@prost/shared-types';
 
 /** All fields optional; an empty/omitted `password` means "keep the stored credential". */
 export class UpdateConnectionDto implements UpdateConnectionDtoShape {
@@ -40,4 +44,12 @@ export class UpdateConnectionDto implements UpdateConnectionDtoShape {
   @IsOptional()
   @IsBoolean()
   sslRejectUnauthorized?: boolean;
+
+  @IsOptional()
+  @IsIn(CONNECTION_ENVIRONMENTS)
+  environment?: ConnectionEnvironment;
+
+  @IsOptional()
+  @IsBoolean()
+  readOnly?: boolean;
 }

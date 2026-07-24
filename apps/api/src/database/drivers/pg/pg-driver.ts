@@ -89,6 +89,9 @@ export class PgDriver implements DbDriver {
       user: params.username, password: params.password,
       ssl: params.sslEnabled ? { rejectUnauthorized: params.sslRejectUnauthorized } : undefined,
       connectionTimeoutMillis: CONNECT_TIMEOUT_MS, statement_timeout: this.statementTimeoutMs, max: this.poolSize,
+      // Phase 25 defense-in-depth: a read-only connection opens every session with writes disabled at
+      // the server (the app-level guard in PoolManager is still the primary gate).
+      ...(params.readOnly ? { options: '-c default_transaction_read_only=on' } : {}),
     });
 
     // An idle pooled client erroring out-of-band (server restart, network drop) emits an

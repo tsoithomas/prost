@@ -1,5 +1,10 @@
-import { IsBoolean, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
-import type { CreateConnectionDto as CreateConnectionDtoShape, DbEngine } from '@prost/shared-types';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
+import {
+  CONNECTION_ENVIRONMENTS,
+  type ConnectionEnvironment,
+  type CreateConnectionDto as CreateConnectionDtoShape,
+  type DbEngine,
+} from '@prost/shared-types';
 
 export class CreateConnectionDto implements CreateConnectionDtoShape {
   @IsString()
@@ -31,6 +36,12 @@ export class CreateConnectionDto implements CreateConnectionDtoShape {
 
   @IsBoolean()
   sslRejectUnauthorized!: boolean;
+
+  @IsIn(CONNECTION_ENVIRONMENTS)
+  environment!: ConnectionEnvironment;
+
+  @IsBoolean()
+  readOnly!: boolean;
 
   @IsOptional()
   @IsString()

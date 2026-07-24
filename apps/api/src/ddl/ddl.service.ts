@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import type {
   AlterTableRequest,
   AlterTableResult,
@@ -17,14 +17,6 @@ import type {
 } from '@prost/shared-types';
 import { PoolManager } from '../database/pool-manager.service';
 import { MetadataService } from '../metadata/metadata.service';
-import { isSystemConnectionId } from '../connections/system-connection';
-
-/** Throws if the connection is read-only (the app-DB self-connection). */
-function assertWritable(connectionId: string): void {
-  if (isSystemConnectionId(connectionId)) {
-    throw new ForbiddenException('This connection is read-only');
-  }
-}
 
 @Injectable()
 export class DdlService {
@@ -34,7 +26,7 @@ export class DdlService {
   ) {}
 
   async createTable(connectionId: string, req: CreateTableRequest): Promise<CreateTableResult> {
-    assertWritable(connectionId);
+    await this.pool.assertWritable(connectionId);
     if (req.columns.length === 0) {
       throw new UnprocessableEntityException('At least one column is required');
     }
@@ -60,7 +52,7 @@ export class DdlService {
   }
 
   async alterTable(connectionId: string, req: AlterTableRequest): Promise<AlterTableResult> {
-    assertWritable(connectionId);
+    await this.pool.assertWritable(connectionId);
     const driver = await this.pool.driverFor(connectionId);
     const structure = await this.metadataService.getTableStructure(connectionId, req.schema, req.table);
     const normalizedOp = driver.normalizeAlterTable(
@@ -81,7 +73,7 @@ export class DdlService {
   }
 
   async createIndex(connectionId: string, req: CreateIndexRequest): Promise<CreateIndexResult> {
-    assertWritable(connectionId);
+    await this.pool.assertWritable(connectionId);
     const cols = await this.metadataService.getTableColumns(connectionId, req.schema, req.table);
     if (req.columns.length === 0) {
       throw new UnprocessableEntityException('At least one column is required for an index');
@@ -108,7 +100,7 @@ export class DdlService {
   }
 
   async dropIndex(connectionId: string, req: DropIndexRequest): Promise<DropIndexResult> {
-    assertWritable(connectionId);
+    await this.pool.assertWritable(connectionId);
     const structure = await this.metadataService.getTableStructure(connectionId, req.schema, req.table);
     const exists = structure.indexes.some((idx) => idx.name === req.index);
     if (!exists) {
@@ -137,7 +129,7 @@ export class DdlService {
   }
 
   async dropTable(connectionId: string, req: DropTableRequest): Promise<DropTableResult> {
-    assertWritable(connectionId);
+    await this.pool.assertWritable(connectionId);
     await this.assertTableExists(connectionId, req.schema, req.table);
 
     const driver = await this.pool.driverFor(connectionId);
@@ -154,7 +146,7 @@ export class DdlService {
   }
 
   async truncateTable(connectionId: string, req: TruncateTableRequest): Promise<TruncateTableResult> {
-    assertWritable(connectionId);
+    await this.pool.assertWritable(connectionId);
     await this.assertTableExists(connectionId, req.schema, req.table);
 
     const driver = await this.pool.driverFor(connectionId);
@@ -171,7 +163,7 @@ export class DdlService {
   }
 
   async preview(connectionId: string, req: DdlPreviewRequest): Promise<DdlPreviewResult> {
-    assertWritable(connectionId);
+    await this.pool.assertWritable(connectionId);
     const driver = await this.pool.driverFor(connectionId);
 
     switch (req.kind) {

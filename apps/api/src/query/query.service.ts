@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Parser } from 'node-sql-parser';
 import type {
   ColumnMetadata,
@@ -34,6 +34,23 @@ type RunFn = (frag: SqlFragment) => Promise<DriverResult>;
  */
 const EXPLAIN_RE = /^\s*explain\b\s*(\(([^)]*)\))?/i;
 
+/** node-sql-parser statement `type`s that mutate data — used to unmask writes hidden inside a SELECT. */
+const WRITE_STATEMENT_TYPES = new Set(['insert', 'update', 'delete', 'replace']);
+
+/**
+ * True if the AST subtree contains a data-modifying statement. A top-level `SELECT` can still write
+ * via a data-modifying CTE (`WITH x AS (INSERT ... RETURNING ...) SELECT ...`), which parses as
+ * `type: 'select'`; the read-only guard scans for these so such a statement is never misread as a
+ * pure read. Read-only nodes (nested `select` subqueries, column refs, …) never match.
+ */
+function astContainsWriteStatement(node: unknown): boolean {
+  if (node === null || typeof node !== 'object') return false;
+  const type = (node as { type?: unknown }).type;
+  if (typeof type === 'string' && WRITE_STATEMENT_TYPES.has(type.toLowerCase())) return true;
+  const children = Array.isArray(node) ? node : Object.values(node as Record<string, unknown>);
+  return children.some(astContainsWriteStatement);
+}
+
 /**
  * Executes a SQL script against a target connection (architecture principle §10 —
  * `QueryModule` is its own bounded module). The script is split into top-level statements
@@ -66,6 +83,16 @@ export class QueryService {
     }
 
     const driver = await this.pool.driverFor(connectionId);
+
+    // Phase 25 guardrail: on a read-only connection, reject the whole script if any statement is a
+    // write — before anything executes (no partial run). A statement that can't be *proven* read-only
+    // (unparsable non-SELECT, EXPLAIN ANALYZE of a write, DML/DDL) is treated as a write (fail safe).
+    if (await this.pool.isReadOnly(connectionId)) {
+      if (statementTexts.some((text) => this.classifyStatement(driver, text) === 'write')) {
+        throw new ForbiddenException('This connection is read-only');
+      }
+    }
+
     const statements = transactional
       ? await this.executeTransactional(connectionId, driver, statementTexts, correlationId)
       : await this.executeAutocommit(connectionId, driver, statementTexts, correlationId);
@@ -208,6 +235,27 @@ export class QueryService {
       return this.executeRows(connectionId, driver, statementText, ast, isOnlyStatement, run);
     }
     return this.executeCommand(connectionId, driver, statementText, run);
+  }
+
+  /**
+   * Classifies a single statement as `'read'` or `'write'` for the read-only guardrail (Phase 25).
+   * Read iff it is provably non-mutating: a plain `EXPLAIN` (no `ANALYZE`), a parsed `SELECT`, or an
+   * unparsable statement that lexically looks like a single `SELECT`. Everything else — DML/DDL,
+   * `EXPLAIN ANALYZE <write>`, and anything unprovable — is a write. Mirrors the executor's own
+   * SELECT/EXPLAIN detection so classification and execution never disagree.
+   */
+  private classifyStatement(driver: DbDriver, statementText: string): 'read' | 'write' {
+    const explainMatch = EXPLAIN_RE.exec(statementText);
+    if (explainMatch) {
+      const analyze =
+        /^\s*explain\s+analyze\b/i.test(statementText) || /\banalyze\b/i.test(explainMatch[2] ?? '');
+      return analyze ? 'write' : 'read';
+    }
+    const ast = this.tryAstifyOne(driver, statementText);
+    if (ast === null) return looksLikeSingleSelect(statementText) ? 'read' : 'write';
+    // A parsed SELECT is a read unless it hides a write in a data-modifying CTE.
+    if (ast.type === 'select') return astContainsWriteStatement(ast) ? 'write' : 'read';
+    return 'write';
   }
 
   /** `node-sql-parser` throws on input it can't parse — return `null` and let the caller fall back. */

@@ -22,6 +22,7 @@ describe('system-connection', () => {
     expect(dto.id).toBe(SYSTEM_CONNECTION_ID);
     expect(dto.engine).toBe('sqlite');
     expect(dto.capabilities).toEqual({ hasSchemas: false, readOnly: true });
+    expect(dto.environment).toBe('prod');
   });
 
   it('builds read-only connection params for the driver', () => {

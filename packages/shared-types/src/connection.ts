@@ -1,6 +1,28 @@
 /** Supported target database engines. SQLite is file-based (the `database` field is a path). */
 export type DbEngine = 'postgres' | 'mysql' | 'sqlite';
 
+/**
+ * Per-connection environment label (Phase 25). Drives an unmistakable visual treatment for `prod`
+ * (and `staging`) via the per-connection theme override, and is purely presentational — the
+ * `readOnly` guard, not this label, is what actually blocks writes.
+ */
+export type ConnectionEnvironment = 'dev' | 'staging' | 'prod';
+
+/** The set of valid environment values, for runtime validation (backend `@IsIn`, frontend selector). */
+export const CONNECTION_ENVIRONMENTS: readonly ConnectionEnvironment[] = ['dev', 'staging', 'prod'];
+
+/**
+ * Id of the virtual app-DB self-connection (see the API's `system-connection.ts`). It is permanent,
+ * undeletable, and uneditable — distinct from a *user* connection that merely has the `readOnly`
+ * flag set. Both boundaries consume this so "is the system connection" is never confused with
+ * "is read-only" (which any connection can now be, per Phase 25).
+ */
+export const SYSTEM_CONNECTION_ID = '__app_db__';
+
+export function isSystemConnectionId(id: string): boolean {
+  return id === SYSTEM_CONNECTION_ID;
+}
+
 export interface DbEngineDescriptor {
   engine: DbEngine;
   label: string;
@@ -58,6 +80,8 @@ export interface ConnectionDto {
   sslEnabled: boolean;
   /** Only meaningful when `sslEnabled` is true. Defaults to `true` (verify the server certificate). */
   sslRejectUnauthorized: boolean;
+  /** Environment label (Phase 25); drives prod/staging theming. Read-only state lives in `capabilities.readOnly`. */
+  environment: ConnectionEnvironment;
   capabilities: ConnectionCapabilities;
   createdAt: string;
   updatedAt: string;
@@ -73,6 +97,9 @@ export interface CreateConnectionDto {
   password: string;
   sslEnabled: boolean;
   sslRejectUnauthorized: boolean;
+  environment: ConnectionEnvironment;
+  /** When true, the server rejects every mutating operation on this connection (Phase 25). */
+  readOnly: boolean;
 }
 
 /** All fields optional; an empty/omitted `password` means "keep the stored credential". */
@@ -85,6 +112,8 @@ export interface UpdateConnectionDto {
   password?: string;
   sslEnabled?: boolean;
   sslRejectUnauthorized?: boolean;
+  environment?: ConnectionEnvironment;
+  readOnly?: boolean;
 }
 
 /**

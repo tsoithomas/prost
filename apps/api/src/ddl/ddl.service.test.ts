@@ -27,7 +27,11 @@ function createService(
   structure: TableStructure = mockStructure(),
 ) {
   const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);
-  const pool = { run, driverFor: vi.fn().mockResolvedValue(driver) } as unknown as PoolManager;
+  const pool = {
+    run,
+    driverFor: vi.fn().mockResolvedValue(driver),
+    assertWritable: vi.fn().mockResolvedValue(undefined),
+  } as unknown as PoolManager;
   const metadataService = {
     getTableStructure: vi.fn().mockResolvedValue(structure),
     getTableColumns: vi.fn().mockResolvedValue(structure.columns),

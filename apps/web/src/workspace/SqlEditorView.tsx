@@ -27,6 +27,7 @@ import {
   prostGridTheme,
   resolveColorMode,
 } from '@prost/ui';
+import { useActiveConnection } from '../api/connections';
 import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
 import { useEngineDescriptor } from '../api/databaseEngines';
 import { useMetadata } from '../api/metadata';
@@ -69,6 +70,7 @@ export function formatterLanguage(
 
 export function SqlEditorView() {
   const connectionId = useConnectionStore((state) => state.activeConnectionId);
+  const activeConnection = useActiveConnection();
   const descriptor = useEngineDescriptor(connectionId);
   const colorMode = useThemeStore((state) => state.colorMode);
   const accentColor = useThemeStore((state) => state.accentColor);
@@ -123,7 +125,10 @@ export function SqlEditorView() {
   const insertRow = useInsertRow(connectionId ?? '', sourceTable?.schema ?? '', sourceTable?.table ?? '');
   const deleteRow = useDeleteRow(connectionId ?? '', sourceTable?.schema ?? '', sourceTable?.table ?? '');
 
-  const editable = editableResult?.editable ?? false;
+  // A read-only connection disables inline editing even when the result itself is analyzable as
+  // editable — writes would be rejected server-side anyway (Phase 25).
+  const writable = !activeConnection?.capabilities.readOnly;
+  const editable = (editableResult?.editable ?? false) && writable;
   const primaryKey = editableResult?.primaryKey ?? [];
   const isGridResult = editableResult !== null;
 

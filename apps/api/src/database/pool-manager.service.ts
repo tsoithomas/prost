@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { CryptoService, type EncryptedPayload } from '../common/crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -111,6 +111,26 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
    * Resolves the driver for a connection by its `engine`, without forcing a pool to be created.
    * Feature services use this to reach the right dialect's SQL builders.
    */
+  /**
+   * Whether a connection is read-only (Phase 25 guardrail) — the virtual app-DB self-connection, or a
+   * stored connection with its `readOnly` flag set. The single source of truth for the write guard.
+   */
+  async isReadOnly(connectionId: string): Promise<boolean> {
+    if (isSystemConnectionId(connectionId)) return true;
+    const { readOnly } = await this.prisma.connection.findUniqueOrThrow({
+      where: { id: connectionId },
+      select: { readOnly: true },
+    });
+    return readOnly;
+  }
+
+  /** Throws `ForbiddenException` on a read-only connection. Called by every write entrypoint (grid/DDL/query). */
+  async assertWritable(connectionId: string): Promise<void> {
+    if (await this.isReadOnly(connectionId)) {
+      throw new ForbiddenException('This connection is read-only');
+    }
+  }
+
   async driverFor(connectionId: string): Promise<DbDriver> {
     const cached = this.poolEngine.get(connectionId);
     if (cached) return this.registry.get(cached);
@@ -178,6 +198,7 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
       params: {
         host: connection.host, port: connection.port, database: connection.database,
         username: connection.username, password, sslEnabled: connection.sslEnabled, sslRejectUnauthorized: connection.sslRejectUnauthorized,
+        readOnly: connection.readOnly,
       },
     };
   }

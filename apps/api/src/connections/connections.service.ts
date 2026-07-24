@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Connection, Prisma } from '@prisma/client';
-import type { ConnectionCapabilities, ConnectionDto, DbEngine, TestConnectionResult } from '@prost/shared-types';
+import type { ConnectionCapabilities, ConnectionDto, ConnectionEnvironment, DbEngine, TestConnectionResult } from '@prost/shared-types';
 import { CryptoService, type EncryptedPayload } from '../common/crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PoolManager } from '../database/pool-manager.service';
@@ -35,9 +35,9 @@ export class ConnectionsService {
     ];
   }
 
-  /** Capabilities for a stored (user-owned, writable) connection — derived from its engine's driver. */
+  /** Capabilities for a stored connection — schema support from the driver, read-only from its own flag. */
   private toDto(connection: Connection): ConnectionDto {
-    return toConnectionDto(connection, this.capabilitiesFor(connection.engine, false));
+    return toConnectionDto(connection, this.capabilitiesFor(connection.engine, connection.readOnly));
   }
 
   private capabilitiesFor(engine: string, readOnly: boolean): ConnectionCapabilities {
@@ -68,6 +68,8 @@ export class ConnectionsService {
         username: dto.username,
         sslEnabled: dto.sslEnabled,
         sslRejectUnauthorized: dto.sslRejectUnauthorized,
+        environment: dto.environment,
+        readOnly: dto.readOnly,
         engine: dto.engine ?? 'postgres',
         encryptedCredentials: this.crypto.encrypt(dto.password) as unknown as Prisma.InputJsonValue,
       },
@@ -87,6 +89,8 @@ export class ConnectionsService {
       username: dto.username,
       sslEnabled: dto.sslEnabled,
       sslRejectUnauthorized: dto.sslRejectUnauthorized,
+      environment: dto.environment,
+      readOnly: dto.readOnly,
     };
     if (dto.password) {
       data.encryptedCredentials = this.crypto.encrypt(dto.password) as unknown as Prisma.InputJsonValue;
@@ -150,9 +154,11 @@ export class ConnectionsService {
     await this.requireOwned(userId, id);
   }
 
-  /** Whether a connection is read-only — true for the app-DB self-connection. */
+  /** Whether a connection is read-only — the app-DB self-connection, or a connection with its flag set (Phase 25). */
   async isReadOnly(id: string): Promise<boolean> {
-    return isSystemConnectionId(id);
+    if (isSystemConnectionId(id)) return true;
+    const connection = await this.prisma.connection.findUnique({ where: { id }, select: { readOnly: true } });
+    return connection?.readOnly ?? false;
   }
 
   private assertNotSystem(id: string): void {
@@ -181,6 +187,7 @@ export function toConnectionDto(connection: Connection, capabilities: Connection
     username: connection.username,
     sslEnabled: connection.sslEnabled,
     sslRejectUnauthorized: connection.sslRejectUnauthorized,
+    environment: (connection.environment as ConnectionEnvironment) ?? 'dev',
     capabilities,
     createdAt: connection.createdAt.toISOString(),
     updatedAt: connection.updatedAt.toISOString(),
