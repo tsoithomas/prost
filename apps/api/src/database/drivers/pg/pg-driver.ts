@@ -8,12 +8,14 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  QueryPlanNode,
   SchemaObjectKind,
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
   ConnectionParams, DbCapabilities, DriverCursor, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
 } from '../../types';
+import { pgBuildExplain, pgParseExplain } from '../explain-plan';
 import * as sql from './pg-sql';
 
 const CONNECT_TIMEOUT_MS = 5000;
@@ -53,6 +55,8 @@ export class PgDriver implements DbDriver {
     supportsSsl: true,
     sslEnabledByDefault: false,
     supportsCursors: true,
+    supportsQueryPlan: true,
+    supportsExplainAnalyze: true,
     ddl: {
       columnTypes: [
         'integer', 'bigint', 'smallint', 'serial', 'bigserial',
@@ -313,6 +317,14 @@ export class PgDriver implements DbDriver {
 
   formatExplain(rows: Record<string, unknown>[]): string {
     return rows.map((row) => String(row['QUERY PLAN'] ?? '')).join('\n');
+  }
+
+  buildExplain(sql: string, analyze: boolean): SqlFragment {
+    return pgBuildExplain(sql, analyze);
+  }
+
+  parseExplain(rows: Record<string, unknown>[]): QueryPlanNode {
+    return pgParseExplain(rows);
   }
 
   mapError(error: unknown, ctx: DriverErrorContext): void {

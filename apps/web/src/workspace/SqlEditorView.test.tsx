@@ -63,10 +63,16 @@ vi.mock('../api/grid', () => ({
 }));
 
 const mockExecuteMutate = vi.fn();
+const mockExplainMutate = vi.fn();
 
 vi.mock('../api/query', () => ({
   useExecuteQuery: () => ({
     mutate: mockExecuteMutate,
+    isPending: false,
+    error: null,
+  }),
+  useExplainQuery: () => ({
+    mutate: mockExplainMutate,
     isPending: false,
     error: null,
   }),
@@ -164,6 +170,8 @@ function makeDescriptor(
     supportsSsl: engine !== 'sqlite',
     sslEnabledByDefault: false,
     supportsCursors: true,
+    supportsQueryPlan: true,
+    supportsExplainAnalyze: engine === 'postgres',
     ddl: {
       columnTypes: [],
       defaultExamples: [],

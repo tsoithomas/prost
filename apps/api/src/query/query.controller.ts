@@ -4,12 +4,14 @@ import type {
   FetchCursorResponse,
   FetchQueryPageResponse,
   OpenCursorResponse,
+  QueryPlanResult,
 } from '@prost/shared-types';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import type { RequestWithCorrelationId } from '../common/correlation-id.middleware';
 import { ConnectionsService } from '../connections/connections.service';
 import { CursorSessionService } from './cursor-session.service';
 import { ExecuteQueryDto } from './dto/execute-query.dto';
+import { ExplainQueryDto } from './dto/explain-query.dto';
 import { FetchCursorDto } from './dto/fetch-cursor.dto';
 import { FetchQueryPageDto } from './dto/fetch-query-page.dto';
 import { OpenCursorDto } from './dto/open-cursor.dto';
@@ -32,6 +34,17 @@ export class QueryController {
   ): Promise<ExecuteQueryResponse> {
     await this.connectionsService.assertOwnership(user.userId, id);
     return this.queryService.execute(id, dto.sql, user.userId, req.correlationId, dto.transactional ?? false);
+  }
+
+  /** Produces a structured query plan for a single statement (Phase 26). */
+  @Post(':id/query/explain')
+  async explain(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: ExplainQueryDto,
+  ): Promise<QueryPlanResult> {
+    await this.connectionsService.assertOwnership(user.userId, id);
+    return this.queryService.explain(id, dto.sql, dto.analyze ?? false);
   }
 
   /** Fetches the next page of a single SELECT result (the editor's "Load more"). */

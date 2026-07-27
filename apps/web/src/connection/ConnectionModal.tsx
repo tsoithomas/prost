@@ -88,6 +88,8 @@ const fallbackNetworkEngine: DbEngineDescriptor = {
   supportsSsl: true,
   sslEnabledByDefault: true,
   supportsCursors: true,
+  supportsQueryPlan: true,
+  supportsExplainAnalyze: true,
   ddl: {
     columnTypes: [],
     defaultExamples: [],

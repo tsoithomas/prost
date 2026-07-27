@@ -12,6 +12,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  QueryPlanNode,
   SchemaObjectKind,
 } from '@prost/shared-types';
 import {
@@ -40,6 +41,7 @@ import type {
   TestConnectionResult,
   WhereDialect,
 } from '../../types';
+import { mysqlBuildExplain, mysqlParseExplain } from '../explain-plan';
 import * as sql from './mysql-sql';
 
 /**
@@ -159,6 +161,8 @@ export class MysqlDriver implements DbDriver {
     supportsSsl: true,
     sslEnabledByDefault: false,
     supportsCursors: true,
+    supportsQueryPlan: true,
+    supportsExplainAnalyze: false,
     ddl: {
       columnTypes: [
         'int',
@@ -497,6 +501,14 @@ export class MysqlDriver implements DbDriver {
 
   formatExplain(rows: Record<string, unknown>[]): string {
     return sql.mysqlFormatExplain(rows);
+  }
+
+  buildExplain(sql: string): SqlFragment {
+    return mysqlBuildExplain(sql);
+  }
+
+  parseExplain(rows: Record<string, unknown>[]): QueryPlanNode {
+    return mysqlParseExplain(rows);
   }
 
   mapError(error: unknown, context: DriverErrorContext): void {

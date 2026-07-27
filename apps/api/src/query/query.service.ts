@@ -7,6 +7,7 @@ import type {
   ExecuteQueryResponse,
   FetchQueryPageResponse,
   PlanStatementResult,
+  QueryPlanResult,
   RowsStatementResult,
   StatementResult,
 } from '@prost/shared-types';
@@ -100,6 +101,43 @@ export class QueryService {
     await this.historyService.record({ userId, connectionId, sql });
 
     return { statements, transactional, statementCount: statementTexts.length };
+  }
+
+  /**
+   * Produces a structured query plan for a single statement (Phase 26). Plain `EXPLAIN` estimates
+   * cost only and is safe on any connection; `analyze` actually runs the statement, so it is offered
+   * only where the engine supports it and is rejected on read-only connections (Phase 25). Never
+   * touches the editability analyzer or the normal execute path — it's a separate lens.
+   */
+  async explain(connectionId: string, sql: string, analyze: boolean): Promise<QueryPlanResult> {
+    const statements = splitStatements(sql);
+    if (statements.length !== 1) {
+      throw new BadRequestException('Explain expects a single statement');
+    }
+    const statement = statements[0]!;
+
+    const driver = await this.pool.driverFor(connectionId);
+    if (!driver.descriptor.supportsQueryPlan) {
+      throw new BadRequestException('This engine does not support structured query plans');
+    }
+    if (analyze) {
+      if (!driver.descriptor.supportsExplainAnalyze) {
+        throw new BadRequestException('Explain Analyze is not supported for this engine');
+      }
+      if (await this.pool.isReadOnly(connectionId)) {
+        throw new ForbiddenException('This connection is read-only');
+      }
+    }
+
+    const start = Date.now();
+    const { rows } = await this.pool.run(connectionId, driver.buildExplain(statement, analyze));
+    return {
+      root: driver.parseExplain(rows, analyze),
+      analyze,
+      format: driver.engine === 'sqlite' ? 'steps' : 'json',
+      planText: driver.formatExplain(rows),
+      executionTimeMs: Date.now() - start,
+    };
   }
 
   /**

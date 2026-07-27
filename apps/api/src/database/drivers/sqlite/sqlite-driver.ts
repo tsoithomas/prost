@@ -7,12 +7,14 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  QueryPlanNode,
   SchemaObjectKind,
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
   ConnectionParams, DbCapabilities, DriverCursor, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
 } from '../../types';
+import { sqliteBuildExplain, sqliteParseExplain } from '../explain-plan';
 import * as sql from './sqlite-sql';
 
 type Db = Database.Database;
@@ -45,6 +47,8 @@ export class SqliteDriver implements DbDriver {
     supportsSsl: false,
     sslEnabledByDefault: false,
     supportsCursors: true,
+    supportsQueryPlan: true,
+    supportsExplainAnalyze: false,
     ddl: {
       columnTypes: ['INTEGER', 'TEXT', 'REAL', 'BLOB', 'NUMERIC'],
       defaultExamples: ['0', "''", 'CURRENT_TIMESTAMP', 'null'],
@@ -272,6 +276,14 @@ export class SqliteDriver implements DbDriver {
 
   formatExplain(rows: Record<string, unknown>[]): string {
     return rows.map((row) => String(row['QUERY PLAN'] ?? row.detail ?? '')).join('\n');
+  }
+
+  buildExplain(sql: string): SqlFragment {
+    return sqliteBuildExplain(sql);
+  }
+
+  parseExplain(rows: Record<string, unknown>[]): QueryPlanNode {
+    return sqliteParseExplain(rows);
   }
 
   mapError(error: unknown, ctx: DriverErrorContext): void {

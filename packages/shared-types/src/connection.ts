@@ -37,6 +37,10 @@ export interface DbEngineDescriptor {
   sslEnabledByDefault: boolean;
   /** Whether the engine supports forward-only server-side cursors for streaming large editor results. */
   supportsCursors: boolean;
+  /** Whether the engine produces a structured query plan the frontend renders as a tree (Phase 26). */
+  supportsQueryPlan: boolean;
+  /** Whether `EXPLAIN ANALYZE` (actual timings — runs the statement) is offered for this engine. */
+  supportsExplainAnalyze: boolean;
   ddl: {
     columnTypes: string[];
     defaultExamples: string[];

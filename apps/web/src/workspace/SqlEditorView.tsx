@@ -13,7 +13,7 @@ import type {
 } from 'ag-grid-community';
 import { Bookmark, Play, Plus, Save, Trash2, WandSparkles, X } from 'lucide-react';
 import { format } from 'sql-formatter';
-import type { ColumnRenderMode, DbEngineDescriptor, ExecuteQueryResponse } from '@prost/shared-types';
+import type { ColumnRenderMode, DbEngineDescriptor, ExecuteQueryResponse, QueryPlanResult } from '@prost/shared-types';
 import {
   Badge,
   Button,
@@ -32,7 +32,7 @@ import { useDeleteRow, useInsertRow, useUpdateCell } from '../api/grid';
 import { useEngineDescriptor } from '../api/databaseEngines';
 import { useMetadata } from '../api/metadata';
 import { useUpdatePreferences } from '../api/preferences';
-import { useExecuteQuery } from '../api/query';
+import { useExecuteQuery, useExplainQuery } from '../api/query';
 import { useCreateSnippet } from '../api/snippets';
 import { buildColumnDefs, type HeaderContextMenuArgs, type RenderModeMap } from '../grid/columnDefs';
 import { ColumnRenderMenu } from '../grid/ColumnRenderMenu';
@@ -47,6 +47,7 @@ import { INITIAL_SQL, useWorkspaceStore } from '../stores/workspaceStore';
 import { createCursorDatasource } from './cursorDatasource';
 import { createQueryPageDatasource } from './queryPageDatasource';
 import { PlanPanel, StatementResultPanel } from './StatementResultPanel';
+import { QueryPlanView } from './QueryPlanView';
 import { statementAtOffset } from './statementRanges';
 import { useMonacoCompletions } from './useMonacoCompletions';
 import { FixWithAiButton } from '../ai/FixWithAiButton';
@@ -95,6 +96,8 @@ export function SqlEditorView() {
   const transactional = activeTab?.transactional ?? false;
   const [saveSnippetName, setSaveSnippetName] = useState<string | null>(null);
   const [response, setResponse] = useState<ExecuteQueryResponse | null>(activeTab?.result ?? null);
+  // Structured query plan (Phase 26). When set, it takes over the results slot; cleared on run/tab-switch.
+  const [planResult, setPlanResult] = useState<QueryPlanResult | null>(null);
   // Bumped on every run / tab switch so the infinite grid rebuilds its datasource + cache for
   // the new result (used in the grid `key`).
   const [resultEpoch, setResultEpoch] = useState(0);
@@ -113,6 +116,7 @@ export function SqlEditorView() {
   const createSnippet = useCreateSnippet();
 
   const executeQuery = useExecuteQuery(connectionId ?? '');
+  const explainQuery = useExplainQuery(connectionId ?? '');
   const { data: schemaMetadata } = useMetadata(connectionId);
   useMonacoCompletions(monacoInstance, schemaMetadata);
 
@@ -234,6 +238,7 @@ export function SqlEditorView() {
     setEphemeralRenderOverrides({});
     setRenderMenu(null);
     setJsonCell(null);
+    setPlanResult(null);
   }, [activeTabId]);
 
   // Loading a query from history sets `pendingQuerySql` (see `workspaceStore.loadQuery`);
@@ -252,6 +257,7 @@ export function SqlEditorView() {
 
       setPendingInsert(null);
       setSelectedRows([]);
+      setPlanResult(null);
       gridApiRef.current?.deselectAll();
 
       executeQuery.mutate(
@@ -272,24 +278,48 @@ export function SqlEditorView() {
     [connectionId, executeQuery, transactional, queryClient, activeTabId, setTabResult],
   );
 
-  // Cmd/Ctrl+Enter: run the selected text if any, otherwise the statement under the cursor.
-  const runActiveStatement = useCallback(() => {
+  // The selected text if any, otherwise the statement under the cursor, otherwise the whole buffer.
+  const resolveActiveStatement = useCallback((): string => {
     const editor = editorRef.current;
     const model = editor?.getModel();
-    if (!editor || !model) {
-      runSql(sql);
-      return;
-    }
+    if (!editor || !model) return sql;
     const selection = editor.getSelection();
-    if (selection && !selection.isEmpty()) {
-      runSql(model.getValueInRange(selection));
-      return;
-    }
+    if (selection && !selection.isEmpty()) return model.getValueInRange(selection);
     const position = editor.getPosition();
     const text = model.getValue();
     const offset = position ? model.getOffsetAt(position) : text.length;
-    runSql(statementAtOffset(text, offset) ?? text);
-  }, [runSql, sql]);
+    return statementAtOffset(text, offset) ?? text;
+  }, [sql]);
+
+  // Cmd/Ctrl+Enter: run the selected text if any, otherwise the statement under the cursor.
+  const runActiveStatement = useCallback(() => runSql(resolveActiveStatement()), [runSql, resolveActiveStatement]);
+
+  // Explain / Explain Analyze the active statement (Phase 26). Analyze runs the statement, so it is
+  // confirm-gated for anything that isn't obviously a read (SELECT/WITH); the server also rejects it
+  // on read-only connections.
+  const runExplain = useCallback(
+    async (analyze: boolean) => {
+      const statement = resolveActiveStatement().trim();
+      if (!connectionId || !statement || explainQuery.isPending) return;
+      if (analyze && !/^\s*(select|with)\b/i.test(statement)) {
+        const confirmed = await confirm({
+          title: 'Run statement to analyze?',
+          description: 'EXPLAIN ANALYZE executes this statement to measure real timings — this can modify data.',
+          confirmLabel: 'Run',
+          danger: true,
+        });
+        if (!confirmed) return;
+      }
+      explainQuery.mutate(
+        { sql: statement, analyze },
+        {
+          onSuccess: (plan) => setPlanResult(plan),
+          onError: (error) => pushToast('danger', apiErrorDetail(error, 'Failed to explain the statement.')),
+        },
+      );
+    },
+    [connectionId, explainQuery, resolveActiveStatement, confirm, pushToast],
+  );
 
   // Cmd/Ctrl+Shift+Enter: run the whole tab.
   const runAll = useCallback(() => {
@@ -493,6 +523,30 @@ export function SqlEditorView() {
             <Play size={12} />
             {executeQuery.isPending ? 'Running…' : 'Run'}
           </Button>
+          {descriptor?.supportsQueryPlan ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void runExplain(false)}
+              disabled={!connectionId || !sql.trim() || explainQuery.isPending}
+              className="shrink-0"
+              title="Show the estimated query plan for the statement under the cursor"
+            >
+              Explain
+            </Button>
+          ) : null}
+          {descriptor?.supportsExplainAnalyze ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void runExplain(true)}
+              disabled={!connectionId || !sql.trim() || explainQuery.isPending}
+              className="shrink-0"
+              title="Run the statement and show the plan with actual timings (executes the statement)"
+            >
+              Analyze
+            </Button>
+          ) : null}
           <label
             className="flex shrink-0 items-center gap-xs text-xs text-text-faint"
             title="Wrap the script in BEGIN/COMMIT and roll back on any error. Don't combine with your own BEGIN/COMMIT."
@@ -541,7 +595,7 @@ export function SqlEditorView() {
             <WandSparkles size={14} />
           </IconButton>
           <span className="hidden text-xs text-text-faint sm:inline">⌘/Ctrl + Enter</span>
-          {isGridResult ? (
+          {isGridResult && !planResult ? (
             <>
               <div className="mx-1 h-4 w-px bg-border" />
               <IconButton aria-label="Add row" onClick={handleAddRow} disabled={!editable || pendingInsert !== null}>
@@ -569,7 +623,7 @@ export function SqlEditorView() {
             </>
           ) : null}
           <div className="ml-auto flex shrink-0 items-center gap-sm whitespace-nowrap text-xs text-text-faint">
-            {single?.kind === 'rows' ? (
+            {!planResult && single?.kind === 'rows' ? (
               <>
                 <Badge variant={editable ? 'success' : 'neutral'}>{editable ? 'Editable' : 'Read-only'}</Badge>
                 {streamTruncatedAt !== null ? (
@@ -584,22 +638,24 @@ export function SqlEditorView() {
                 </span>
               </>
             ) : null}
-            {single?.kind === 'command' ? (
+            {!planResult && single?.kind === 'command' ? (
               <span>
                 {single.command} · {single.rowCount} row{single.rowCount === 1 ? '' : 's'} affected · {single.executionTimeMs} ms
               </span>
             ) : null}
-            {single?.kind === 'plan' ? (
+            {!planResult && single?.kind === 'plan' ? (
               <>
                 {single.analyze ? <Badge variant="warning">Analyze</Badge> : null}
                 <span>{single.executionTimeMs} ms</span>
               </>
             ) : null}
-            {single?.kind === 'error' ? <Badge variant="danger">{single.code ?? 'SQL_ERROR'}</Badge> : null}
+            {!planResult && single?.kind === 'error' ? <Badge variant="danger">{single.code ?? 'SQL_ERROR'}</Badge> : null}
           </div>
         </div>
         <div className="min-h-0 flex-1">
-          {error ? (
+          {planResult ? (
+            <QueryPlanView plan={planResult} className="h-full" />
+          ) : error ? (
             <div className="flex h-full flex-col items-center justify-center gap-xs p-md text-center">
               <Badge variant="danger">{errorCode ?? 'ERROR'}</Badge>
               <p className="max-w-[28rem] text-sm text-text">{apiErrorMessage(error, 'Query failed.')}</p>

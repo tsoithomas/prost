@@ -4,6 +4,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  QueryPlanNode,
   SchemaObjectKind,
 } from '@prost/shared-types';
 import type {
@@ -153,6 +154,14 @@ export interface DbDriver {
     primaryKey?: string[],
   ): Promise<ColumnMetadata[]>;
   formatExplain(rows: Record<string, unknown>[]): string;
+  /**
+   * Structured query plan (Phase 26). `buildExplain` returns the engine's structured-EXPLAIN
+   * statement (`analyze` runs the underlying statement — PostgreSQL only); `parseExplain` turns its
+   * result rows into a normalized `QueryPlanNode` tree. Only engines whose descriptor advertises
+   * `supportsQueryPlan` are asked. The pure parse logic lives in the driver's `*-sql.ts`.
+   */
+  buildExplain(sql: string, analyze: boolean): SqlFragment;
+  parseExplain(rows: Record<string, unknown>[], analyze: boolean): QueryPlanNode;
 
   /** Inspect a native error; throw the right Nest HTTP exception, or return to let the caller rethrow. */
   mapError(error: unknown, context: DriverErrorContext): void;

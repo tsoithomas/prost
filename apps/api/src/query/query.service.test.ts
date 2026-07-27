@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { describe, expect, it, vi } from 'vitest';
 import type { ColumnMetadata, StatementResult } from '@prost/shared-types';
@@ -320,6 +320,38 @@ describe('QueryService.execute — read-only guardrail (Phase 25)', () => {
 
     const response = await service.execute('conn-1', 'SELECT * FROM users', 'user-1');
     expectKind(response.statements[0]!, 'rows');
+  });
+});
+
+describe('QueryService.explain — structured query plan (Phase 26)', () => {
+  const pgPlanRow = (plan: unknown) => result([{ 'QUERY PLAN': plan }]);
+
+  it('rejects a multi-statement explain', async () => {
+    const { service } = createService();
+    await expect(service.explain('conn-1', 'SELECT 1; SELECT 2', false)).rejects.toThrow(BadRequestException);
+  });
+
+  it('blocks EXPLAIN ANALYZE on a read-only connection before running anything', async () => {
+    const run = vi.fn();
+    const { service, isReadOnly } = createService(run);
+    isReadOnly.mockResolvedValue(true);
+
+    await expect(service.explain('conn-1', 'SELECT * FROM users', true)).rejects.toThrow(ForbiddenException);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('returns a normalized plan tree for a single statement', async () => {
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce(
+        pgPlanRow([{ Plan: { 'Node Type': 'Seq Scan', 'Relation Name': 'users', 'Total Cost': 5, 'Plan Rows': 3 } }]),
+      );
+    const { service } = createService(run);
+
+    const plan = await service.explain('conn-1', 'SELECT * FROM users', false);
+    expect(plan.analyze).toBe(false);
+    expect(plan.format).toBe('json');
+    expect(plan.root).toMatchObject({ nodeType: 'Seq Scan', detail: 'users', estimatedCost: 5, estimatedRows: 3 });
   });
 });
 
