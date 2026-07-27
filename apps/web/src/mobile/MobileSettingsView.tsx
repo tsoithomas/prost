@@ -76,7 +76,7 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, 
               size="sm"
               className="mt-sm w-full justify-center"
               onClick={() => {
-                openSessions();
+                if (activeConnectionId) openSessions(activeConnectionId);
                 onOpenSessions();
               }}
             >
@@ -89,7 +89,7 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, 
             size="sm"
             className="mt-sm w-full justify-center"
             onClick={() => {
-              openAudit();
+              openAudit(activeConnectionId ?? undefined);
               onOpenAudit();
             }}
           >

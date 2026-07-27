@@ -72,7 +72,7 @@ export function DatabaseOverview({ connectionId, schema, writable = true }: Data
     dropTable.mutate(
       { schema, table: name },
       {
-        onSuccess: () => closeTableTab(schema, name),
+        onSuccess: () => closeTableTab(connectionId, schema, name),
         onError: (error) => pushToast('danger', apiErrorDetail(error, 'Failed to drop table.')),
       },
     );
@@ -132,7 +132,7 @@ export function DatabaseOverview({ connectionId, schema, writable = true }: Data
                     <td className={`${cell} text-left`}>
                       <button
                         type="button"
-                        onClick={() => openTable(schema, table.name, 'rows')}
+                        onClick={() => openTable(connectionId, schema, table.name, 'rows')}
                         className="font-medium text-accent hover:underline"
                       >
                         {table.name}
@@ -149,21 +149,21 @@ export function DatabaseOverview({ connectionId, schema, writable = true }: Data
                         <IconButton
                           aria-label={`Browse rows of ${table.name}`}
                           title="Browse rows"
-                          onClick={() => openTable(schema, table.name, 'rows')}
+                          onClick={() => openTable(connectionId, schema, table.name, 'rows')}
                         >
                           <Rows3 size={14} />
                         </IconButton>
                         <IconButton
                           aria-label={`View structure of ${table.name}`}
                           title="View structure"
-                          onClick={() => openTable(schema, table.name, 'structure')}
+                          onClick={() => openTable(connectionId, schema, table.name, 'structure')}
                         >
                           <StretchHorizontal size={14} />
                         </IconButton>
                         <IconButton
                           aria-label={`Search ${table.name}`}
                           title="Search all columns"
-                          onClick={() => openTable(schema, table.name, 'rows', { search: '' })}
+                          onClick={() => openTable(connectionId, schema, table.name, 'rows', { search: '' })}
                         >
                           <Search size={14} />
                         </IconButton>

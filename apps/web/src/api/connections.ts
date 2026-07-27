@@ -22,12 +22,17 @@ export function useConnections() {
   });
 }
 
+/** The connection record for a given id, if loaded. Pass `null`/`undefined` for no connection. */
+export function useConnection(id: string | null | undefined): ConnectionDto | undefined {
+  const { data: connections } = useConnections();
+
+  return id ? connections?.find((connection) => connection.id === id) : undefined;
+}
+
 /** The connection record for the active connection, if any (per `connectionStore`). */
 export function useActiveConnection(): ConnectionDto | undefined {
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
-  const { data: connections } = useConnections();
-
-  return connections?.find((connection) => connection.id === activeConnectionId);
+  return useConnection(activeConnectionId);
 }
 
 export function useCreateConnection() {

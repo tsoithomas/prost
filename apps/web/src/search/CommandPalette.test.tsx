@@ -69,7 +69,7 @@ describe('CommandPalette', () => {
     renderWithProviders(<CommandPalette />);
     await userEvent.type(screen.getByLabelText('Search'), 'ord');
     await userEvent.click(screen.getByText('orders', { exact: true }));
-    expect(mockOpenTable).toHaveBeenCalledWith('public', 'orders', 'rows');
+    expect(mockOpenTable).toHaveBeenCalledWith('conn-1', 'public', 'orders', 'rows');
     expect(mockClose).toHaveBeenCalled();
   });
 
@@ -77,7 +77,7 @@ describe('CommandPalette', () => {
     renderWithProviders(<CommandPalette />);
     await userEvent.type(screen.getByLabelText('Search'), 'total');
     await userEvent.click(screen.getByText('orders.total'));
-    expect(mockReveal).toHaveBeenCalledWith('public', 'orders', 'total');
+    expect(mockReveal).toHaveBeenCalledWith('conn-1', 'public', 'orders', 'total');
   });
 
   it('selecting a snippet loads its body without running', async () => {
@@ -99,7 +99,7 @@ describe('CommandPalette', () => {
     const input = screen.getByLabelText('Search');
     await userEvent.type(input, 'ord');
     await userEvent.keyboard('{Enter}');
-    expect(mockOpenTable).toHaveBeenCalledWith('public', 'orders', 'rows');
+    expect(mockOpenTable).toHaveBeenCalledWith('conn-1', 'public', 'orders', 'rows');
 
     await userEvent.keyboard('{Escape}');
     expect(mockClose).toHaveBeenCalled();

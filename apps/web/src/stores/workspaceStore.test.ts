@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ExecuteQueryResponse } from '@prost/shared-types';
 import { INITIAL_SQL, useWorkspaceStore } from './workspaceStore';
 
+// A stand-in connection id for the data-tab actions, which now bind each tab to a connection.
+const C = 'conn-1';
+
 const initialState = {
   tabs: [{ id: 'query-1', label: 'Query 1', kind: 'query' as const, sql: INITIAL_SQL, result: null }],
   activeTabId: 'query-1',
@@ -26,8 +29,8 @@ describe('workspaceStore — loadQuery', () => {
   });
 
   it('switches activeTabId to the first query tab even when a table tab is active', () => {
-    useWorkspaceStore.getState().openTable('public', 'users');
-    expect(useWorkspaceStore.getState().activeTabId).toBe('table:public.users');
+    useWorkspaceStore.getState().openTable(C, 'public', 'users');
+    expect(useWorkspaceStore.getState().activeTabId).toBe(`table:${C}:public.users`);
 
     useWorkspaceStore.getState().loadQuery('SELECT * FROM users');
     expect(useWorkspaceStore.getState().activeTabId).toBe('query-1');
@@ -60,79 +63,106 @@ describe('workspaceStore — loadQuery', () => {
 });
 
 describe('workspaceStore — openOverview', () => {
-  it('opens an overview tab keyed by schema and makes it active', () => {
-    useWorkspaceStore.getState().openOverview('public');
+  it('opens an overview tab keyed by connection + schema and makes it active', () => {
+    useWorkspaceStore.getState().openOverview(C, 'public');
     const state = useWorkspaceStore.getState();
-    expect(state.activeTabId).toBe('overview:public');
+    expect(state.activeTabId).toBe(`overview:${C}:public`);
     expect(state.tabs).toHaveLength(2);
-    expect(state.tabs[1]).toMatchObject({ id: 'overview:public', kind: 'overview', schema: 'public', label: 'public' });
+    expect(state.tabs[1]).toMatchObject({
+      id: `overview:${C}:public`, kind: 'overview', connectionId: C, schema: 'public', label: 'public',
+    });
   });
 
   it('dedupes: reopening the same schema reactivates the existing tab', () => {
-    useWorkspaceStore.getState().openOverview('public');
-    useWorkspaceStore.getState().openTable('public', 'users');
-    useWorkspaceStore.getState().openOverview('public');
+    useWorkspaceStore.getState().openOverview(C, 'public');
+    useWorkspaceStore.getState().openTable(C, 'public', 'users');
+    useWorkspaceStore.getState().openOverview(C, 'public');
     const state = useWorkspaceStore.getState();
-    expect(state.tabs.filter((t) => t.id === 'overview:public')).toHaveLength(1);
-    expect(state.activeTabId).toBe('overview:public');
+    expect(state.tabs.filter((t) => t.id === `overview:${C}:public`)).toHaveLength(1);
+    expect(state.activeTabId).toBe(`overview:${C}:public`);
+  });
+
+  it('opens a separate tab for the same schema under a different connection', () => {
+    useWorkspaceStore.getState().openOverview(C, 'public');
+    useWorkspaceStore.getState().openOverview('conn-2', 'public');
+    const ids = useWorkspaceStore.getState().tabs.map((t) => t.id);
+    expect(ids).toContain(`overview:${C}:public`);
+    expect(ids).toContain('overview:conn-2:public');
+  });
+});
+
+describe('workspaceStore — openTable connection binding', () => {
+  it('binds the tab to its connection and keys the id by it', () => {
+    useWorkspaceStore.getState().openTable(C, 'public', 'users');
+    const tab = useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`);
+    expect(tab).toMatchObject({ kind: 'table', connectionId: C, schema: 'public', table: 'users' });
+  });
+
+  it('opens the same table under two connections as two distinct tabs', () => {
+    useWorkspaceStore.getState().openTable(C, 'public', 'users');
+    useWorkspaceStore.getState().openTable('conn-2', 'public', 'users');
+    const ids = useWorkspaceStore.getState().tabs.map((t) => t.id);
+    expect(ids).toContain(`table:${C}:public.users`);
+    expect(ids).toContain('table:conn-2:public.users');
+    expect(useWorkspaceStore.getState().activeTabId).toBe('table:conn-2:public.users');
   });
 });
 
 describe('workspaceStore — openTable search hand-off / closeTableTab', () => {
   it('stashes the search term on the tab and clearTabSearch removes it', () => {
-    useWorkspaceStore.getState().openTable('public', 'users', 'rows', { search: '' });
-    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === 'table:public.users')?.search).toBe('');
+    useWorkspaceStore.getState().openTable(C, 'public', 'users', 'rows', { search: '' });
+    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`)?.search).toBe('');
 
-    useWorkspaceStore.getState().clearTabSearch('table:public.users');
-    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === 'table:public.users')?.search).toBeUndefined();
+    useWorkspaceStore.getState().clearTabSearch(`table:${C}:public.users`);
+    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`)?.search).toBeUndefined();
   });
 
   it('stashes a preset filter (FK navigation) on the tab and clearTabFilter removes it', () => {
     const filter = { combinator: 'and' as const, conditions: [{ column: 'id', operator: 'eq' as const, value: 42 }] };
-    useWorkspaceStore.getState().openTable('public', 'users', 'rows', { filter });
-    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === 'table:public.users')?.presetFilter).toEqual(filter);
+    useWorkspaceStore.getState().openTable(C, 'public', 'users', 'rows', { filter });
+    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`)?.presetFilter).toEqual(filter);
 
-    useWorkspaceStore.getState().clearTabFilter('table:public.users');
-    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === 'table:public.users')?.presetFilter).toBeUndefined();
+    useWorkspaceStore.getState().clearTabFilter(`table:${C}:public.users`);
+    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`)?.presetFilter).toBeUndefined();
   });
 
   it('applies a preset filter to an already-open table tab on re-open', () => {
-    useWorkspaceStore.getState().openTable('public', 'users');
+    useWorkspaceStore.getState().openTable(C, 'public', 'users');
     const filter = { combinator: 'and' as const, conditions: [{ column: 'id', operator: 'eq' as const, value: 7 }] };
-    useWorkspaceStore.getState().openTable('public', 'users', 'rows', { filter });
-    const tab = useWorkspaceStore.getState().tabs.find((t) => t.id === 'table:public.users');
+    useWorkspaceStore.getState().openTable(C, 'public', 'users', 'rows', { filter });
+    const tab = useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`);
     expect(tab?.presetFilter).toEqual(filter);
-    expect(useWorkspaceStore.getState().tabs.filter((t) => t.id === 'table:public.users')).toHaveLength(1);
+    expect(useWorkspaceStore.getState().tabs.filter((t) => t.id === `table:${C}:public.users`)).toHaveLength(1);
   });
 
   it('closeTableTab removes the matching table tab and is a no-op when absent', () => {
-    useWorkspaceStore.getState().openTable('public', 'users');
-    useWorkspaceStore.getState().closeTableTab('public', 'users');
-    expect(useWorkspaceStore.getState().tabs.some((t) => t.id === 'table:public.users')).toBe(false);
+    useWorkspaceStore.getState().openTable(C, 'public', 'users');
+    useWorkspaceStore.getState().closeTableTab(C, 'public', 'users');
+    expect(useWorkspaceStore.getState().tabs.some((t) => t.id === `table:${C}:public.users`)).toBe(false);
 
     const before = useWorkspaceStore.getState().tabs.map((t) => t.id);
-    useWorkspaceStore.getState().closeTableTab('public', 'ghost');
+    useWorkspaceStore.getState().closeTableTab(C, 'public', 'ghost');
     expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(before);
   });
 });
 
 describe('workspaceStore — openObject', () => {
-  it('opens a read-only object tab keyed by schema.name and makes it active', () => {
-    useWorkspaceStore.getState().openObject('public', 'function', 'add');
+  it('opens a read-only object tab keyed by connection + schema.name and makes it active', () => {
+    useWorkspaceStore.getState().openObject(C, 'public', 'function', 'add');
     const state = useWorkspaceStore.getState();
-    expect(state.activeTabId).toBe('object:public.add');
+    expect(state.activeTabId).toBe(`object:${C}:public.add`);
     expect(state.tabs[1]).toMatchObject({
-      id: 'object:public.add', kind: 'object', schema: 'public', objectKind: 'function', objectName: 'add', label: 'add',
+      id: `object:${C}:public.add`, kind: 'object', connectionId: C, schema: 'public', objectKind: 'function', objectName: 'add', label: 'add',
     });
   });
 
   it('dedupes: reopening the same object reactivates the existing tab', () => {
-    useWorkspaceStore.getState().openObject('public', 'view', 'v');
-    useWorkspaceStore.getState().openTable('public', 'users');
-    useWorkspaceStore.getState().openObject('public', 'view', 'v');
+    useWorkspaceStore.getState().openObject(C, 'public', 'view', 'v');
+    useWorkspaceStore.getState().openTable(C, 'public', 'users');
+    useWorkspaceStore.getState().openObject(C, 'public', 'view', 'v');
     const state = useWorkspaceStore.getState();
-    expect(state.tabs.filter((t) => t.id === 'object:public.v')).toHaveLength(1);
-    expect(state.activeTabId).toBe('object:public.v');
+    expect(state.tabs.filter((t) => t.id === `object:${C}:public.v`)).toHaveLength(1);
+    expect(state.activeTabId).toBe(`object:${C}:public.v`);
   });
 });
 
@@ -209,19 +239,19 @@ describe('workspaceStore — closeTab with multiple query tabs', () => {
 describe('workspaceStore — reorderTab', () => {
   it('moves a tab to the target position, preserving the active tab', () => {
     const store = useWorkspaceStore.getState();
-    store.openTable('public', 'users'); // table:public.users
+    store.openTable(C, 'public', 'users'); // table:conn-1:public.users
     store.newQueryTab(); // a 3rd tab
     const ids = useWorkspaceStore.getState().tabs.map((t) => t.id);
-    expect(ids).toEqual(['query-1', 'table:public.users', ids[2]]);
+    expect(ids).toEqual(['query-1', `table:${C}:public.users`, ids[2]]);
 
     // Drag the last tab onto the first position.
     useWorkspaceStore.getState().reorderTab(ids[2]!, 'query-1');
-    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual([ids[2], 'query-1', 'table:public.users']);
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual([ids[2], 'query-1', `table:${C}:public.users`]);
     expect(useWorkspaceStore.getState().activeTabId).toBe(ids[2]); // unchanged
   });
 
   it('is a no-op when dragged onto itself or an unknown id', () => {
-    useWorkspaceStore.getState().openTable('public', 'users');
+    useWorkspaceStore.getState().openTable(C, 'public', 'users');
     const before = useWorkspaceStore.getState().tabs.map((t) => t.id);
     useWorkspaceStore.getState().reorderTab('query-1', 'query-1');
     useWorkspaceStore.getState().reorderTab('nope', 'query-1');
@@ -233,8 +263,8 @@ describe('workspaceStore — bulk close', () => {
   // newQueryTab generates a `query-<uuid>` id (only the label is "Query 2"), so capture it.
   function seed() {
     const store = useWorkspaceStore.getState();
-    store.openTable('public', 'a'); // table:public.a
-    store.openTable('public', 'b'); // table:public.b
+    store.openTable(C, 'public', 'a'); // table:conn-1:public.a
+    store.openTable(C, 'public', 'b'); // table:conn-1:public.b
     store.newQueryTab();
     const ids = useWorkspaceStore.getState().tabs.map((t) => t.id); // [query-1, t:a, t:b, query-<uuid>]
     return { ids, query2: ids[3]! };
@@ -242,21 +272,21 @@ describe('workspaceStore — bulk close', () => {
 
   it('closeOtherTabs keeps only the target (and a surviving query tab)', () => {
     seed();
-    useWorkspaceStore.getState().closeOtherTabs('table:public.a');
+    useWorkspaceStore.getState().closeOtherTabs(`table:${C}:public.a`);
     // Target table tab kept; since no query tab would survive, the first query tab is retained.
-    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(['query-1', 'table:public.a']);
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(['query-1', `table:${C}:public.a`]);
   });
 
   it('closeTabsToLeft removes tabs before the target', () => {
     const { query2 } = seed();
-    useWorkspaceStore.getState().closeTabsToLeft('table:public.b');
-    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(['table:public.b', query2]);
+    useWorkspaceStore.getState().closeTabsToLeft(`table:${C}:public.b`);
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual([`table:${C}:public.b`, query2]);
   });
 
   it('closeTabsToRight removes tabs after the target', () => {
     seed();
-    useWorkspaceStore.getState().closeTabsToRight('table:public.a');
-    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(['query-1', 'table:public.a']);
+    useWorkspaceStore.getState().closeTabsToRight(`table:${C}:public.a`);
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(['query-1', `table:${C}:public.a`]);
   });
 
   it('closeAllTableTabs removes every table tab but keeps all query tabs', () => {
@@ -267,7 +297,7 @@ describe('workspaceStore — bulk close', () => {
 
   it('repoints activeTabId when the active tab is closed', () => {
     const { query2 } = seed();
-    useWorkspaceStore.getState().selectTab('table:public.b');
+    useWorkspaceStore.getState().selectTab(`table:${C}:public.b`);
     useWorkspaceStore.getState().closeAllTableTabs();
     const state = useWorkspaceStore.getState();
     expect(state.tabs.some((t) => t.id === state.activeTabId)).toBe(true);

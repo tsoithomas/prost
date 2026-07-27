@@ -71,7 +71,11 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
     schema: '',
   });
 
-  const activeWorkspaceTab = workspaceTabs.find((tab) => tab.id === activeWorkspaceTabId);
+  // Only reflect the active tab in the tree when it belongs to the connection the tree shows —
+  // a tab bound to another connection must not highlight a same-named table here.
+  const activeWorkspaceTabRaw = workspaceTabs.find((tab) => tab.id === activeWorkspaceTabId);
+  const activeWorkspaceTab =
+    activeWorkspaceTabRaw?.connectionId === activeConnectionId ? activeWorkspaceTabRaw : undefined;
   const selectedTable =
     activeWorkspaceTab?.kind === 'table' && activeWorkspaceTab.schema
       ? `${activeWorkspaceTab.schema}.${activeWorkspaceTab.table}`
@@ -134,11 +138,11 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
           schemas={schemas ?? []}
           selectedTable={selectedTable}
           selectedObject={selectedObject}
-          onSelectTable={(table) => openTable(table.schema, table.name, 'rows')}
-          onOpenStructure={(table) => openTable(table.schema, table.name, 'structure')}
-          onSelectObject={(object) => openSchemaObject({ openTable, openObject }, object)}
+          onSelectTable={(table) => openTable(activeConnectionId, table.schema, table.name, 'rows')}
+          onOpenStructure={(table) => openTable(activeConnectionId, table.schema, table.name, 'structure')}
+          onSelectObject={(object) => openSchemaObject({ openTable, openObject }, activeConnectionId, object)}
           onNewTable={(schema) => setCreateTableState({ open: true, schema })}
-          onOpenOverview={(schema) => openOverview(schema)}
+          onOpenOverview={(schema) => openOverview(activeConnectionId, schema)}
           hasSchemas={activeConnection?.capabilities.hasSchemas ?? true}
           writable={!activeConnection?.capabilities.readOnly}
           pinnedKeys={pinnedKeys}
@@ -339,7 +343,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
         <CreateTableModal
           open={createTableState.open}
           onClose={() => setCreateTableState((s) => ({ ...s, open: false }))}
-          onSuccess={(schema, table) => openTable(schema, table, 'rows')}
+          onSuccess={(schema, table) => openTable(activeConnectionId, schema, table, 'rows')}
           connectionId={activeConnectionId}
           initialSchema={createTableState.schema}
           schemas={(schemas ?? []).map((s) => s.name)}

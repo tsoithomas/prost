@@ -5,6 +5,14 @@ export interface WorkspaceTab {
   id: string;
   label: string;
   kind: 'table' | 'query' | 'overview' | 'object' | 'sessions' | 'audit';
+  /**
+   * The connection a data tab is bound to (table/overview/object/sessions tabs). A tab always
+   * loads from this connection, independent of which connection is currently active — so switching
+   * the active connection never re-points an already-open tab at the wrong database. Query tabs are
+   * connection-agnostic (they run against the active connection) and leave this unset; the audit tab
+   * is cross-connection and uses `presetConnectionId` instead.
+   */
+  connectionId?: string;
   schema?: string;
   table?: string;
   /** Non-table object identity (object tabs only). */
@@ -51,16 +59,17 @@ interface WorkspaceState {
   /** A column the structure panel should scroll to + highlight (set by global search). */
   revealColumn: RevealColumnTarget | null;
   openTable: (
+    connectionId: string,
     schema: string,
     table: string,
     viewMode?: 'rows' | 'structure',
     opts?: { search?: string; filter?: RowFilter },
   ) => void;
-  openOverview: (schema: string) => void;
+  openOverview: (connectionId: string, schema: string) => void;
   /** Open a read-only definition panel for a non-table object (Phase 24). */
-  openObject: (schema: string, kind: SchemaObjectKind, name: string) => void;
-  /** Open the active connection's live-session monitor (Phase 27). */
-  openSessions: () => void;
+  openObject: (connectionId: string, schema: string, kind: SchemaObjectKind, name: string) => void;
+  /** Open a connection's live-session monitor (Phase 27). */
+  openSessions: (connectionId: string) => void;
   /**
    * Open the mutation & DDL audit trail viewer (Phase 28). Pass a `connectionId` to seed its filter
    * to that connection (per-connection breadcrumb launch); omit it for the global all-connections view.
@@ -68,12 +77,12 @@ interface WorkspaceState {
   openAudit: (connectionId?: string) => void;
   /** Clears the audit tab's one-shot `presetConnectionId` once the AuditPanel has consumed it. */
   clearAuditPreset: (id: string) => void;
-  closeTableTab: (schema: string, table: string) => void;
+  closeTableTab: (connectionId: string, schema: string, table: string) => void;
   /** Clears a table tab's one-shot `search` hand-off once the TableView has consumed it. */
   clearTabSearch: (id: string) => void;
   /** Clears a table tab's one-shot `presetFilter` hand-off once the TableView has consumed it. */
   clearTabFilter: (id: string) => void;
-  revealTableColumn: (schema: string, table: string, column: string) => void;
+  revealTableColumn: (connectionId: string, schema: string, table: string, column: string) => void;
   clearRevealColumn: () => void;
   setTabViewMode: (id: string, viewMode: 'rows' | 'structure') => void;
   selectTab: (id: string) => void;
@@ -127,8 +136,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   cursorPosition: null,
   revealColumn: null,
 
-  openTable: (schema, table, viewMode = 'rows', opts) => {
-    const id = `table:${schema}.${table}`;
+  openTable: (connectionId, schema, table, viewMode = 'rows', opts) => {
+    const id = `table:${connectionId}:${schema}.${table}`;
     const search = opts?.search;
     const filter = opts?.filter;
     const handoff = {
@@ -143,33 +152,33 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
         };
       }
       return {
-        tabs: [...state.tabs, { id, label: table, kind: 'table', schema, table, viewMode, ...handoff }],
+        tabs: [...state.tabs, { id, label: table, kind: 'table', connectionId, schema, table, viewMode, ...handoff }],
         activeTabId: id,
       };
     });
   },
 
-  openOverview: (schema) => {
-    const id = `overview:${schema}`;
+  openOverview: (connectionId, schema) => {
+    const id = `overview:${connectionId}:${schema}`;
     set((state) => {
       if (state.tabs.some((tab) => tab.id === id)) {
         return { activeTabId: id };
       }
       return {
-        tabs: [...state.tabs, { id, label: schema, kind: 'overview', schema }],
+        tabs: [...state.tabs, { id, label: schema, kind: 'overview', connectionId, schema }],
         activeTabId: id,
       };
     });
   },
 
-  openSessions: () => {
-    const id = 'sessions';
+  openSessions: (connectionId) => {
+    const id = `sessions:${connectionId}`;
     set((state) => {
       if (state.tabs.some((tab) => tab.id === id)) {
         return { activeTabId: id };
       }
       return {
-        tabs: [...state.tabs, { id, label: 'Sessions', kind: 'sessions' }],
+        tabs: [...state.tabs, { id, label: 'Sessions', kind: 'sessions', connectionId }],
         activeTabId: id,
       };
     });
@@ -198,21 +207,21 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
       tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, presetConnectionId: undefined } : tab)),
     })),
 
-  openObject: (schema, kind, name) => {
-    const id = `object:${schema}.${name}`;
+  openObject: (connectionId, schema, kind, name) => {
+    const id = `object:${connectionId}:${schema}.${name}`;
     set((state) => {
       if (state.tabs.some((tab) => tab.id === id)) {
         return { activeTabId: id };
       }
       return {
-        tabs: [...state.tabs, { id, label: name, kind: 'object', schema, objectKind: kind, objectName: name }],
+        tabs: [...state.tabs, { id, label: name, kind: 'object', connectionId, schema, objectKind: kind, objectName: name }],
         activeTabId: id,
       };
     });
   },
 
-  closeTableTab: (schema, table) => {
-    const id = `table:${schema}.${table}`;
+  closeTableTab: (connectionId, schema, table) => {
+    const id = `table:${connectionId}:${schema}.${table}`;
     set((state) => {
       if (!state.tabs.some((tab) => tab.id === id)) return state;
       const tabs = state.tabs.filter((tab) => tab.id !== id);
@@ -222,8 +231,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
     });
   },
 
-  revealTableColumn: (schema, table, column) => {
-    const id = `table:${schema}.${table}`;
+  revealTableColumn: (connectionId, schema, table, column) => {
+    const id = `table:${connectionId}:${schema}.${table}`;
     set((state) => {
       const exists = state.tabs.some((tab) => tab.id === id);
       return {
@@ -231,7 +240,7 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
         activeTabId: id,
         tabs: exists
           ? state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode: 'structure' } : tab))
-          : [...state.tabs, { id, label: table, kind: 'table', schema, table, viewMode: 'structure' }],
+          : [...state.tabs, { id, label: table, kind: 'table', connectionId, schema, table, viewMode: 'structure' }],
       };
     });
   },

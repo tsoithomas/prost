@@ -18,7 +18,7 @@ import { ROW_VERSION_KEY } from '@prost/shared-types';
 import { Badge, Button, IconButton, Input, prostGridTheme, Toast } from '@prost/ui';
 import { FilterPanel, operatorsForColumn } from './FilterPanel';
 import { TableStructurePanel } from './TableStructurePanel';
-import { useActiveConnection } from '../api/connections';
+import { useConnection } from '../api/connections';
 import { useBulkUpdate, useDeleteRow, useInsertRow } from '../api/grid';
 import { useUpdatePreferences } from '../api/preferences';
 import { buildColumnDefs, type HeaderContextMenuArgs } from '../grid/columnDefs';
@@ -127,8 +127,10 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   });
 
   // Read-only connections (the app DB) never allow grid writes, regardless of table editability.
-  const activeConnection = useActiveConnection();
-  const writable = !activeConnection?.capabilities.readOnly;
+  // Resolve from this tab's *bound* connection, not the active one — the tab may be for a
+  // different connection than the one currently selected in the sidebar.
+  const tabConnection = useConnection(connectionId);
+  const writable = !tabConnection?.capabilities.readOnly;
   const editable = (columnsQuery.data?.editable ?? false) && writable;
   const primaryKey = columnsQuery.data?.primaryKey ?? [];
   const concurrency: RowConcurrency = columnsQuery.data?.concurrency ?? 'preimage';
@@ -149,7 +151,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   );
 
   // One-shot hand-off from the database overview's "Search" action: focus the box (seeded term).
-  const tabId = `table:${schema}.${table}`;
+  const tabId = `table:${connectionId}:${schema}.${table}`;
   const searchHandoff = useWorkspaceStore((state) => state.tabs.find((tab) => tab.id === tabId)?.search);
   const clearTabSearch = useWorkspaceStore((state) => state.clearTabSearch);
   useEffect(() => {
@@ -243,9 +245,9 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
       ).map((target) => ({
         direction: target.direction,
         label: target.label,
-        onSelect: () => openTable(target.schema, target.table, 'rows', { filter: target.filter }),
+        onSelect: () => openTable(connectionId, target.schema, target.table, 'rows', { filter: target.filter }),
       })),
-    [columnsQuery.data, openTable, schema],
+    [columnsQuery.data, openTable, schema, connectionId],
   );
 
   // AG Grid gives us the row + column reliably on right-click; open the FK menu on FK cells. The

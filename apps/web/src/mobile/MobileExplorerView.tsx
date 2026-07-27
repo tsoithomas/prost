@@ -34,7 +34,10 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
     schema: '',
   });
 
-  const activeWorkspaceTab = workspaceTabs.find((tab) => tab.id === activeWorkspaceTabId);
+  // Only reflect the active tab in the tree when it belongs to the connection the tree shows.
+  const activeWorkspaceTabRaw = workspaceTabs.find((tab) => tab.id === activeWorkspaceTabId);
+  const activeWorkspaceTab =
+    activeWorkspaceTabRaw?.connectionId === activeConnectionId ? activeWorkspaceTabRaw : undefined;
   const selectedTable =
     activeWorkspaceTab?.kind === 'table' && activeWorkspaceTab.schema
       ? `${activeWorkspaceTab.schema}.${activeWorkspaceTab.table}`
@@ -68,20 +71,20 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
             selectedTable={selectedTable}
             selectedObject={selectedObject}
             onSelectTable={(table) => {
-              openTable(table.schema, table.name, 'rows');
+              openTable(activeConnectionId, table.schema, table.name, 'rows');
               onSelectTable?.();
             }}
             onOpenStructure={(table) => {
-              openTable(table.schema, table.name, 'structure');
+              openTable(activeConnectionId, table.schema, table.name, 'structure');
               onSelectTable?.();
             }}
             onSelectObject={(object) => {
-              openSchemaObject({ openTable, openObject }, object);
+              openSchemaObject({ openTable, openObject }, activeConnectionId, object);
               onSelectTable?.();
             }}
             onNewTable={(schema) => setCreateTableState({ open: true, schema })}
             onOpenOverview={(schema) => {
-              openOverview(schema);
+              openOverview(activeConnectionId, schema);
               onSelectTable?.();
             }}
             hasSchemas={activeConnection?.capabilities.hasSchemas ?? true}
@@ -100,7 +103,7 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
           open={createTableState.open}
           onClose={() => setCreateTableState((s) => ({ ...s, open: false }))}
           onSuccess={(schema, table) => {
-            openTable(schema, table, 'rows');
+            openTable(activeConnectionId, schema, table, 'rows');
             onSelectTable?.();
           }}
           connectionId={activeConnectionId}

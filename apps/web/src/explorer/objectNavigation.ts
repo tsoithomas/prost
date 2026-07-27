@@ -8,12 +8,16 @@ type Store = ReturnType<typeof useWorkspaceStore.getState>;
  * the grid read-only (reusing `openTable`); every other kind opens a read-only definition panel.
  * Shared by the desktop Sidebar and the mobile explorer so the policy lives in one place.
  */
-export function openSchemaObject(store: Pick<Store, 'openTable' | 'openObject'>, object: SchemaObjectSummary): void {
+export function openSchemaObject(
+  store: Pick<Store, 'openTable' | 'openObject'>,
+  connectionId: string,
+  object: SchemaObjectSummary,
+): void {
   const schema = object.schema ?? 'main';
   if (object.kind === 'view' || object.kind === 'materializedView') {
-    store.openTable(schema, object.name, 'rows');
+    store.openTable(connectionId, schema, object.name, 'rows');
   } else {
-    store.openObject(schema, object.kind, object.name);
+    store.openObject(connectionId, schema, object.kind, object.name);
   }
 }
 

@@ -6,32 +6,34 @@ function makeStore() {
   return { openTable: vi.fn(), openObject: vi.fn() };
 }
 
+const C = 'conn-1';
+
 describe('openSchemaObject', () => {
-  it('routes a view to the grid via openTable (read-only)', () => {
+  it('routes a view to the grid via openTable (read-only), bound to the connection', () => {
     const store = makeStore();
     const view: SchemaObjectSummary = { kind: 'view', schema: 'public', name: 'active_users' };
-    openSchemaObject(store, view);
-    expect(store.openTable).toHaveBeenCalledWith('public', 'active_users', 'rows');
+    openSchemaObject(store, C, view);
+    expect(store.openTable).toHaveBeenCalledWith(C, 'public', 'active_users', 'rows');
     expect(store.openObject).not.toHaveBeenCalled();
   });
 
   it('routes a materialized view to the grid too', () => {
     const store = makeStore();
-    openSchemaObject(store, { kind: 'materializedView', schema: 'public', name: 'mv' });
-    expect(store.openTable).toHaveBeenCalledWith('public', 'mv', 'rows');
+    openSchemaObject(store, C, { kind: 'materializedView', schema: 'public', name: 'mv' });
+    expect(store.openTable).toHaveBeenCalledWith(C, 'public', 'mv', 'rows');
   });
 
   it('routes non-relation objects to a definition panel via openObject', () => {
     const store = makeStore();
-    openSchemaObject(store, { kind: 'function', schema: 'public', name: 'add' });
-    expect(store.openObject).toHaveBeenCalledWith('public', 'function', 'add');
+    openSchemaObject(store, C, { kind: 'function', schema: 'public', name: 'add' });
+    expect(store.openObject).toHaveBeenCalledWith(C, 'public', 'function', 'add');
     expect(store.openTable).not.toHaveBeenCalled();
   });
 
   it('falls back to the "main" schema when the engine has none', () => {
     const store = makeStore();
-    openSchemaObject(store, { kind: 'trigger', schema: null, name: 'trg' });
-    expect(store.openObject).toHaveBeenCalledWith('main', 'trigger', 'trg');
+    openSchemaObject(store, C, { kind: 'trigger', schema: null, name: 'trg' });
+    expect(store.openObject).toHaveBeenCalledWith(C, 'main', 'trigger', 'trg');
   });
 });
 

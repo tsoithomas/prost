@@ -82,10 +82,10 @@ export function CommandPalette() {
   function handleSelect(item: SearchItem) {
     switch (item.type) {
       case 'table':
-        openTable(item.schema, item.table, 'rows');
+        if (activeConnectionId) openTable(activeConnectionId, item.schema, item.table, 'rows');
         break;
       case 'column':
-        revealTableColumn(item.schema, item.table, item.column);
+        if (activeConnectionId) revealTableColumn(activeConnectionId, item.schema, item.table, item.column);
         break;
       case 'snippet':
         loadQuery(item.body);
