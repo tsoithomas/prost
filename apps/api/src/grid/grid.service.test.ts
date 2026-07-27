@@ -9,6 +9,7 @@ import type { ConfigService } from '@nestjs/config';
 import type { ColumnMetadata } from '@prost/shared-types';
 import { GridService } from './grid.service';
 import type { MetadataService } from '../metadata/metadata.service';
+import type { AuditService } from '../audit/audit.service';
 import type { PoolManager } from '../database/pool-manager.service';
 import type { DriverResult, SqlFragment } from '../database/types';
 import { PgDriver } from '../database/drivers/pg/pg-driver';
@@ -53,7 +54,11 @@ function createService(
     assertWritable: vi.fn().mockResolvedValue(undefined),
   } as unknown as PoolManager;
 
-  return { service: new GridService(pool, metadataService), run, q, withTransaction };
+  // Audit mock whose `withAudit` just runs the wrapped operation (recording is a no-op).
+  const auditWithAudit = vi.fn((_base: unknown, fn: () => unknown) => fn());
+  const audit = { withAudit: auditWithAudit, record: vi.fn() } as unknown as AuditService;
+
+  return { service: new GridService(pool, metadataService, audit), run, q, withTransaction, auditWithAudit };
 }
 
 describe('GridService.getRows', () => {
@@ -376,5 +381,26 @@ describe('GridService.deleteRow', () => {
     await expect(service.deleteRow('conn-1', 'public', 'users', { primaryKey: { id: 1 } })).rejects.toBeInstanceOf(
       NotFoundException,
     );
+  });
+});
+
+describe('GridService audit (Phase 28)', () => {
+  it('audits an inline cell update with a value-free statement', async () => {
+    const run = vi.fn().mockResolvedValue(result([{ id: 1, email: 'x@y.com' }]));
+    const { service, auditWithAudit } = createService(run);
+    await service.updateCell(
+      'conn-1',
+      'public',
+      'users',
+      { column: 'email', value: 'x@y.com', primaryKey: { id: 1 } },
+      { userId: 'u1', correlationId: 'corr-2' },
+    );
+    expect(auditWithAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'update', targetSchema: 'public', targetTable: 'users', userId: 'u1', correlationId: 'corr-2' }),
+      expect.any(Function),
+    );
+    const base = auditWithAudit.mock.calls[0]![0] as { sql: string };
+    expect(base.sql).toContain('UPDATE public.users');
+    expect(base.sql).not.toContain('x@y.com');
   });
 });

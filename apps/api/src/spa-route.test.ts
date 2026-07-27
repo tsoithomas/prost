@@ -15,6 +15,13 @@ describe('isApiRoute', () => {
     expect(isApiRoute('/database-engines/postgres')).toBe(true);
   });
 
+  it('matches top-level audit + history (regression: added late, must not be SPA-shadowed)', () => {
+    expect(isApiRoute('/audit')).toBe(true);
+    expect(isApiRoute('/audit/export')).toBe(true);
+    expect(isApiRoute('/history')).toBe(true);
+    expect(isApiRoute('/history/export')).toBe(true);
+  });
+
   it('does not match SPA client-side routes', () => {
     expect(isApiRoute('/app')).toBe(false);
     expect(isApiRoute('/app/connections')).toBe(false);

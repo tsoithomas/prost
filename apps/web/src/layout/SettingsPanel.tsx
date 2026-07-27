@@ -1,8 +1,9 @@
 import { useEffect, useRef } from 'react';
 import type { RefObject } from 'react';
-import { LogOut } from 'lucide-react';
+import { LogOut, ScrollText } from 'lucide-react';
 import { Surface } from '@prost/ui';
 import { useAuthStore } from '../stores/authStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import { ThemeSettings } from './ThemeSettings';
 
 export interface SettingsPanelProps {
@@ -16,6 +17,7 @@ export function SettingsPanel({ onClose, triggerRef }: SettingsPanelProps) {
   const ref = useRef<HTMLDivElement>(null);
   const user = useAuthStore((state) => state.user);
   const clearAuth = useAuthStore((state) => state.clear);
+  const openAudit = useWorkspaceStore((state) => state.openAudit);
 
   useEffect(() => {
     function handlePointerDown(event: PointerEvent) {
@@ -43,6 +45,19 @@ export function SettingsPanel({ onClose, triggerRef }: SettingsPanelProps) {
       className="absolute right-0 top-full z-50 mt-1 max-h-[calc(100vh-4rem)] w-64 overflow-y-auto rounded-md p-md shadow-lg"
     >
       <ThemeSettings />
+      <div className="mt-md flex flex-col gap-xs border-t border-border pt-md">
+        <button
+          type="button"
+          onClick={() => {
+            openAudit();
+            onClose();
+          }}
+          className="inline-flex cursor-pointer items-center gap-xs text-xs text-text-muted hover:text-text"
+        >
+          <ScrollText size={14} />
+          View audit log
+        </button>
+      </div>
       <div className="mt-md flex flex-col gap-xs border-t border-border pt-md">
         {user ? (
           <p className="truncate text-xs text-text-faint">

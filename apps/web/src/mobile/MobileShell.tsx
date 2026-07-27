@@ -38,6 +38,7 @@ export function MobileShell({ onOpenConnections }: MobileShellProps) {
             onSelectHistoryQuery={() => setActiveTab('editor')}
             onSelectSnippet={() => setActiveTab('editor')}
             onOpenSessions={() => setActiveTab('editor')}
+            onOpenAudit={() => setActiveTab('editor')}
           />
         ) : null}
       </main>

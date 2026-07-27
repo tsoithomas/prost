@@ -17,13 +17,31 @@ import type {
   RowInsertBody,
   RowUpdateBody,
 } from '@prost/shared-types';
+import type { AuditAction } from '@prost/shared-types';
 import { MetadataService } from '../metadata/metadata.service';
 import { PoolManager } from '../database/pool-manager.service';
+import { AuditService, type AuditRecordBase } from '../audit/audit.service';
 import type { DbDriver } from '../database/db-driver.interface';
 import type { DriverQueryFn, RowUpdateGuard, TableRef } from '../database/types';
 import { compileWhere } from './filter';
 
 const DEFAULT_LIMIT = 100;
+
+/** Actor identity threaded from the controller so grid writes can be audited (Phase 28). */
+export interface WriteContext {
+  userId: string;
+  correlationId?: string;
+}
+
+/** A value-free statement descriptor for the audit log — identifiers/placeholders only, never values. */
+function buildAuditSql(action: AuditAction, schema: string, table: string, columns: string[], pkColumns: string[]): string {
+  const target = `${schema}.${table}`;
+  const where = pkColumns.length > 0 ? ` WHERE ${pkColumns.map((c) => `${c} = ?`).join(' AND ')}` : '';
+  if (action === 'update') return `UPDATE ${target} SET ${columns.map((c) => `${c} = ?`).join(', ')}${where}`;
+  if (action === 'insert') return `INSERT INTO ${target} (${columns.join(', ')})`;
+  if (action === 'delete') return `DELETE FROM ${target}${where}`;
+  return `${action.toUpperCase()} ${target}`;
+}
 
 export interface GetRowsOptions {
   limit?: number;
@@ -46,7 +64,27 @@ export class GridService {
   constructor(
     private readonly pool: PoolManager,
     private readonly metadataService: MetadataService,
+    private readonly audit: AuditService,
   ) {}
+
+  private auditBase(
+    ctx: WriteContext,
+    connectionId: string,
+    action: AuditAction,
+    schema: string,
+    table: string,
+    sql: string,
+  ): AuditRecordBase {
+    return {
+      userId: ctx.userId,
+      connectionId,
+      action,
+      targetSchema: schema,
+      targetTable: table,
+      sql,
+      correlationId: ctx.correlationId ?? null,
+    };
+  }
 
   async getRows(
     connectionId: string,
@@ -135,26 +173,32 @@ export class GridService {
     schema: string,
     table: string,
     req: RowUpdateBody,
+    ctx: WriteContext = { userId: '' },
   ): Promise<Record<string, unknown>> {
-    await this.pool.assertWritable(connectionId);
-    const driver = await this.pool.driverFor(connectionId);
-    const { columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
-    this.assertEditable(primaryKey, schema, table);
+    return this.audit.withAudit(
+      this.auditBase(ctx, connectionId, 'update', schema, table, buildAuditSql('update', schema, table, [req.column], Object.keys(req.primaryKey))),
+      async () => {
+        await this.pool.assertWritable(connectionId);
+        const driver = await this.pool.driverFor(connectionId);
+        const { columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
+        this.assertEditable(primaryKey, schema, table);
 
-    if (!columnNames.has(req.column)) {
-      throw new UnprocessableEntityException(`Column "${req.column}" does not exist on "${schema}.${table}"`);
-    }
-    this.assertPrimaryKeyMatches(req.primaryKey, primaryKey, schema, table);
+        if (!columnNames.has(req.column)) {
+          throw new UnprocessableEntityException(`Column "${req.column}" does not exist on "${schema}.${table}"`);
+        }
+        this.assertPrimaryKeyMatches(req.primaryKey, primaryKey, schema, table);
 
-    return this.pool.withTransaction(connectionId, (q) =>
-      driver.updateRow(
-        q,
-        { namespace: schema, name: table },
-        req.column,
-        req.value,
-        primaryKey,
-        primaryKey.map((c) => req.primaryKey[c]),
-      ),
+        return this.pool.withTransaction(connectionId, (q) =>
+          driver.updateRow(
+            q,
+            { namespace: schema, name: table },
+            req.column,
+            req.value,
+            primaryKey,
+            primaryKey.map((c) => req.primaryKey[c]),
+          ),
+        );
+      },
     );
   }
 
@@ -169,41 +213,46 @@ export class GridService {
     schema: string,
     table: string,
     body: BulkRowUpdateBody,
+    ctx: WriteContext = { userId: '' },
   ): Promise<BulkRowUpdateResult> {
-    await this.pool.assertWritable(connectionId);
-    const driver = await this.pool.driverFor(connectionId);
-    const { columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
-    this.assertEditable(primaryKey, schema, table);
+    const bulkColumns = [...new Set(body.rows.flatMap((row) => row.edits.map((e) => e.column)))];
+    const auditSql = `${buildAuditSql('update', schema, table, bulkColumns, [])} (bulk: ${body.rows.length} rows)`;
+    return this.audit.withAudit(this.auditBase(ctx, connectionId, 'update', schema, table, auditSql), async () => {
+      await this.pool.assertWritable(connectionId);
+      const driver = await this.pool.driverFor(connectionId);
+      const { columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
+      this.assertEditable(primaryKey, schema, table);
 
-    if (body.rows.length === 0) {
-      throw new BadRequestException('No row edits supplied');
-    }
-
-    const ref = { namespace: schema, name: table };
-    const prepared = body.rows.map((row) => ({
-      pkValues: this.validateBulkRow(row, columnNames, primaryKey, schema, table),
-      edits: row.edits.map((e) => [e.column, e.value] as [string, unknown]),
-      guard: this.resolveGuard(row, columnNames, schema, table),
-    }));
-
-    const rows = await this.pool.withTransaction(connectionId, async (q) => {
-      const updated: Record<string, unknown>[] = [];
-      for (const { pkValues, edits, guard } of prepared) {
-        const frag = driver.buildUpdateRowGuarded(ref, edits, primaryKey, pkValues, guard);
-        const { rows: out, rowCount } = await q(frag);
-        if (rowCount !== 1) {
-          throw new ConflictException(
-            `Row in "${schema}.${table}" changed since you loaded it — nothing was saved. Refresh and retry.`,
-          );
-        }
-        // Engines with RETURNING (PG/SQLite) hand back the refreshed row inline. Engines without
-        // it (MySQL) return no rows, so re-read by the row's post-edit primary key.
-        updated.push(out[0] ?? (await this.reselectRow(q, driver, ref, primaryKey, pkValues, edits)));
+      if (body.rows.length === 0) {
+        throw new BadRequestException('No row edits supplied');
       }
-      return updated;
-    });
 
-    return { rows };
+      const ref = { namespace: schema, name: table };
+      const prepared = body.rows.map((row) => ({
+        pkValues: this.validateBulkRow(row, columnNames, primaryKey, schema, table),
+        edits: row.edits.map((e) => [e.column, e.value] as [string, unknown]),
+        guard: this.resolveGuard(row, columnNames, schema, table),
+      }));
+
+      const rows = await this.pool.withTransaction(connectionId, async (q) => {
+        const updated: Record<string, unknown>[] = [];
+        for (const { pkValues, edits, guard } of prepared) {
+          const frag = driver.buildUpdateRowGuarded(ref, edits, primaryKey, pkValues, guard);
+          const { rows: out, rowCount } = await q(frag);
+          if (rowCount !== 1) {
+            throw new ConflictException(
+              `Row in "${schema}.${table}" changed since you loaded it — nothing was saved. Refresh and retry.`,
+            );
+          }
+          // Engines with RETURNING (PG/SQLite) hand back the refreshed row inline. Engines without
+          // it (MySQL) return no rows, so re-read by the row's post-edit primary key.
+          updated.push(out[0] ?? (await this.reselectRow(q, driver, ref, primaryKey, pkValues, edits)));
+        }
+        return updated;
+      });
+
+      return { rows };
+    });
   }
 
   /**
@@ -291,36 +340,49 @@ export class GridService {
     schema: string,
     table: string,
     req: RowInsertBody,
+    ctx: WriteContext = { userId: '' },
   ): Promise<Record<string, unknown>> {
-    await this.pool.assertWritable(connectionId);
-    const driver = await this.pool.driverFor(connectionId);
-    const { columns, columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
-    this.assertEditable(primaryKey, schema, table);
+    const auditSql = buildAuditSql('insert', schema, table, Object.keys(req.values), []);
+    return this.audit.withAudit(this.auditBase(ctx, connectionId, 'insert', schema, table, auditSql), async () => {
+      await this.pool.assertWritable(connectionId);
+      const driver = await this.pool.driverFor(connectionId);
+      const { columns, columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
+      this.assertEditable(primaryKey, schema, table);
 
-    const entries = Object.entries(req.values).filter(([column]) => columnNames.has(column));
+      const entries = Object.entries(req.values).filter(([column]) => columnNames.has(column));
 
-    return this.pool.withTransaction(connectionId, (q) =>
-      driver.insertRow(q, { namespace: schema, name: table }, entries, columns),
-    );
+      return this.pool.withTransaction(connectionId, (q) =>
+        driver.insertRow(q, { namespace: schema, name: table }, entries, columns),
+      );
+    });
   }
 
   /** Deletes a row by primary key, re-validated against live metadata. */
-  async deleteRow(connectionId: string, schema: string, table: string, req: RowDeleteBody): Promise<void> {
-    await this.pool.assertWritable(connectionId);
-    const driver = await this.pool.driverFor(connectionId);
-    const { primaryKey } = await this.resolveTable(connectionId, schema, table);
-    this.assertEditable(primaryKey, schema, table);
-    this.assertPrimaryKeyMatches(req.primaryKey, primaryKey, schema, table);
+  async deleteRow(
+    connectionId: string,
+    schema: string,
+    table: string,
+    req: RowDeleteBody,
+    ctx: WriteContext = { userId: '' },
+  ): Promise<void> {
+    const auditSql = buildAuditSql('delete', schema, table, [], Object.keys(req.primaryKey));
+    await this.audit.withAudit(this.auditBase(ctx, connectionId, 'delete', schema, table, auditSql), async () => {
+      await this.pool.assertWritable(connectionId);
+      const driver = await this.pool.driverFor(connectionId);
+      const { primaryKey } = await this.resolveTable(connectionId, schema, table);
+      this.assertEditable(primaryKey, schema, table);
+      this.assertPrimaryKeyMatches(req.primaryKey, primaryKey, schema, table);
 
-    const frag = driver.buildDeleteRow(
-      { namespace: schema, name: table },
-      primaryKey,
-      primaryKey.map((c) => req.primaryKey[c]),
-    );
-    const { rowCount } = await this.pool.run(connectionId, frag);
-    if (rowCount !== 1) {
-      throw new NotFoundException(`Row in "${schema}.${table}" no longer exists`);
-    }
+      const frag = driver.buildDeleteRow(
+        { namespace: schema, name: table },
+        primaryKey,
+        primaryKey.map((c) => req.primaryKey[c]),
+      );
+      const { rowCount } = await this.pool.run(connectionId, frag);
+      if (rowCount !== 1) {
+        throw new NotFoundException(`Row in "${schema}.${table}" no longer exists`);
+      }
+    });
   }
 
   private async resolveTable(connectionId: string, schema: string, table: string): Promise<ResolvedTable> {

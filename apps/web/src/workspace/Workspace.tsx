@@ -1,4 +1,4 @@
-import { Activity } from 'lucide-react';
+import { Activity, ScrollText } from 'lucide-react';
 import { Breadcrumbs } from './Breadcrumbs';
 import { WorkspaceTabBar } from './WorkspaceTabBar';
 import { TableView } from './TableView';
@@ -6,6 +6,7 @@ import { SqlEditorView } from './SqlEditorView';
 import { DatabaseOverview } from './DatabaseOverview';
 import { DefinitionPanel } from './DefinitionPanel';
 import { SessionsPanel } from './SessionsPanel';
+import { AuditPanel } from './AuditPanel';
 import { useActiveConnection } from '../api/connections';
 import { useEngineDescriptor } from '../api/databaseEngines';
 import { useConnectionStore } from '../stores/connectionStore';
@@ -24,6 +25,7 @@ export function Workspace() {
   const newQueryTab = useWorkspaceStore((state) => state.newQueryTab);
   const setTabViewMode = useWorkspaceStore((state) => state.setTabViewMode);
   const openSessions = useWorkspaceStore((state) => state.openSessions);
+  const openAudit = useWorkspaceStore((state) => state.openAudit);
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
   const activeConnection = useActiveConnection();
   const sessionMonitoringSupported =
@@ -40,22 +42,31 @@ export function Workspace() {
         ? [connectionLabel, activeTab.schema]
         : [connectionLabel];
 
-  const sessionsAction =
-    sessionMonitoringSupported && activeConnectionId ? (
+  const actionButtonClass =
+    'flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-text';
+  const workspaceActions = activeConnectionId ? (
+    <div className="flex items-center gap-1">
+      {sessionMonitoringSupported ? (
+        <button type="button" onClick={() => openSessions()} title="Database sessions" className={actionButtonClass}>
+          <Activity size={13} />
+          Sessions
+        </button>
+      ) : null}
       <button
         type="button"
-        onClick={() => openSessions()}
-        title="Database sessions"
-        className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+        onClick={() => openAudit(activeConnectionId)}
+        title={`Audit log for ${connectionLabel}`}
+        className={actionButtonClass}
       >
-        <Activity size={13} />
-        Sessions
+        <ScrollText size={13} />
+        Audit
       </button>
-    ) : null;
+    </div>
+  ) : null;
 
   return (
     <>
-      <Breadcrumbs segments={breadcrumbSegments} actions={sessionsAction} />
+      <Breadcrumbs segments={breadcrumbSegments} actions={workspaceActions} />
       <WorkspaceTabBar
         tabs={tabs}
         activeTabId={activeTabId}
@@ -91,6 +102,7 @@ export function Workspace() {
       {activeTab?.kind === 'sessions' && activeConnectionId ? (
         <SessionsPanel connectionId={activeConnectionId} writable={writable} />
       ) : null}
+      {activeTab?.kind === 'audit' ? <AuditPanel /> : null}
       {activeTab?.kind === 'query' ? <SqlEditorView /> : null}
       {!activeTab ? (
         <div className="flex flex-1 items-center justify-center text-sm text-text-faint">No tabs open</div>

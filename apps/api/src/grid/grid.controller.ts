@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import type { BulkRowUpdateResult, GridResponse } from '@prost/shared-types';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
+import type { RequestWithCorrelationId } from '../common/correlation-id.middleware';
 import { ConnectionsService } from '../connections/connections.service';
 import { BulkRowUpdateDto } from './dto/bulk-row-update.dto';
 import { GetRowsQueryDto } from './dto/get-rows-query.dto';
@@ -41,9 +42,10 @@ export class GridController {
     @Param('schema') schema: string,
     @Param('table') table: string,
     @Body() dto: RowUpdateDto,
+    @Req() req: RequestWithCorrelationId,
   ): Promise<Record<string, unknown>> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.gridService.updateCell(id, schema, table, dto);
+    return this.gridService.updateCell(id, schema, table, dto, { userId: user.userId, correlationId: req.correlationId });
   }
 
   @Post(':id/tables/:schema/:table/rows/bulk')
@@ -53,9 +55,10 @@ export class GridController {
     @Param('schema') schema: string,
     @Param('table') table: string,
     @Body() dto: BulkRowUpdateDto,
+    @Req() req: RequestWithCorrelationId,
   ): Promise<BulkRowUpdateResult> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.gridService.bulkUpdate(id, schema, table, dto);
+    return this.gridService.bulkUpdate(id, schema, table, dto, { userId: user.userId, correlationId: req.correlationId });
   }
 
   @Post(':id/tables/:schema/:table/rows')
@@ -66,9 +69,10 @@ export class GridController {
     @Param('schema') schema: string,
     @Param('table') table: string,
     @Body() dto: RowInsertDto,
+    @Req() req: RequestWithCorrelationId,
   ): Promise<Record<string, unknown>> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.gridService.insertRow(id, schema, table, dto);
+    return this.gridService.insertRow(id, schema, table, dto, { userId: user.userId, correlationId: req.correlationId });
   }
 
   @Delete(':id/tables/:schema/:table/rows')
@@ -79,8 +83,9 @@ export class GridController {
     @Param('schema') schema: string,
     @Param('table') table: string,
     @Body() dto: RowDeleteDto,
+    @Req() req: RequestWithCorrelationId,
   ): Promise<void> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.gridService.deleteRow(id, schema, table, dto);
+    return this.gridService.deleteRow(id, schema, table, dto, { userId: user.userId, correlationId: req.correlationId });
   }
 }

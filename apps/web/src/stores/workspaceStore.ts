@@ -4,7 +4,7 @@ import type { ExecuteQueryResponse, RowFilter, SchemaObjectKind } from '@prost/s
 export interface WorkspaceTab {
   id: string;
   label: string;
-  kind: 'table' | 'query' | 'overview' | 'object' | 'sessions';
+  kind: 'table' | 'query' | 'overview' | 'object' | 'sessions' | 'audit';
   schema?: string;
   table?: string;
   /** Non-table object identity (object tabs only). */
@@ -25,6 +25,11 @@ export interface WorkspaceTab {
    * on open (FK "open referenced row" / "show referencing rows"), then clears via `clearTabFilter`.
    */
   presetFilter?: RowFilter;
+  /**
+   * One-shot connection seed (audit tab only): when the tab is opened from a connection's breadcrumb,
+   * the AuditPanel initializes its connection filter to this id, then clears it via `clearAuditPreset`.
+   */
+  presetConnectionId?: string;
 }
 
 export interface CursorPosition {
@@ -56,6 +61,13 @@ interface WorkspaceState {
   openObject: (schema: string, kind: SchemaObjectKind, name: string) => void;
   /** Open the active connection's live-session monitor (Phase 27). */
   openSessions: () => void;
+  /**
+   * Open the mutation & DDL audit trail viewer (Phase 28). Pass a `connectionId` to seed its filter
+   * to that connection (per-connection breadcrumb launch); omit it for the global all-connections view.
+   */
+  openAudit: (connectionId?: string) => void;
+  /** Clears the audit tab's one-shot `presetConnectionId` once the AuditPanel has consumed it. */
+  clearAuditPreset: (id: string) => void;
   closeTableTab: (schema: string, table: string) => void;
   /** Clears a table tab's one-shot `search` hand-off once the TableView has consumed it. */
   clearTabSearch: (id: string) => void;
@@ -162,6 +174,29 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
       };
     });
   },
+
+  openAudit: (connectionId) => {
+    const id = 'audit';
+    set((state) => {
+      if (state.tabs.some((tab) => tab.id === id)) {
+        return {
+          activeTabId: id,
+          tabs: state.tabs.map((tab) =>
+            tab.id === id ? { ...tab, presetConnectionId: connectionId } : tab,
+          ),
+        };
+      }
+      return {
+        tabs: [...state.tabs, { id, label: 'Audit Log', kind: 'audit', presetConnectionId: connectionId }],
+        activeTabId: id,
+      };
+    });
+  },
+
+  clearAuditPreset: (id) =>
+    set((state) => ({
+      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, presetConnectionId: undefined } : tab)),
+    })),
 
   openObject: (schema, kind, name) => {
     const id = `object:${schema}.${name}`;

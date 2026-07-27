@@ -20,8 +20,32 @@ model User {
   preference    UserPreference?
   llmEndpoints  LlmEndpoint[]
   conversations Conversation[]
+  auditEntries  AuditEntry[]
 
   @@map("users")
+}
+
+// Phase 28: audit trail of write + DDL actions (successes AND failures). App-DB only; stores SQL
+// text + identifiers, never bound values/row data. `connectionId` is a plain string (no FK) so
+// entries survive connection deletion for accountability.
+model AuditEntry {
+  id            String   @id @default(uuid())
+  userId        String
+  connectionId  String
+  action        String // insert|update|delete|ddl|truncate|import
+  targetSchema  String?
+  targetTable   String?
+  sql           String
+  outcome       String // success|failure
+  errorClass    String?
+  durationMs    Int
+  correlationId String?
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("audit_entries")
 }
 
 model Connection {

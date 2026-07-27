@@ -7,6 +7,7 @@ import type { PoolManager } from '../database/pool-manager.service';
 import type { DriverResult, SqlFragment } from '../database/types';
 import type { HistoryService } from '../history/history.service';
 import type { MetadataService } from '../metadata/metadata.service';
+import type { AuditService } from '../audit/audit.service';
 import { QUERY_PAGE_SIZE } from './paging';
 import { QueryService } from './query.service';
 
@@ -59,9 +60,12 @@ function createService(
 
   const record = vi.fn().mockResolvedValue(undefined);
   const historyService = { record } as unknown as HistoryService;
+  const auditRecord = vi.fn();
+  const audit = { record: auditRecord } as unknown as AuditService;
 
   return {
-    service: new QueryService(pool, metadataService, historyService),
+    service: new QueryService(pool, metadataService, historyService, audit),
+    auditRecord,
     run,
     withSession: pool.withSession as ReturnType<typeof vi.fn>,
     isReadOnly: pool.isReadOnly as ReturnType<typeof vi.fn>,
@@ -352,6 +356,34 @@ describe('QueryService.explain — structured query plan (Phase 26)', () => {
     expect(plan.analyze).toBe(false);
     expect(plan.format).toBe('json');
     expect(plan.root).toMatchObject({ nodeType: 'Seq Scan', detail: 'users', estimatedCost: 5, estimatedRows: 3 });
+  });
+});
+
+describe('QueryService.execute — audit trail (Phase 28)', () => {
+  it('audits a read-only-blocked write as a failure', async () => {
+    const { service, isReadOnly, auditRecord } = createService();
+    isReadOnly.mockResolvedValue(true);
+    await expect(service.execute('conn-1', 'UPDATE users SET x = 1', 'user-1', 'corr-9')).rejects.toThrow(ForbiddenException);
+    expect(auditRecord).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'update', outcome: 'failure', errorClass: 'read-only', userId: 'user-1', correlationId: 'corr-9' }),
+    );
+  });
+
+  it('audits a successful mutating statement', async () => {
+    const run = vi.fn().mockResolvedValueOnce(result([], { rowCount: 1, command: 'UPDATE' }));
+    const { service, auditRecord } = createService(run);
+    await service.execute('conn-1', "UPDATE users SET email = 'x'", 'user-1');
+    expect(auditRecord).toHaveBeenCalledWith(expect.objectContaining({ action: 'update', outcome: 'success' }));
+  });
+
+  it('does not audit a read-only SELECT', async () => {
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce(result([{ id: 1 }], { fields: [{ name: 'id', dataTypeID: 23 }] }))
+      .mockResolvedValueOnce(pgTypeResult({ 23: 'int4' }));
+    const { service, auditRecord } = createService(run);
+    await service.execute('conn-1', 'SELECT * FROM users', 'user-1');
+    expect(auditRecord).not.toHaveBeenCalled();
   });
 });
 

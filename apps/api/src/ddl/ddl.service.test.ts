@@ -5,6 +5,7 @@ import type { ColumnMetadata, IndexMetadata, TableStructure } from '@prost/share
 import { PgDriver } from '../database/drivers/pg/pg-driver';
 import type { PoolManager } from '../database/pool-manager.service';
 import type { MetadataService } from '../metadata/metadata.service';
+import type { AuditService } from '../audit/audit.service';
 import { DdlService } from './ddl.service';
 
 const DEFAULT_COLUMNS: ColumnMetadata[] = [
@@ -36,7 +37,10 @@ function createService(
     getTableStructure: vi.fn().mockResolvedValue(structure),
     getTableColumns: vi.fn().mockResolvedValue(structure.columns),
   } as unknown as MetadataService;
-  return { service: new DdlService(pool, metadataService), driver, runParameterized: run, metadataService };
+  // Audit mock whose `withAudit` just runs the wrapped operation (recording is a no-op).
+  const auditWithAudit = vi.fn((_base: unknown, fn: () => unknown) => fn());
+  const audit = { withAudit: auditWithAudit, record: vi.fn() } as unknown as AuditService;
+  return { service: new DdlService(pool, metadataService, audit), driver, runParameterized: run, metadataService, auditWithAudit };
 }
 
 describe('DdlService buildCreateTable — identifier quoting', () => {
@@ -726,5 +730,36 @@ describe('DdlService.preview', () => {
       }),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(runParameterized).not.toHaveBeenCalled();
+  });
+});
+
+describe('DdlService audit (Phase 28)', () => {
+  it('wraps createTable in a DDL audit entry with target + statement', async () => {
+    const { service, auditWithAudit } = createService();
+    await service.createTable(
+      'conn-1',
+      { schema: 'public', table: 'widgets', columns: [{ name: 'id', type: 'serial', nullable: false, isPrimaryKey: true }] },
+      { userId: 'u1', correlationId: 'corr-1' },
+    );
+    expect(auditWithAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'ddl',
+        targetSchema: 'public',
+        targetTable: 'widgets',
+        userId: 'u1',
+        correlationId: 'corr-1',
+        sql: expect.stringContaining('CREATE TABLE'),
+      }),
+      expect.any(Function),
+    );
+  });
+
+  it('records a truncate as the truncate action', async () => {
+    const { service, auditWithAudit } = createService();
+    await service.truncateTable('conn-1', { schema: 'public', table: 'users' }, { userId: 'u1' });
+    expect(auditWithAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'truncate', targetTable: 'users' }),
+      expect.any(Function),
+    );
   });
 });

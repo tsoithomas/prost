@@ -1,4 +1,4 @@
-import { Activity, LogOut, Plug } from 'lucide-react';
+import { Activity, LogOut, Plug, ScrollText } from 'lucide-react';
 import { Button, Surface } from '@prost/ui';
 import { useConnections } from '../api/connections';
 import { useEngineDescriptor } from '../api/databaseEngines';
@@ -16,13 +16,16 @@ export interface MobileSettingsViewProps {
   onSelectSnippet: () => void;
   /** Switches to the workspace view after opening the sessions tab. */
   onOpenSessions: () => void;
+  /** Switches to the workspace view after opening the audit-log tab. */
+  onOpenAudit: () => void;
 }
 
-export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, onSelectSnippet, onOpenSessions }: MobileSettingsViewProps) {
+export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, onSelectSnippet, onOpenSessions, onOpenAudit }: MobileSettingsViewProps) {
   const { data: connections = [] } = useConnections();
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
   const loadQuery = useWorkspaceStore((state) => state.loadQuery);
   const openSessions = useWorkspaceStore((state) => state.openSessions);
+  const openAudit = useWorkspaceStore((state) => state.openAudit);
   const sessionMonitoringSupported =
     useEngineDescriptor(activeConnectionId)?.supportsSessionMonitoring ?? false;
   const clearAuth = useAuthStore((state) => state.clear);
@@ -81,6 +84,18 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, 
               Active Sessions
             </Button>
           ) : null}
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-sm w-full justify-center"
+            onClick={() => {
+              openAudit();
+              onOpenAudit();
+            }}
+          >
+            <ScrollText size={14} />
+            Audit Log
+          </Button>
         </section>
 
         <section>

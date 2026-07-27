@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, HttpCode, Patch, Post, Param } from '@nestjs/common';
+import { Body, Controller, Delete, HttpCode, Patch, Post, Param, Req } from '@nestjs/common';
+import type { RequestWithCorrelationId } from '../common/correlation-id.middleware';
 import type {
   AlterTableOperation,
   AlterTableResult,
@@ -33,9 +34,10 @@ export class DdlController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
     @Body() dto: CreateTableDto,
+    @Req() req: RequestWithCorrelationId,
   ): Promise<CreateTableResult> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.ddlService.createTable(id, dto);
+    return this.ddlService.createTable(id, dto, { userId: user.userId, correlationId: req.correlationId });
   }
 
   @Patch(':id/ddl/tables/:schema/:table')
@@ -45,10 +47,11 @@ export class DdlController {
     @Param('schema') schema: string,
     @Param('table') table: string,
     @Body() dto: AlterTableDto,
+    @Req() req: RequestWithCorrelationId,
   ): Promise<AlterTableResult> {
     await this.connectionsService.assertOwnership(user.userId, id);
     const operation = this.dtoToOperation(dto);
-    return this.ddlService.alterTable(id, { schema, table, operation });
+    return this.ddlService.alterTable(id, { schema, table, operation }, { userId: user.userId, correlationId: req.correlationId });
   }
 
   @Delete(':id/ddl/tables/:schema/:table')
@@ -57,9 +60,10 @@ export class DdlController {
     @Param('id') id: string,
     @Param('schema') schema: string,
     @Param('table') table: string,
+    @Req() req: RequestWithCorrelationId,
   ): Promise<DropTableResult> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.ddlService.dropTable(id, { schema, table });
+    return this.ddlService.dropTable(id, { schema, table }, { userId: user.userId, correlationId: req.correlationId });
   }
 
   @Post(':id/ddl/tables/:schema/:table/truncate')
@@ -69,9 +73,10 @@ export class DdlController {
     @Param('id') id: string,
     @Param('schema') schema: string,
     @Param('table') table: string,
+    @Req() req: RequestWithCorrelationId,
   ): Promise<TruncateTableResult> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.ddlService.truncateTable(id, { schema, table });
+    return this.ddlService.truncateTable(id, { schema, table }, { userId: user.userId, correlationId: req.correlationId });
   }
 
   @Post(':id/ddl/indexes')
@@ -80,9 +85,10 @@ export class DdlController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
     @Body() dto: CreateIndexDto,
+    @Req() req: RequestWithCorrelationId,
   ): Promise<CreateIndexResult> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.ddlService.createIndex(id, dto);
+    return this.ddlService.createIndex(id, dto, { userId: user.userId, correlationId: req.correlationId });
   }
 
   @Delete(':id/ddl/indexes')
@@ -90,9 +96,10 @@ export class DdlController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id') id: string,
     @Body() dto: DropIndexDto,
+    @Req() req: RequestWithCorrelationId,
   ): Promise<DropIndexResult> {
     await this.connectionsService.assertOwnership(user.userId, id);
-    return this.ddlService.dropIndex(id, dto);
+    return this.ddlService.dropIndex(id, dto, { userId: user.userId, correlationId: req.correlationId });
   }
 
   @Post(':id/ddl/preview')

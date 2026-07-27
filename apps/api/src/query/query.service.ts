@@ -4,6 +4,7 @@ import type {
   ColumnMetadata,
   CommandStatementResult,
   ErrorStatementResult,
+  AuditAction,
   ExecuteQueryResponse,
   FetchQueryPageResponse,
   PlanStatementResult,
@@ -14,6 +15,7 @@ import type {
 import { PoolManager } from '../database/pool-manager.service';
 import type { DbDriver } from '../database/db-driver.interface';
 import type { DriverResult, SqlFragment } from '../database/types';
+import { AuditService } from '../audit/audit.service';
 import { HistoryService } from '../history/history.service';
 import { MetadataService } from '../metadata/metadata.service';
 import { analyzeEditability, extractSingleTable, type EditabilityResult, type ParsedStatement } from './editability';
@@ -52,6 +54,33 @@ function astContainsWriteStatement(node: unknown): boolean {
   return children.some(astContainsWriteStatement);
 }
 
+const WRITE_ACTION_BY_KEYWORD: Record<string, AuditAction> = {
+  insert: 'insert',
+  update: 'update',
+  delete: 'delete',
+  replace: 'insert',
+  truncate: 'truncate',
+};
+
+/** The audit action for a mutating statement — DML by type/keyword, everything else (DDL) → `'ddl'`. */
+function auditActionForStatement(ast: ParsedStatement | null, text: string): AuditAction {
+  const type = typeof ast?.type === 'string' ? ast.type.toLowerCase() : undefined;
+  if (type && WRITE_ACTION_BY_KEYWORD[type]) return WRITE_ACTION_BY_KEYWORD[type]!;
+  const keyword = text.trim().split(/\s+/)[0]?.toLowerCase();
+  return (keyword && WRITE_ACTION_BY_KEYWORD[keyword]) || 'ddl';
+}
+
+/** Best-effort `schema`/`table` from an INSERT/UPDATE/DELETE AST; empty when it can't be resolved. */
+function auditTargetFromAst(ast: ParsedStatement | null): { schema?: string; table?: string } {
+  const raw = (ast as { table?: unknown; from?: unknown } | null)?.table ?? (ast as { from?: unknown } | null)?.from;
+  const first = Array.isArray(raw) ? raw[0] : raw;
+  if (first && typeof first === 'object' && typeof (first as { table?: unknown }).table === 'string') {
+    const ref = first as { db?: unknown; table: string };
+    return { ...(typeof ref.db === 'string' && ref.db ? { schema: ref.db } : {}), table: ref.table };
+  }
+  return {};
+}
+
 /**
  * Executes a SQL script against a target connection (architecture principle §10 —
  * `QueryModule` is its own bounded module). The script is split into top-level statements
@@ -69,6 +98,7 @@ export class QueryService {
     private readonly pool: PoolManager,
     private readonly metadataService: MetadataService,
     private readonly historyService: HistoryService,
+    private readonly audit: AuditService,
   ) {}
 
   async execute(
@@ -89,7 +119,12 @@ export class QueryService {
     // write — before anything executes (no partial run). A statement that can't be *proven* read-only
     // (unparsable non-SELECT, EXPLAIN ANALYZE of a write, DML/DDL) is treated as a write (fail safe).
     if (await this.pool.isReadOnly(connectionId)) {
-      if (statementTexts.some((text) => this.classifyStatement(driver, text) === 'write')) {
+      const blocked = statementTexts.filter((text) => this.classifyStatement(driver, text) === 'write');
+      if (blocked.length > 0) {
+        // Phase 28: a blocked write is exactly what the audit trail should record.
+        for (const text of blocked) {
+          this.auditStatement(driver, userId, connectionId, correlationId, text, 'failure', 'read-only', 0);
+        }
         throw new ForbiddenException('This connection is read-only');
       }
     }
@@ -99,8 +134,69 @@ export class QueryService {
       : await this.executeAutocommit(connectionId, driver, statementTexts, correlationId);
 
     await this.historyService.record({ userId, connectionId, sql });
+    this.auditMutations(driver, userId, connectionId, correlationId, statementTexts, statements, transactional);
 
     return { statements, transactional, statementCount: statementTexts.length };
+  }
+
+  /** Audits each mutating statement (Phase 28). A rolled-back transaction marks its writes as failure. */
+  private auditMutations(
+    driver: DbDriver,
+    userId: string,
+    connectionId: string,
+    correlationId: string,
+    statementTexts: string[],
+    statements: StatementResult[],
+    transactional: boolean,
+  ): void {
+    const rolledBack = transactional && statements.some((s) => s.kind === 'error');
+    for (let i = 0; i < statementTexts.length; i++) {
+      const text = statementTexts[i]!;
+      if (this.classifyStatement(driver, text) !== 'write') continue;
+      const action = auditActionForStatement(this.tryAstifyOne(driver, text), text);
+      const result = statements[i];
+      if (!result && !rolledBack) continue; // never attempted
+      const failed = rolledBack || !result || result.kind === 'error';
+      const errorClass =
+        result?.kind === 'error' ? (result.code ?? 'Error') : rolledBack ? 'rolled_back' : null;
+      this.auditStatement(
+        driver,
+        userId,
+        connectionId,
+        correlationId,
+        text,
+        failed ? 'failure' : 'success',
+        errorClass,
+        result?.executionTimeMs ?? 0,
+        action,
+      );
+    }
+  }
+
+  private auditStatement(
+    driver: DbDriver,
+    userId: string,
+    connectionId: string,
+    correlationId: string,
+    text: string,
+    outcome: 'success' | 'failure',
+    errorClass: string | null,
+    durationMs: number,
+    action: AuditAction = auditActionForStatement(this.tryAstifyOne(driver, text), text),
+  ): void {
+    const target = auditTargetFromAst(this.tryAstifyOne(driver, text));
+    void this.audit.record({
+      userId,
+      connectionId,
+      action,
+      sql: text,
+      targetSchema: target.schema ?? null,
+      targetTable: target.table ?? null,
+      outcome,
+      errorClass,
+      durationMs,
+      correlationId: correlationId || null,
+    });
   }
 
   /**

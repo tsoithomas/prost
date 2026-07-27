@@ -12,6 +12,8 @@ export const API_ROUTE_PREFIXES = [
   'snippets',
   'health',
   'database-engines',
+  'history',
+  'audit',
 ];
 
 /** True when `path` belongs to the API (and must not be served the SPA index.html). */
