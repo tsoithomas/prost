@@ -4,6 +4,7 @@ import type {
   ColumnMetadata,
   CreateIndexRequest,
   CreateTableRequest,
+  KillSessionMode,
   NewColumn,
   SchemaObjectKind,
 } from '@prost/shared-types';
@@ -701,6 +702,46 @@ export function mysqlFormatExplain(rows: Record<string, unknown>[]): string {
       .map(([key, value]) => `${key}=${formatExplainValue(value)}`)
       .join(' | '))
     .join('\n');
+}
+
+// ─── Active-session monitoring (Phase 27) ───────────────────────────────────────────────────────
+
+/** Live sessions from `information_schema.PROCESSLIST`, aliased to the `DbSession` columns (excludes self). */
+export function mysqlBuildListSessions(): SqlFragment {
+  return {
+    sql:
+      'SELECT `ID` AS id, `USER` AS `user`, `DB` AS `database`, `HOST` AS client_addr, ' +
+      '`COMMAND` AS state, `INFO` AS query, `TIME` * 1000 AS duration_ms, `STATE` AS wait_event ' +
+      'FROM information_schema.PROCESSLIST WHERE `ID` <> CONNECTION_ID() ORDER BY `TIME` DESC LIMIT 500',
+    params: [],
+  };
+}
+
+/**
+ * Best-effort blocked→blocking process-id pairs from `performance_schema` lock-waits. May fail if
+ * `performance_schema` is disabled — the service runs it inside try/catch so blocked-by just stays empty.
+ */
+export function mysqlBuildBlockingPairs(): SqlFragment {
+  return {
+    sql:
+      'SELECT r.PROCESSLIST_ID AS blocked_id, b.PROCESSLIST_ID AS blocking_id ' +
+      'FROM performance_schema.data_lock_waits w ' +
+      'JOIN performance_schema.threads r ON r.THREAD_ID = w.REQUESTING_THREAD_ID ' +
+      'JOIN performance_schema.threads b ON b.THREAD_ID = w.BLOCKING_THREAD_ID',
+    params: [],
+  };
+}
+
+/**
+ * `KILL` cannot be a prepared statement, so the id is inlined — but only after validating it is a
+ * positive integer, which cannot carry an injection. `KILL QUERY` cancels; `KILL CONNECTION` terminates.
+ */
+export function mysqlBuildKillSession(id: number, mode: KillSessionMode): SqlFragment {
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new UnprocessableEntityException('Invalid session id');
+  }
+  const verb = mode === 'terminate' ? 'CONNECTION' : 'QUERY';
+  return { sql: `KILL ${verb} ${id}`, params: [] };
 }
 
 export { qualify as mysqlQualify };

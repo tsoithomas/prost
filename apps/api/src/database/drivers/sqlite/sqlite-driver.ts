@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Database from 'better-sqlite3';
 import type {
@@ -7,6 +7,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  KillSessionMode,
   QueryPlanNode,
   SchemaObjectKind,
 } from '@prost/shared-types';
@@ -49,6 +50,7 @@ export class SqliteDriver implements DbDriver {
     supportsCursors: true,
     supportsQueryPlan: true,
     supportsExplainAnalyze: false,
+    supportsSessionMonitoring: false,
     ddl: {
       columnTypes: ['INTEGER', 'TEXT', 'REAL', 'BLOB', 'NUMERIC'],
       defaultExamples: ['0', "''", 'CURRENT_TIMESTAMP', 'null'],
@@ -284,6 +286,19 @@ export class SqliteDriver implements DbDriver {
 
   parseExplain(rows: Record<string, unknown>[]): QueryPlanNode {
     return sqliteParseExplain(rows);
+  }
+
+  // SQLite has no server sessions; the capability is off, so these are never reached (the service gates first).
+  buildListSessions(): SqlFragment {
+    throw new BadRequestException('Session monitoring is not supported for SQLite');
+  }
+
+  buildBlockingPairs(): SqlFragment | null {
+    return null;
+  }
+
+  buildKillSession(_id: number, _mode: KillSessionMode): SqlFragment {
+    throw new BadRequestException('Session monitoring is not supported for SQLite');
   }
 
   mapError(error: unknown, ctx: DriverErrorContext): void {

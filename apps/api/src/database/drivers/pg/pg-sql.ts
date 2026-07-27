@@ -6,6 +6,7 @@ import type {
   ColumnMetadata,
   CreateIndexRequest,
   CreateTableRequest,
+  KillSessionMode,
   NewColumn,
   SchemaObjectKind,
 } from '@prost/shared-types';
@@ -585,6 +586,29 @@ export function pgBuildDropIndex(ref: TableRef, indexName: string): SqlFragment 
 
 export function pgBuildResolveTypeNames(oids: number[]): SqlFragment {
   return { sql: 'SELECT oid, typname FROM pg_type WHERE oid = ANY($1::oid[])', params: [oids] };
+}
+
+// ─── Active-session monitoring (Phase 27) ───────────────────────────────────────────────────────
+
+/** Live client sessions from `pg_stat_activity`, aliased to the `DbSession` columns (excludes self). */
+export function pgBuildListSessions(): SqlFragment {
+  return {
+    sql: `SELECT pid AS id, usename AS "user", datname AS database, host(client_addr) AS client_addr,
+                 state, query,
+                 EXTRACT(EPOCH FROM (now() - query_start)) * 1000 AS duration_ms,
+                 wait_event, pg_blocking_pids(pid) AS blocked_by
+          FROM pg_stat_activity
+          WHERE pid <> pg_backend_pid() AND backend_type = 'client backend'
+          ORDER BY query_start ASC NULLS LAST
+          LIMIT 500`,
+    params: [],
+  };
+}
+
+/** Cancel (graceful) or terminate (force) a backend by pid — pid is bound, never interpolated. */
+export function pgBuildKillSession(id: number, mode: KillSessionMode): SqlFragment {
+  const fn = mode === 'terminate' ? 'pg_terminate_backend' : 'pg_cancel_backend';
+  return { sql: `SELECT ${fn}($1)`, params: [id] };
 }
 
 export { qualify as pgQualify };

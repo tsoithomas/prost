@@ -215,7 +215,7 @@ export function SchemaTree({
     return (
       <div>
         {renderStickyTop()}
-        <div className="mb-2 flex items-center justify-between px-sm">
+        <div className="mb-2 flex items-center justify-between pl-sm pr-1">
           <span className="text-xs font-medium uppercase tracking-wider text-text-faint">Tables</span>
           <button
             type="button"

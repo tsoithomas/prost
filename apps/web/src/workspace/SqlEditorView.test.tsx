@@ -172,6 +172,7 @@ function makeDescriptor(
     supportsCursors: true,
     supportsQueryPlan: true,
     supportsExplainAnalyze: engine === 'postgres',
+    supportsSessionMonitoring: engine !== 'sqlite',
     ddl: {
       columnTypes: [],
       defaultExamples: [],

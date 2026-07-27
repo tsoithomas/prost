@@ -2,6 +2,7 @@ export * from './metadata.js';
 export * from './connection.js';
 export * from './grid.js';
 export * from './plan.js';
+export * from './sessions.js';
 export * from './user.js';
 export * from './error.js';
 export * from './ddl.js';

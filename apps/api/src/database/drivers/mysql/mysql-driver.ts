@@ -12,6 +12,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  KillSessionMode,
   QueryPlanNode,
   SchemaObjectKind,
 } from '@prost/shared-types';
@@ -163,6 +164,7 @@ export class MysqlDriver implements DbDriver {
     supportsCursors: true,
     supportsQueryPlan: true,
     supportsExplainAnalyze: false,
+    supportsSessionMonitoring: true,
     ddl: {
       columnTypes: [
         'int',
@@ -509,6 +511,18 @@ export class MysqlDriver implements DbDriver {
 
   parseExplain(rows: Record<string, unknown>[]): QueryPlanNode {
     return mysqlParseExplain(rows);
+  }
+
+  buildListSessions(): SqlFragment {
+    return sql.mysqlBuildListSessions();
+  }
+
+  buildBlockingPairs(): SqlFragment | null {
+    return sql.mysqlBuildBlockingPairs();
+  }
+
+  buildKillSession(id: number, mode: KillSessionMode): SqlFragment {
+    return sql.mysqlBuildKillSession(id, mode);
   }
 
   mapError(error: unknown, context: DriverErrorContext): void {

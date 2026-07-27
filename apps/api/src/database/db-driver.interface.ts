@@ -4,6 +4,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  KillSessionMode,
   QueryPlanNode,
   SchemaObjectKind,
 } from '@prost/shared-types';
@@ -162,6 +163,18 @@ export interface DbDriver {
    */
   buildExplain(sql: string, analyze: boolean): SqlFragment;
   parseExplain(rows: Record<string, unknown>[], analyze: boolean): QueryPlanNode;
+
+  /**
+   * Active-session monitoring (Phase 27). Only engines whose descriptor advertises
+   * `supportsSessionMonitoring` are asked (SQLite throws). `buildListSessions` returns a live-session
+   * snapshot aliased to the `DbSession` columns (`id, user, database, client_addr, state, query,
+   * duration_ms, wait_event, blocked_by`). `buildBlockingPairs` is an optional best-effort
+   * `{ blocked_id, blocking_id }` query (MySQL lock-waits); engines that fold blocked-by into the
+   * list (PG) return `null`. `buildKillSession` cancels (graceful) or terminates (force) by id.
+   */
+  buildListSessions(): SqlFragment;
+  buildBlockingPairs(): SqlFragment | null;
+  buildKillSession(id: number, mode: KillSessionMode): SqlFragment;
 
   /** Inspect a native error; throw the right Nest HTTP exception, or return to let the caller rethrow. */
   mapError(error: unknown, context: DriverErrorContext): void;

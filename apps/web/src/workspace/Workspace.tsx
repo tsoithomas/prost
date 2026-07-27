@@ -1,10 +1,13 @@
+import { Activity } from 'lucide-react';
 import { Breadcrumbs } from './Breadcrumbs';
 import { WorkspaceTabBar } from './WorkspaceTabBar';
 import { TableView } from './TableView';
 import { SqlEditorView } from './SqlEditorView';
 import { DatabaseOverview } from './DatabaseOverview';
 import { DefinitionPanel } from './DefinitionPanel';
+import { SessionsPanel } from './SessionsPanel';
 import { useActiveConnection } from '../api/connections';
+import { useEngineDescriptor } from '../api/databaseEngines';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 
@@ -20,8 +23,11 @@ export function Workspace() {
   const reorderTab = useWorkspaceStore((state) => state.reorderTab);
   const newQueryTab = useWorkspaceStore((state) => state.newQueryTab);
   const setTabViewMode = useWorkspaceStore((state) => state.setTabViewMode);
+  const openSessions = useWorkspaceStore((state) => state.openSessions);
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
   const activeConnection = useActiveConnection();
+  const sessionMonitoringSupported =
+    useEngineDescriptor(activeConnectionId)?.supportsSessionMonitoring ?? false;
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId);
 
@@ -34,9 +40,22 @@ export function Workspace() {
         ? [connectionLabel, activeTab.schema]
         : [connectionLabel];
 
+  const sessionsAction =
+    sessionMonitoringSupported && activeConnectionId ? (
+      <button
+        type="button"
+        onClick={() => openSessions()}
+        title="Database sessions"
+        className="flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-text"
+      >
+        <Activity size={13} />
+        Sessions
+      </button>
+    ) : null;
+
   return (
     <>
-      <Breadcrumbs segments={breadcrumbSegments} />
+      <Breadcrumbs segments={breadcrumbSegments} actions={sessionsAction} />
       <WorkspaceTabBar
         tabs={tabs}
         activeTabId={activeTabId}
@@ -68,6 +87,9 @@ export function Workspace() {
           objectKind={activeTab.objectKind}
           objectName={activeTab.objectName}
         />
+      ) : null}
+      {activeTab?.kind === 'sessions' && activeConnectionId ? (
+        <SessionsPanel connectionId={activeConnectionId} writable={writable} />
       ) : null}
       {activeTab?.kind === 'query' ? <SqlEditorView /> : null}
       {!activeTab ? (

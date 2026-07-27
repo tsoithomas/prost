@@ -43,3 +43,19 @@ export function defineProstMonacoThemes(monaco: typeof Monaco): void {
   monaco.editor.defineTheme(PROST_LIGHT_THEME, buildMonacoTheme('vs'));
   monaco.editor.defineTheme(PROST_DARK_THEME, buildMonacoTheme('vs-dark'));
 }
+
+let themeVersion = 0;
+
+/**
+ * Redefines the Prost Monaco theme from the *current* CSS custom properties under a fresh, unique
+ * name and returns it. Monaco does not repaint an existing editor when the currently-active theme is
+ * merely redefined (same name), so callers pass the returned name as the editor's `theme` prop — a
+ * new name each time guarantees the change is applied. `defineProstMonacoThemes` still seeds the
+ * fixed pair used for the very first (beforeMount) render.
+ */
+export function defineFreshProstMonacoTheme(monaco: typeof Monaco, mode: 'light' | 'dark'): string {
+  themeVersion += 1;
+  const name = `${mode === 'dark' ? PROST_DARK_THEME : PROST_LIGHT_THEME}-${themeVersion}`;
+  monaco.editor.defineTheme(name, buildMonacoTheme(mode === 'dark' ? 'vs-dark' : 'vs'));
+  return name;
+}

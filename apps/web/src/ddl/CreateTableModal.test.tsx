@@ -41,6 +41,7 @@ const POSTGRES_DESCRIPTOR: DbEngineDescriptor = {
   supportsCursors: true,
   supportsQueryPlan: true,
   supportsExplainAnalyze: true,
+  supportsSessionMonitoring: true,
   ddl: {
     columnTypes: ['integer', 'text', 'jsonb'],
     defaultExamples: ['now()', 'gen_random_uuid()'],

@@ -1,6 +1,7 @@
-import { LogOut, Plug } from 'lucide-react';
+import { Activity, LogOut, Plug } from 'lucide-react';
 import { Button, Surface } from '@prost/ui';
 import { useConnections } from '../api/connections';
+import { useEngineDescriptor } from '../api/databaseEngines';
 import { connectionEndpoint } from '../connection/connectionDisplay';
 import { QueryHistoryList } from '../explorer/QueryHistoryList';
 import { SnippetList } from '../explorer/SnippetList';
@@ -13,12 +14,17 @@ export interface MobileSettingsViewProps {
   onManageConnections: () => void;
   onSelectHistoryQuery: () => void;
   onSelectSnippet: () => void;
+  /** Switches to the workspace view after opening the sessions tab. */
+  onOpenSessions: () => void;
 }
 
-export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, onSelectSnippet }: MobileSettingsViewProps) {
+export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, onSelectSnippet, onOpenSessions }: MobileSettingsViewProps) {
   const { data: connections = [] } = useConnections();
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
   const loadQuery = useWorkspaceStore((state) => state.loadQuery);
+  const openSessions = useWorkspaceStore((state) => state.openSessions);
+  const sessionMonitoringSupported =
+    useEngineDescriptor(activeConnectionId)?.supportsSessionMonitoring ?? false;
   const clearAuth = useAuthStore((state) => state.clear);
 
   function handleSelectHistory(sql: string) {
@@ -61,6 +67,20 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, 
           <Button variant="secondary" size="sm" className="mt-sm w-full justify-center" onClick={onManageConnections}>
             Manage Connections
           </Button>
+          {sessionMonitoringSupported ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mt-sm w-full justify-center"
+              onClick={() => {
+                openSessions();
+                onOpenSessions();
+              }}
+            >
+              <Activity size={14} />
+              Active Sessions
+            </Button>
+          ) : null}
         </section>
 
         <section>

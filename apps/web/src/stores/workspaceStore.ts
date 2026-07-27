@@ -4,7 +4,7 @@ import type { ExecuteQueryResponse, RowFilter, SchemaObjectKind } from '@prost/s
 export interface WorkspaceTab {
   id: string;
   label: string;
-  kind: 'table' | 'query' | 'overview' | 'object';
+  kind: 'table' | 'query' | 'overview' | 'object' | 'sessions';
   schema?: string;
   table?: string;
   /** Non-table object identity (object tabs only). */
@@ -54,6 +54,8 @@ interface WorkspaceState {
   openOverview: (schema: string) => void;
   /** Open a read-only definition panel for a non-table object (Phase 24). */
   openObject: (schema: string, kind: SchemaObjectKind, name: string) => void;
+  /** Open the active connection's live-session monitor (Phase 27). */
+  openSessions: () => void;
   closeTableTab: (schema: string, table: string) => void;
   /** Clears a table tab's one-shot `search` hand-off once the TableView has consumed it. */
   clearTabSearch: (id: string) => void;
@@ -143,6 +145,19 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
       }
       return {
         tabs: [...state.tabs, { id, label: schema, kind: 'overview', schema }],
+        activeTabId: id,
+      };
+    });
+  },
+
+  openSessions: () => {
+    const id = 'sessions';
+    set((state) => {
+      if (state.tabs.some((tab) => tab.id === id)) {
+        return { activeTabId: id };
+      }
+      return {
+        tabs: [...state.tabs, { id, label: 'Sessions', kind: 'sessions' }],
         activeTabId: id,
       };
     });

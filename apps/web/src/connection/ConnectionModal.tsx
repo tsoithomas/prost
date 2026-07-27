@@ -90,6 +90,7 @@ const fallbackNetworkEngine: DbEngineDescriptor = {
   supportsCursors: true,
   supportsQueryPlan: true,
   supportsExplainAnalyze: true,
+  supportsSessionMonitoring: true,
   ddl: {
     columnTypes: [],
     defaultExamples: [],

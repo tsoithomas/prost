@@ -8,6 +8,7 @@ import type {
   CreateIndexRequest,
   CreateTableRequest,
   DbEngineDescriptor,
+  KillSessionMode,
   QueryPlanNode,
   SchemaObjectKind,
 } from '@prost/shared-types';
@@ -57,6 +58,7 @@ export class PgDriver implements DbDriver {
     supportsCursors: true,
     supportsQueryPlan: true,
     supportsExplainAnalyze: true,
+    supportsSessionMonitoring: true,
     ddl: {
       columnTypes: [
         'integer', 'bigint', 'smallint', 'serial', 'bigserial',
@@ -325,6 +327,18 @@ export class PgDriver implements DbDriver {
 
   parseExplain(rows: Record<string, unknown>[]): QueryPlanNode {
     return pgParseExplain(rows);
+  }
+
+  buildListSessions(): SqlFragment {
+    return sql.pgBuildListSessions();
+  }
+
+  buildBlockingPairs(): SqlFragment | null {
+    return null;
+  }
+
+  buildKillSession(id: number, mode: KillSessionMode): SqlFragment {
+    return sql.pgBuildKillSession(id, mode);
   }
 
   mapError(error: unknown, ctx: DriverErrorContext): void {

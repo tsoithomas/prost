@@ -23,6 +23,7 @@ import {
   PROST_DARK_THEME,
   PROST_LIGHT_THEME,
   Toast,
+  defineFreshProstMonacoTheme,
   defineProstMonacoThemes,
   prostGridTheme,
   resolveColorMode,
@@ -75,6 +76,10 @@ export function SqlEditorView() {
   const descriptor = useEngineDescriptor(connectionId);
   const colorMode = useThemeStore((state) => state.colorMode);
   const accentColor = useThemeStore((state) => state.accentColor);
+  // Palettes recolor the editor's CSS vars without touching colorMode/accentColor, so the Monaco
+  // re-theme effect must also watch them (a palette snapshot is what Monaco reads via getComputedStyle).
+  const activePaletteName = useThemeStore((state) => state.activePaletteName);
+  const customPalettes = useThemeStore((state) => state.customPalettes);
   const pendingQuerySql = useWorkspaceStore((state) => state.pendingQuerySql);
   const clearPendingQuerySql = useWorkspaceStore((state) => state.clearPendingQuerySql);
   const setCursorPosition = useWorkspaceStore((state) => state.setCursorPosition);
@@ -85,12 +90,14 @@ export function SqlEditorView() {
   const setTabTransactional = useWorkspaceStore((state) => state.setTabTransactional);
   const queryClient = useQueryClient();
   const monacoTheme = resolveColorMode(colorMode) === 'dark' ? PROST_DARK_THEME : PROST_LIGHT_THEME;
-  const monacoRef = useRef<Monaco | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const gridApiRef = useRef<GridApi | null>(null);
   const formatterDialectRef = useRef<'postgresql' | 'mysql' | 'sqlite'>('postgresql');
   formatterDialectRef.current = formatterLanguage(descriptor);
   const [monacoInstance, setMonacoInstance] = useState<Monaco | null>(null);
+  // The editor's live theme name. Starts as the fixed pair (defined at beforeMount); every theme
+  // change swaps it for a freshly-snapshotted, uniquely-named theme so Monaco actually repaints.
+  const [monacoThemeName, setMonacoThemeName] = useState(monacoTheme);
 
   const sql = activeTab?.sql ?? INITIAL_SQL;
   const transactional = activeTab?.transactional ?? false;
@@ -217,10 +224,14 @@ export function SqlEditorView() {
   // `defineProstMonacoThemes` snapshots the current CSS variable values, so it must be
   // re-run whenever the color mode or accent color changes to keep Monaco in sync.
   useEffect(() => {
-    if (!monacoRef.current) return;
-    defineProstMonacoThemes(monacoRef.current);
-    monacoRef.current.editor.setTheme(monacoTheme);
-  }, [colorMode, accentColor, monacoTheme]);
+    const monaco = monacoInstance;
+    if (!monaco) return;
+    // Snapshot the current CSS tokens into a fresh, uniquely-named theme and switch to it. A new name
+    // each time is what makes Monaco repaint an existing editor (redefining the active name doesn't).
+    const name = defineFreshProstMonacoTheme(monaco, resolveColorMode(colorMode) === 'dark' ? 'dark' : 'light');
+    monaco.editor.setTheme(name);
+    setMonacoThemeName(name);
+  }, [monacoInstance, colorMode, accentColor, activePaletteName, customPalettes]);
 
   // Switching tabs swaps the editor buffer + results to that tab's stored state and
   // clears any in-progress edit/selection UI from the previous tab.
@@ -478,11 +489,10 @@ export function SqlEditorView() {
           defaultLanguage="sql"
           value={sql}
           onChange={(value) => setTabSql(activeTabId, value ?? '')}
-          theme={monacoTheme}
+          theme={monacoThemeName}
           beforeMount={defineProstMonacoThemes}
           onMount={(editor, monaco) => {
             editorRef.current = editor;
-            monacoRef.current = monaco;
             setMonacoInstance(monaco);
             // Run/format shortcuts are bound in a keybindings-aware effect (see above) so they
             // stay remappable; the formatting provider below supplies the actual format edits.

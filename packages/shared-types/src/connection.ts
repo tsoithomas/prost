@@ -41,6 +41,8 @@ export interface DbEngineDescriptor {
   supportsQueryPlan: boolean;
   /** Whether `EXPLAIN ANALYZE` (actual timings — runs the statement) is offered for this engine. */
   supportsExplainAnalyze: boolean;
+  /** Whether the engine exposes live sessions for the activity monitor + kill-query (Phase 27; SQLite: false). */
+  supportsSessionMonitoring: boolean;
   ddl: {
     columnTypes: string[];
     defaultExamples: string[];
