@@ -88,6 +88,19 @@ Roadmap item: Phase 31 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md).
 
 `pnpm -w build`, `pnpm -w lint`, `pnpm -w test` all pass.
 
+## Implementation note (as built)
+
+Decision 1's *in-stream* tool loop was refined to a **client-orchestrated propose→confirm→run→feed-back
+loop**, because a streaming request can't pause mid-flight for the per-query confirm the user chose. The
+model proposes a `SELECT` in its reply; the client shows **Run (read-only) / Decline** (or auto-runs when
+the session toggle is on); a dedicated endpoint `POST :id/ai/run-read-query` proves + **engine-enforces**
+read-only (`QueryService.runReadOnlyQuery` + a new `DbDriver.withReadOnlyTransaction` — PG `SET TRANSACTION
+READ ONLY`, MySQL `START TRANSACTION READ ONLY`, SQLite `PRAGMA query_only`); a sanitized, capped sample is
+fed back (a plain-text turn, no ``` fences) so the model **answers inline**. Auto-run is bounded to 3 rounds
+per user turn. Every read-only proof, bound, sanitization, and correlation-id log stays server-side; there
+is no write path. (Results are intentionally *not* also mirrored into the results grid — the inline answer
+already covers it; a `loadQueryResult` grid hand-off was built during Phase 31 then removed as redundant.)
+
 ## Out of scope (later phases / explicitly deferred)
 
 - Any write/DDL tool for the agent (writes stay human-driven; DDL suggestions go through Phase 33's

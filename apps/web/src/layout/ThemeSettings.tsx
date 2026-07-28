@@ -9,7 +9,7 @@ import {
   type GridDensity,
   type UserPreferenceDto,
 } from '@prost/shared-types';
-import { Checkbox, Toast } from '@prost/ui';
+import { Switch, Toast } from '@prost/ui';
 import { useActiveConnection } from '../api/connections';
 import { useUpdatePreferences } from '../api/preferences';
 import { useThemeStore } from '../stores/themeStore';
@@ -177,7 +177,7 @@ export function ThemeSettings() {
         {activeConnection ? (
           <>
             <label className="flex items-center gap-sm text-xs text-text">
-              <Checkbox checked={overrideOn} onChange={(e) => toggleOverride(e.target.checked)} />
+              <Switch checked={overrideOn} onChange={(e) => toggleOverride(e.target.checked)} />
               Use a distinct accent for &quot;{activeConnection.name}&quot;
             </label>
             {overrideOn ? (

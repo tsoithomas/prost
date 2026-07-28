@@ -158,6 +158,27 @@ export class PgDriver implements DbDriver {
     }
   }
 
+  /** Engine-enforced read-only: any write inside the transaction fails with a PG "read-only transaction" error. */
+  async withReadOnlyTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+    const client = await (pool as Pool).connect();
+    const query: DriverQueryFn = async ({ sql: text, params = [] }) => {
+      const r = await client.query(text, params);
+      return { rows: r.rows, fields: r.fields, rowCount: r.rowCount, command: r.command };
+    };
+    try {
+      await client.query('BEGIN');
+      await client.query('SET TRANSACTION READ ONLY');
+      const result = await fn(query);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async openCursor(pool: NativePool, frag: SqlFragment): Promise<DriverCursor> {
     // Hold a pooled client inside a read transaction for the cursor's whole lifetime. The client is
     // released only by close() — on completion, abandonment, budget, or reap (cursor-session manager).

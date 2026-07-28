@@ -1,4 +1,4 @@
-import { IsArray, IsIn, IsOptional, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, IsIn, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class ChatMessageDto {
@@ -14,10 +14,6 @@ export class ChatDto {
   @ValidateNested({ each: true })
   @Type(() => ChatMessageDto)
   messages!: ChatMessageDto[];
-
-  @IsOptional()
-  @IsIn(['ask', 'generateSql', 'explain'])
-  mode?: 'ask' | 'generateSql' | 'explain';
 
   @IsUUID()
   endpointId!: string;

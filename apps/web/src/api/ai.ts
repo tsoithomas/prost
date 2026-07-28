@@ -11,6 +11,8 @@ import type {
   LlmEndpointDto,
   LlmProbeBody,
   LlmProbeResult,
+  RunReadQueryRequest,
+  RunReadQueryResponse,
   UpdateLlmEndpointBody,
 } from '@prost/shared-types';
 import { ApiError, BASE_URL, apiFetch } from '../lib/apiClient';
@@ -115,6 +117,18 @@ export function useSuggestChart(connectionId: string | null) {
         method: 'POST',
         body: req,
       }),
+  });
+}
+
+/**
+ * Run a read-only SELECT the assistant proposed (`POST :id/ai/run-read-query`). The server proves +
+ * engine-enforces read-only and returns the full page (for the grid) plus a sanitized sample (for the
+ * model). A non-read statement is refused with a 422 `ApiError`.
+ */
+export function useRunReadQuery(connectionId: string | null) {
+  return useMutation({
+    mutationFn: (req: RunReadQueryRequest) =>
+      apiFetch<RunReadQueryResponse>(`/connections/${connectionId!}/ai/run-read-query`, { method: 'POST', body: req }),
   });
 }
 

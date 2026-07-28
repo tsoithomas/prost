@@ -300,6 +300,23 @@ export class MysqlDriver implements DbDriver {
     }
   }
 
+  /** Engine-enforced read-only: `START TRANSACTION READ ONLY` makes any write inside it fail. */
+  async withReadOnlyTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+    const connection = await (pool as Pool).getConnection();
+    const query: DriverQueryFn = (frag) => runQuery(connection, frag, this.queryTimeoutMs);
+    try {
+      await runQuery(connection, { sql: 'START TRANSACTION READ ONLY', params: [] }, this.queryTimeoutMs);
+      const result = await fn(query);
+      await connection.commit();
+      return result;
+    } catch (error) {
+      await connection.rollback().catch(() => undefined);
+      throw error;
+    } finally {
+      connection.release();
+    }
+  }
+
   async openCursor(pool: NativePool, frag: SqlFragment): Promise<DriverCursor> {
     // Pin a pooled connection and stream rows off the wire (no full-result buffering). The stream's
     // async iterator gives natural backpressure: each fetch pulls N rows then the protocol pauses.

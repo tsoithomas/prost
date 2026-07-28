@@ -9,6 +9,7 @@ const initialState = {
   tabs: [{ id: 'query-1', label: 'Query 1', kind: 'query' as const, sql: INITIAL_SQL, result: null }],
   activeTabId: 'query-1',
   pendingQuerySql: null,
+  transactionalDefault: false,
   cursorPosition: null,
 };
 
@@ -61,6 +62,7 @@ describe('workspaceStore — loadQuery', () => {
     expect(state.activeTabId).toBe(secondTabId);
   });
 });
+
 
 describe('workspaceStore — openOverview', () => {
   it('opens an overview tab keyed by connection + schema and makes it active', () => {
@@ -220,6 +222,14 @@ describe('workspaceStore — setTabSql / setTabResult', () => {
     const state = useWorkspaceStore.getState();
     expect(state.tabs.find((tab) => tab.id === 'query-1')?.transactional).toBe(true);
     expect(state.tabs.find((tab) => tab.id === secondTabId)?.transactional).toBeFalsy();
+  });
+
+  it('setTransactionalDefault is persisted to localStorage', () => {
+    useWorkspaceStore.getState().setTransactionalDefault(true);
+    expect(useWorkspaceStore.getState().transactionalDefault).toBe(true);
+    const persisted = JSON.parse(localStorage.getItem('prost-workspace') ?? '{}') as { state?: Record<string, unknown> };
+    expect(persisted.state?.transactionalDefault).toBe(true);
+    useWorkspaceStore.getState().setTransactionalDefault(false); // reset for isolation
   });
 });
 

@@ -1,4 +1,5 @@
 import type { ColumnMetadata } from './metadata.js';
+import type { ExecuteQueryResponse } from './grid.js';
 
 export type ChatRole = 'user' | 'assistant';
 
@@ -7,11 +8,8 @@ export interface ChatMessage {
   content: string;
 }
 
-export type ChatMode = 'ask' | 'generateSql' | 'explain';
-
 export interface ChatRequest {
   messages: ChatMessage[];
-  mode?: ChatMode;
   endpointId: string;
   model: string;
 }
@@ -19,6 +17,32 @@ export interface ChatRequest {
 export interface ChatResponse {
   message: ChatMessage;
   suggestedSql?: string;
+}
+
+/** Ask the agent's read-only executor to run a proposed SELECT (Phase 31). */
+export interface RunReadQueryRequest {
+  sql: string;
+}
+
+/**
+ * A bounded, sanitized preview of a query result for the LLM to reason over — capped rows AND columns,
+ * cell strings truncated (Decision-1: the model never sees the wholesale result the grid shows).
+ */
+export interface RowSample {
+  columns: string[];
+  rows: unknown[][];
+  /** True when rows and/or columns were capped below the full result. */
+  truncated: boolean;
+}
+
+/**
+ * The outcome of a gated read-only run: `result` is the full bounded page for the grid; `sample` is the
+ * capped projection sent back to the model. One execution, two projections.
+ */
+export interface RunReadQueryResponse {
+  sql: string;
+  result: ExecuteQueryResponse;
+  sample: RowSample;
 }
 
 /** The chart kinds the result-insights view can render (Phase 29). */

@@ -229,6 +229,27 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [3]));
     });
 
+    it('withReadOnlyTransaction rejects a write at the engine (Phase 31 defense-in-depth)', async (ctx) => {
+      skipIfUnreachable(ctx);
+      // A read succeeds inside the read-only transaction...
+      const readInside = await driver.withReadOnlyTransaction(pool!, (q) =>
+        q(driver.buildSelectRows(ref, { whereClause: '', whereParams: [], orderColumn: 'id', sortDir: 'ASC', limit: 1, offset: 0 })),
+      );
+      expect(Array.isArray(readInside.rows)).toBe(true);
+
+      // ...but a write is rejected by the engine, even though the parser is bypassed here.
+      await expect(
+        driver.withReadOnlyTransaction(pool!, (q) => q(driver.buildInsertRow(ref, [['id', 99], ['name', 'nope']]))),
+      ).rejects.toThrow();
+
+      // The write did not land.
+      const check = await driver.query(pool!, driver.buildSelectRows(ref, {
+        whereClause: `WHERE ${driver.quoteIdent('id')} = ${driver.placeholder(1)}`,
+        whereParams: [99], orderColumn: 'id', sortDir: 'ASC', limit: 1, offset: 0,
+      }));
+      expect(check.rows.length).toBe(0);
+    });
+
     it('inserts a batch of rows in one transaction via buildInsertRow (import path)', async (ctx) => {
       skipIfUnreachable(ctx);
       // Mirrors ImportService.batch: many buildInsertRow fragments through one transactional `q`.

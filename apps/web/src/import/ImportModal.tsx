@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Papa from 'papaparse';
 import { X } from 'lucide-react';
 import type { ColumnMetadata } from '@prost/shared-types';
-import { Button, IconButton, Surface } from '@prost/ui';
+import { Button, IconButton, Surface, Switch } from '@prost/ui';
 import { useImportPreview } from '../api/import';
 import { useCsvImport } from './useCsvImport';
 import { useConfirm } from '../hooks/useConfirm';
@@ -164,7 +164,7 @@ export function ImportModal({ open, onClose, connectionId, schema, table, column
           {step === 'file' ? (
             <div className="flex flex-col gap-md">
               <label className="flex items-center gap-sm text-sm text-text">
-                <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} aria-label="First row is a header" />
+                <Switch checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} aria-label="First row is a header" />
                 First row is a header
               </label>
               <input

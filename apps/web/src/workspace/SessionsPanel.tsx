@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Ban, ChevronDown, ChevronUp, RefreshCw, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import type { DbSession, KillSessionMode } from '@prost/shared-types';
-import { Badge, Button, Checkbox, Toast } from '@prost/ui';
+import { Badge, Button, Switch, Toast } from '@prost/ui';
 import { useKillSession, useSessions } from '../api/sessions';
 import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
@@ -100,7 +100,7 @@ export function SessionsPanel({ connectionId, writable = true }: SessionsPanelPr
           Refresh
         </Button>
         <label className="flex items-center gap-xs text-text-faint" title="Refresh automatically every 5 seconds">
-          <Checkbox checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} aria-label="Auto-refresh" />
+          <Switch checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} aria-label="Auto-refresh" />
           Auto
         </label>
       </div>

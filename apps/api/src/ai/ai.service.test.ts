@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import type { ChartSuggestRequest, ChatRequest, ColumnMetadata } from '@prost/shared-types';
 import type { ConnectionsService } from '../connections/connections.service';
@@ -7,6 +7,8 @@ import type { HistoryService } from '../history/history.service';
 import type { AiProviderService } from './ai-provider.service';
 import type { DecryptedEndpoint, LlmEndpointService } from './llm-endpoint.service';
 import type { RetrievalService } from './retrieval.service';
+import type { QueryService } from '../query/query.service';
+import type { RowsStatementResult } from '@prost/shared-types';
 import { AiService } from './ai.service';
 
 const SAMPLE_CONTEXT = `-- public.users\n(\n  id integer PRIMARY KEY,\n  email text NOT NULL\n)`;
@@ -28,6 +30,8 @@ function createService({
   providerResponse = 'Here is your answer.\n```sql\nSELECT * FROM users;\n```',
   providerThrows = false,
   recentQueries = [] as string[],
+  runReadOnlyResult,
+  runReadOnlyThrows,
 }: {
   ownershipFails?: boolean;
   endpoint?: DecryptedEndpoint;
@@ -36,6 +40,8 @@ function createService({
   providerResponse?: string;
   providerThrows?: boolean;
   recentQueries?: string[];
+  runReadOnlyResult?: RowsStatementResult;
+  runReadOnlyThrows?: Error;
 } = {}) {
   const connectionsService = {
     assertOwnership: vi.fn().mockImplementation(() => {
@@ -71,16 +77,28 @@ function createService({
     listRecent: vi.fn().mockResolvedValue(recentQueries.map((sql) => ({ sql }))),
   } as unknown as HistoryService;
 
+  const queryService = {
+    runReadOnlyQuery: vi.fn().mockImplementation(() => {
+      if (runReadOnlyThrows) throw runReadOnlyThrows;
+      return Promise.resolve(runReadOnlyResult ?? EMPTY_ROWS_RESULT);
+    }),
+  } as unknown as QueryService;
+
   return {
-    service: new AiService(connectionsService, llmEndpointService, provider, retrieval, pool, history),
+    service: new AiService(connectionsService, llmEndpointService, provider, retrieval, pool, history, queryService),
     connectionsService,
     llmEndpointService,
     provider,
     retrieval,
     pool,
     history,
+    queryService,
   };
 }
+
+const EMPTY_ROWS_RESULT: RowsStatementResult = {
+  kind: 'rows', sql: 'SELECT 1', rows: [], columns: [], totalRows: 0, editable: false, executionTimeMs: 1,
+};
 
 const REQ: ChatRequest = {
   messages: [{ role: 'user', content: 'List the tables.' }],
@@ -177,34 +195,13 @@ describe('AiService.chat', () => {
     });
   });
 
-  it('passes mode to the system prompt — generateSql changes role', async () => {
-    const { service, provider } = createService();
-    await service.chat('user-1', 'conn-1', { ...REQ, mode: 'generateSql' });
-    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(opts.systemPrompt).toContain('SQL generator');
-  });
-
-  // Each mode must produce a functionally distinct instruction, not just a different role line.
-  it.each([
-    ['generateSql', 'Return exactly one runnable PostgreSQL statement'],
-    ['explain', 'Explain what the query does, step by step'],
-    [undefined, 'Answer the user\'s questions about its schema and data model conversationally'],
-  ] as const)('uses a distinct instruction for %s mode', async (mode, expected) => {
-    const { service, provider } = createService();
-    await service.chat('user-1', 'conn-1', { ...REQ, mode });
-    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(opts.systemPrompt).toContain(expected);
-  });
-
-  it.each([
-    ['generateSql', 'You are a SQL generator for a MySQL database.'],
-    ['explain', 'You are a SQL explainer for a MySQL database.'],
-    [undefined, 'You are a helpful assistant for a MySQL database.'],
-  ] as const)('uses the driver label for %s mode', async (mode, expected) => {
+  it('uses a single unified prompt (answer / generate SQL / explain) with the driver label', async () => {
     const { service, provider } = createService({ engineLabel: 'MySQL' });
-    await service.chat('user-1', 'conn-1', { ...REQ, mode });
+    await service.chat('user-1', 'conn-1', REQ);
     const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
-    expect(opts.systemPrompt).toContain(expected);
+    expect(opts.systemPrompt).toContain('You are a helpful assistant for a MySQL database.');
+    expect(opts.systemPrompt).toMatch(/generate SQL/i);
+    expect(opts.systemPrompt).toMatch(/explain a SQL query/i);
   });
 
   it('returns the assistant message with provider content', async () => {
@@ -337,5 +334,53 @@ describe('AiService.suggestChart', () => {
     expect(sent).toHaveLength(15);
     expect(sent[0]!.status.length).toBeLessThanOrEqual(101); // 100 chars + ellipsis
     expect(sent[0]!.status).not.toContain(longValue);
+  });
+});
+
+function rowsResult(overrides: Partial<RowsStatementResult> = {}): RowsStatementResult {
+  return {
+    kind: 'rows', sql: 'SELECT id, note FROM t', rows: [], columns: [], totalRows: 0, editable: false, executionTimeMs: 3,
+    ...overrides,
+  };
+}
+
+describe('AiService.runReadQuery', () => {
+  it('asserts ownership, runs the read-only query, and returns result + sanitized sample', async () => {
+    const result = rowsResult({
+      rows: [{ id: 1, note: 'a' }, { id: 2, note: 'b' }],
+      columns: [col('id', 'integer'), col('note', 'text')],
+      totalRows: 2,
+    });
+    const { service, connectionsService, queryService } = createService({ runReadOnlyResult: result });
+
+    const res = await service.runReadQuery('user-1', 'conn-1', 'SELECT id, note FROM t', 'corr-9');
+
+    expect(connectionsService.assertOwnership).toHaveBeenCalledWith('user-1', 'conn-1');
+    expect(queryService.runReadOnlyQuery).toHaveBeenCalledWith('conn-1', 'SELECT id, note FROM t');
+    // Full page for the grid.
+    expect(res.result.statements[0]).toBe(result);
+    // Sanitized sample: column-major, values preserved for a small result.
+    expect(res.sample.columns).toEqual(['id', 'note']);
+    expect(res.sample.rows).toEqual([[1, 'a'], [2, 'b']]);
+    expect(res.sample.truncated).toBe(false);
+  });
+
+  it('caps the sample rows/columns and truncates long cells (model never sees the full result)', async () => {
+    const columns = Array.from({ length: 30 }, (_, i) => col(`c${i}`, 'text'));
+    const long = 'y'.repeat(500);
+    const rows = Array.from({ length: 50 }, () => Object.fromEntries(columns.map((c) => [c.name, long])));
+    const { service } = createService({ runReadOnlyResult: rowsResult({ rows, columns, totalRows: 50, truncated: true }) });
+
+    const res = await service.runReadQuery('user-1', 'conn-1', 'SELECT * FROM big');
+    expect(res.sample.columns).toHaveLength(20); // col cap
+    expect(res.sample.rows).toHaveLength(20); // row cap
+    expect(res.sample.truncated).toBe(true);
+    expect((res.sample.rows[0]![0] as string).length).toBeLessThanOrEqual(101); // cell cap
+    expect(res.sample.rows[0]![0]).not.toBe(long);
+  });
+
+  it('propagates the read-only refusal from QueryService (never runs a non-read)', async () => {
+    const { service } = createService({ runReadOnlyThrows: new UnprocessableEntityException('not a read') });
+    await expect(service.runReadQuery('user-1', 'conn-1', 'DELETE FROM t')).rejects.toThrow(UnprocessableEntityException);
   });
 });

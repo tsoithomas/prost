@@ -141,6 +141,22 @@ export class SqliteDriver implements DbDriver {
     }
   }
 
+  /**
+   * Engine-enforced read-only: `PRAGMA query_only = ON` makes the connection reject any write until it's
+   * turned off (always reset in `finally`). SQLite has no per-transaction read-only mode, and the pool is
+   * a single shared handle, so this is the equivalent guard.
+   */
+  async withReadOnlyTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+    const db = pool as Db;
+    const query: DriverQueryFn = (frag) => this.query(db, frag);
+    db.prepare('PRAGMA query_only = ON').run();
+    try {
+      return await fn(query);
+    } finally {
+      db.prepare('PRAGMA query_only = OFF').run();
+    }
+  }
+
   async openCursor(pool: NativePool, frag: SqlFragment): Promise<DriverCursor> {
     // In-process and synchronous: the cursor is a prepared-statement iterator (no pooled client to
     // hold). better-sqlite3 keeps the statement busy until the iterator is exhausted or `.return()`d,

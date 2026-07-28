@@ -3,6 +3,7 @@ export * from './ConfirmDialog.js';
 export * from './IconButton.js';
 export * from './Input.js';
 export * from './Checkbox.js';
+export * from './Switch.js';
 export * from './Surface.js';
 export * from './Badge.js';
 export * from './Toast.js';

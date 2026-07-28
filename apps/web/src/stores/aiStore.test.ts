@@ -21,3 +21,21 @@ describe('aiStore chat hand-off', () => {
     expect(useAiStore.getState().rightSidebarOpen).toBe(true);
   });
 });
+
+describe('aiStore auto-run toggle (Phase 31)', () => {
+  beforeEach(() => useAiStore.setState({ autoRunReadQueries: false }));
+
+  it('defaults off and toggles', () => {
+    expect(useAiStore.getState().autoRunReadQueries).toBe(false);
+    useAiStore.getState().setAutoRunReadQueries(true);
+    expect(useAiStore.getState().autoRunReadQueries).toBe(true);
+    useAiStore.getState().setAutoRunReadQueries(false);
+    expect(useAiStore.getState().autoRunReadQueries).toBe(false);
+  });
+
+  it('is persisted across reloads', () => {
+    useAiStore.getState().setAutoRunReadQueries(true);
+    const persisted = JSON.parse(localStorage.getItem('prost-ai') ?? '{}') as { state?: Record<string, unknown> };
+    expect(persisted.state?.autoRunReadQueries).toBe(true);
+  });
+});

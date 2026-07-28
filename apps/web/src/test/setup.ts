@@ -5,6 +5,11 @@ import '@testing-library/jest-dom/vitest';
 // RTL auto-cleanup requires globals:true; since we use globals:false, call explicitly.
 afterEach(() => cleanup());
 
+// jsdom doesn't implement scrollIntoView — components that auto-scroll (e.g. ChatPanel) call it in effects.
+if (!Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 // matchMedia polyfill — useIsMobile() / useMediaQuery() calls window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

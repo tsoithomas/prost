@@ -103,6 +103,13 @@ export class PoolManager implements OnModuleInit, OnModuleDestroy {
     return driver.withTransaction(pool, fn);
   }
 
+  /** Engine-enforced read-only transaction (Phase 31 agentic read-query path). */
+  async withReadOnlyTransaction<T>(connectionId: string, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+    const { driver, pool } = await this.resolve(connectionId);
+    this.poolLastUsed.set(connectionId, Date.now());
+    return driver.withReadOnlyTransaction(pool, fn);
+  }
+
   async testConnection(engine: string, params: ConnectionParams): Promise<TestConnectionResult> {
     return this.registry.get(engine).testConnection(params);
   }

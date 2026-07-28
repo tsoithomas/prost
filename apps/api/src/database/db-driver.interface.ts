@@ -51,6 +51,12 @@ export interface DbDriver {
    * via the provided `q` share one connection/transaction, so the batch is atomic — all-or-nothing.
    */
   withTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T>;
+  /**
+   * Like `withTransaction` but engine-enforced read-only: any write inside `fn` fails at the engine
+   * (PG `SET TRANSACTION READ ONLY`, MySQL `START TRANSACTION READ ONLY`, SQLite `PRAGMA query_only`).
+   * Defense-in-depth for the agentic read-query path (Phase 31), on top of the parser proof.
+   */
+  withReadOnlyTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T>;
   testConnection(params: ConnectionParams): Promise<TestConnectionResult>;
 
   // --- dialect helpers ---

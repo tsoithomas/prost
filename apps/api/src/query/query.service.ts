@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { Parser } from 'node-sql-parser';
 import type {
   ColumnMetadata,
@@ -39,6 +39,9 @@ const EXPLAIN_RE = /^\s*explain\b\s*(\(([^)]*)\))?/i;
 
 /** node-sql-parser statement `type`s that mutate data — used to unmask writes hidden inside a SELECT. */
 const WRITE_STATEMENT_TYPES = new Set(['insert', 'update', 'delete', 'replace']);
+
+/** Row cap for a query the agent runs (Phase 31) — bounds both the grid page and the model's sample source. */
+const AGENT_QUERY_ROW_LIMIT = 100;
 
 /**
  * True if the AST subtree contains a data-modifying statement. A top-level `SELECT` can still write
@@ -296,6 +299,56 @@ export class QueryService {
       throw new BadRequestException('Only SELECT statements can be streamed');
     }
     return statementText;
+  }
+
+  /**
+   * Runs a single, provably read-only `SELECT` for the agentic assistant (Phase 31) and returns a
+   * bounded grid result. Read-only is proven *before* execution — exactly one statement, parseable,
+   * a `SELECT` with no data-modifying CTE, not EXPLAIN — and enforced *during* execution by an engine
+   * read-only transaction (belt and suspenders). Unlike user-authored SQL, model-authored SQL that
+   * the parser can't parse is **refused** rather than trusted via the lexical fallback.
+   */
+  async runReadOnlyQuery(connectionId: string, sql: string): Promise<RowsStatementResult> {
+    const statements = splitStatements(sql);
+    if (statements.length !== 1) {
+      throw new UnprocessableEntityException('The assistant may only run a single read-only SELECT statement');
+    }
+    const statementText = statements[0]!;
+    const driver = await this.pool.driverFor(connectionId);
+
+    if (EXPLAIN_RE.test(statementText)) {
+      throw new UnprocessableEntityException('EXPLAIN cannot be run by the assistant');
+    }
+    const ast = this.tryAstifyOne(driver, statementText);
+    if (ast === null) {
+      throw new UnprocessableEntityException('The statement could not be parsed as a read-only query');
+    }
+    if (ast.type !== 'select' || astContainsWriteStatement(ast)) {
+      throw new UnprocessableEntityException('Only read-only SELECT statements can be run by the assistant');
+    }
+
+    const { sql: pagedSql, params } = buildPagedQuery(statementText, driver.placeholder, AGENT_QUERY_ROW_LIMIT);
+    const start = Date.now();
+    const queryResult = await this.pool.withReadOnlyTransaction(connectionId, (q) => q({ sql: pagedSql, params }));
+    const executionTimeMs = Date.now() - start;
+
+    const { rows, fields } = queryResult;
+    const truncated = rows.length > AGENT_QUERY_ROW_LIMIT;
+    const pageRows = truncated ? rows.slice(0, AGENT_QUERY_ROW_LIMIT) : rows;
+
+    const editability = await this.resolveEditability(connectionId, [ast]);
+    const columns = await this.mapColumns(connectionId, driver, fields, editability.primaryKey);
+
+    return {
+      kind: 'rows',
+      sql: statementText,
+      rows: pageRows,
+      columns,
+      totalRows: pageRows.length,
+      truncated,
+      executionTimeMs,
+      ...editability,
+    };
   }
 
   /** Resolve the editability of a single SELECT statement (same analysis the initial execute uses). */

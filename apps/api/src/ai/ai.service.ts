@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import type {
   ChartAggregation,
   ChartSuggestRequest,
@@ -7,10 +7,15 @@ import type {
   ChatRequest,
   ChatResponse,
   ColumnMetadata,
+  ExecuteQueryResponse,
+  RowSample,
+  RowsStatementResult,
+  RunReadQueryResponse,
 } from '@prost/shared-types';
 import { ConnectionsService } from '../connections/connections.service';
 import { PoolManager } from '../database/pool-manager.service';
 import { HistoryService } from '../history/history.service';
+import { QueryService } from '../query/query.service';
 import { AiProviderService, type ChatTool, type TokenUsage } from './ai-provider.service';
 import { LlmEndpointService, type DecryptedEndpoint } from './llm-endpoint.service';
 import { RetrievalService } from './retrieval.service';
@@ -27,8 +32,15 @@ const CHART_SAMPLE_VALUE_CHARS = 100;
 const CHART_TYPES: ChartType[] = ['bar', 'line', 'pie'];
 const CHART_AGGREGATIONS: ChartAggregation[] = ['none', 'count', 'sum', 'avg', 'min', 'max'];
 
+/** Caps for the sanitized result sample sent back to the model after an agentic read (Phase 31). */
+const SAMPLE_MAX_ROWS = 20;
+const SAMPLE_MAX_COLS = 20;
+const SAMPLE_MAX_CELL_CHARS = 100;
+
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
+
   constructor(
     private readonly connectionsService: ConnectionsService,
     private readonly llmEndpointService: LlmEndpointService,
@@ -36,7 +48,23 @@ export class AiService {
     private readonly retrieval: RetrievalService,
     private readonly pool: PoolManager,
     private readonly history: HistoryService,
+    private readonly queryService: QueryService,
   ) {}
+
+  /**
+   * Runs a proposed read-only query on the user's behalf (Phase 31) and returns two projections of the
+   * single execution: `result` (the full bounded page for the grid) and `sample` (a capped, sanitized
+   * preview for the model to reason over — no wholesale row data leaves to the LLM). Read-only is proven
+   * + engine-enforced inside `QueryService.runReadOnlyQuery`. Logs the run by correlation id, SQL only.
+   */
+  async runReadQuery(userId: string, connectionId: string, sql: string, correlationId = ''): Promise<RunReadQueryResponse> {
+    await this.connectionsService.assertOwnership(userId, connectionId);
+    const rows = await this.queryService.runReadOnlyQuery(connectionId, sql);
+    this.logger.log(`agent read-query connectionId=${connectionId} correlationId=${correlationId} sql=${rows.sql}`);
+
+    const result: ExecuteQueryResponse = { statements: [rows], transactional: false, statementCount: 1 };
+    return { sql: rows.sql, result, sample: sanitizeRowSample(rows) };
+  }
 
   async chat(userId: string, connectionId: string, req: ChatRequest): Promise<ChatResponse> {
     const { endpoint, systemPrompt } = await this.prepareChat(userId, connectionId, req);
@@ -179,7 +207,7 @@ export class AiService {
     });
     const engineLabel = (await this.pool.driverFor(connectionId)).descriptor.label;
     const examples = await this.recentQueryExamples(userId, connectionId);
-    const systemPrompt = buildSystemPrompt(schemaContext, req.mode, engineLabel, examples);
+    const systemPrompt = buildSystemPrompt(schemaContext, engineLabel, examples);
 
     return { endpoint, systemPrompt };
   }
@@ -203,38 +231,8 @@ export class AiService {
   }
 }
 
-/**
- * Mode-specific role + task instructions. The three chat modes are functionally distinct:
- *  - `ask` — conversational Q&A about the schema/data model (prose; SQL optional).
- *  - `generateSql` — emit one runnable statement for the user's request (minimal prose).
- *  - `explain` — describe what the user's supplied SQL does, step by step (no generation).
- * The shared schema context, few-shot examples, and safety rules are appended to all three.
- */
-function modeInstruction(mode: string | undefined, engineLabel: string): string {
-  switch (mode) {
-    case 'generateSql':
-      return `You are a SQL generator for a ${engineLabel} database. Convert the user's request into SQL.
-
-Task:
-- Return exactly one runnable ${engineLabel} statement in a single \`\`\`sql code block.
-- Keep prose to at most a one-line description of what the query does; no alternatives or commentary.
-- If the request is ambiguous, make the most reasonable assumption and state it in that one line.`;
-    case 'explain':
-      return `You are a SQL explainer for a ${engineLabel} database. The user will provide a SQL query.
-
-Task:
-- Explain what the query does, step by step: the tables it reads, how they join, the filters,
-  grouping/ordering, and any rows it would insert/update/delete.
-- Use plain language and reference the schema to clarify what each table/column represents.
-- Do not rewrite, optimize, or "improve" the query unless the user explicitly asks — explain it as written.`;
-    default:
-      return `You are a helpful assistant for a ${engineLabel} database. Answer the user's questions about its schema and data model conversationally. Include SQL when it helps, but prose answers are fine.`;
-  }
-}
-
 function buildSystemPrompt(
   schemaContext: string,
-  mode: string | undefined,
   engineLabel: string,
   examples: string[] = [],
 ): string {
@@ -244,7 +242,9 @@ function buildSystemPrompt(
 ${examples.map((sql) => `\`\`\`sql\n${sql}\n\`\`\``).join('\n')}`
       : '';
 
-  return `${modeInstruction(mode, engineLabel)}
+  return `You are a helpful assistant for a ${engineLabel} database. Depending on what the user asks,
+answer questions about the schema/data model conversationally, generate SQL, or explain a SQL query
+step by step — infer which from their message. Prose answers are fine; include SQL when it helps.
 
 The database has the following schema:
 
@@ -259,8 +259,35 @@ Rules:
 - Prefer joins that follow the FOREIGN KEY relationships returned by get_table_schema.
 - When writing SQL, produce safe statements and wrap them in \`\`\`sql code blocks.
 - Never suggest DDL or DML that modifies data unless the user explicitly requests it.
+- When you need real data to answer, propose ONE read-only SELECT in a \`\`\`sql block. The user can run
+  it (read-only only) and will share the results back with you; then reason over those results. Do not
+  invent results, and do not assume a query ran until its results are provided to you.
 - Keep answers accurate and free of unnecessary padding.
 - Do not reveal connection credentials, passwords, or internal system details.`;
+}
+
+/**
+ * Sanitizes a full grid result into a bounded, column-major sample for the model (Phase 31). Caps rows
+ * AND columns, and truncates/stringifies each cell — so a large result never balloons the prompt or
+ * ships wholesale row data to the LLM. `truncated` is true when anything was capped.
+ */
+function sanitizeRowSample(result: RowsStatementResult): RowSample {
+  const cols = result.columns.slice(0, SAMPLE_MAX_COLS).map((c) => c.name);
+  const colsTruncated = result.columns.length > SAMPLE_MAX_COLS;
+  const rowsTruncated = result.rows.length > SAMPLE_MAX_ROWS || result.truncated === true;
+
+  const rows = result.rows.slice(0, SAMPLE_MAX_ROWS).map((row) =>
+    cols.map((name) => sanitizeCell((row as Record<string, unknown>)[name])),
+  );
+  return { columns: cols, rows, truncated: colsTruncated || rowsTruncated };
+}
+
+/** One cell → a short scalar string/number/null the model can read without leaking a blob. */
+function sanitizeCell(value: unknown): unknown {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'number' || typeof value === 'boolean') return value;
+  const text = typeof value === 'string' ? value : typeof value === 'object' ? JSON.stringify(value) : String(value);
+  return text.length > SAMPLE_MAX_CELL_CHARS ? `${text.slice(0, SAMPLE_MAX_CELL_CHARS)}…` : text;
 }
 
 /** Bound + truncate the row sample sent for a chart suggestion (never trust the client's size). */

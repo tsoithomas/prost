@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import type { ConnectionDto, ConnectionEnvironment, DbEngine, DbEngineDescriptor } from '@prost/shared-types';
 import { CONNECTION_ENVIRONMENTS, isSystemConnectionId } from '@prost/shared-types';
 import { parseConnectionString } from '@prost/utils';
-import { Badge, Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
+import { Badge, Button, IconButton, Input, Surface, Switch } from '@prost/ui';
 import {
   useConnections,
   useCreateConnection,
@@ -596,7 +596,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
 
               <div className="flex flex-col gap-sm">
                 <label className="flex w-max items-center gap-sm text-sm text-text">
-                  <Checkbox
+                  <Switch
                     checked={form.sslEnabled}
                     onChange={(event) => updateField('sslEnabled', event.target.checked)}
                   />
@@ -604,7 +604,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                 </label>
                 {form.sslEnabled ? (
                   <label className="flex w-max items-center gap-sm pl-lg text-sm text-text">
-                    <Checkbox
+                    <Switch
                       checked={form.sslRejectUnauthorized}
                       onChange={(event) => updateField('sslRejectUnauthorized', event.target.checked)}
                     />
@@ -636,7 +636,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                   </div>
                 </FormField>
                 <label className="flex w-max items-center gap-sm text-sm text-text">
-                  <Checkbox
+                  <Switch
                     checked={form.readOnly}
                     onChange={(event) => updateField('readOnly', event.target.checked)}
                   />

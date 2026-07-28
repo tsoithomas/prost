@@ -17,7 +17,7 @@ import type { ColumnRenderMode, DbEngineDescriptor, ExecuteQueryResponse, QueryP
 import {
   Badge,
   Button,
-  Checkbox,
+  Switch,
   IconButton,
   Input,
   PROST_DARK_THEME,
@@ -90,6 +90,8 @@ export function SqlEditorView() {
   const setTabSql = useWorkspaceStore((state) => state.setTabSql);
   const setTabResult = useWorkspaceStore((state) => state.setTabResult);
   const setTabTransactional = useWorkspaceStore((state) => state.setTabTransactional);
+  const transactionalDefault = useWorkspaceStore((state) => state.transactionalDefault);
+  const setTransactionalDefault = useWorkspaceStore((state) => state.setTransactionalDefault);
   const queryClient = useQueryClient();
   const monacoTheme = resolveColorMode(colorMode) === 'dark' ? PROST_DARK_THEME : PROST_LIGHT_THEME;
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
@@ -102,7 +104,8 @@ export function SqlEditorView() {
   const [monacoThemeName, setMonacoThemeName] = useState(monacoTheme);
 
   const sql = activeTab?.sql ?? INITIAL_SQL;
-  const transactional = activeTab?.transactional ?? false;
+  // A tab that hasn't been explicitly toggled follows the persisted default (survives reloads).
+  const transactional = activeTab?.transactional ?? transactionalDefault;
   const [saveSnippetName, setSaveSnippetName] = useState<string | null>(null);
   const [response, setResponse] = useState<ExecuteQueryResponse | null>(activeTab?.result ?? null);
   // Structured query plan (Phase 26). When set, it takes over the results slot; cleared on run/tab-switch.
@@ -569,9 +572,12 @@ export function SqlEditorView() {
             className="flex shrink-0 items-center gap-xs text-xs text-text-faint"
             title="Wrap the script in BEGIN/COMMIT and roll back on any error. Don't combine with your own BEGIN/COMMIT."
           >
-            <Checkbox
+            <Switch
               checked={transactional}
-              onChange={(e) => setTabTransactional(activeTabId, e.target.checked)}
+              onChange={(e) => {
+                setTabTransactional(activeTabId, e.target.checked);
+                setTransactionalDefault(e.target.checked); // remember across reloads + new tabs
+              }}
               aria-label="Run as transaction"
             />
             Transaction

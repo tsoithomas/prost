@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { ExecuteQueryResponse, RowFilter, SchemaObjectKind } from '@prost/shared-types';
 
 export interface WorkspaceTab {
@@ -55,6 +56,11 @@ interface WorkspaceState {
   tabs: WorkspaceTab[];
   activeTabId: string;
   pendingQuerySql: string | null;
+  /**
+   * Persisted default for the "Run as transaction" toggle. A query tab that hasn't been explicitly
+   * toggled falls back to this, so the setting survives reloads and applies across tabs (Phase 31.x).
+   */
+  transactionalDefault: boolean;
   cursorPosition: CursorPosition | null;
   /** A column the structure panel should scroll to + highlight (set by global search). */
   revealColumn: RevealColumnTarget | null;
@@ -96,6 +102,8 @@ interface WorkspaceState {
   setTabSql: (id: string, sql: string) => void;
   setTabResult: (id: string, result: ExecuteQueryResponse | null) => void;
   setTabTransactional: (id: string, transactional: boolean) => void;
+  /** Set the persisted default used by query tabs that haven't been individually toggled. */
+  setTransactionalDefault: (on: boolean) => void;
   loadQuery: (sql: string) => void;
   clearPendingQuerySql: () => void;
   setCursorPosition: (position: CursorPosition) => void;
@@ -129,10 +137,13 @@ function applyClose(
   return { tabs: next, activeTabId: nextActive };
 }
 
-export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
+export const useWorkspaceStore = create<WorkspaceState>()(
+  persist(
+    (set) => ({
   tabs: initialTabs,
   activeTabId: initialTabs[0]!.id,
   pendingQuerySql: null,
+  transactionalDefault: false,
   cursorPosition: null,
   revealColumn: null,
 
@@ -333,6 +344,8 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
       tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, transactional } : tab)),
     })),
 
+  setTransactionalDefault: (on) => set({ transactionalDefault: on }),
+
   loadQuery: (sql) =>
     set((state) => {
       const active = state.tabs.find((tab) => tab.id === state.activeTabId);
@@ -343,4 +356,11 @@ export const useWorkspaceStore = create<WorkspaceState>()((set) => ({
   clearPendingQuerySql: () => set({ pendingQuerySql: null }),
 
   setCursorPosition: (position) => set({ cursorPosition: position }),
-}));
+    }),
+    {
+      name: 'prost-workspace',
+      // Only the transaction default is durable — open tabs/results are session state.
+      partialize: (state) => ({ transactionalDefault: state.transactionalDefault }),
+    },
+  ),
+);

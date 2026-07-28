@@ -44,6 +44,7 @@ function createService(
   const pool = {
     run,
     withSession: vi.fn(),
+    withReadOnlyTransaction: vi.fn(),
     driverFor: vi.fn().mockResolvedValue(driver),
     defaultNamespace: vi.fn().mockResolvedValue(defaultNamespace),
     isReadOnly: vi.fn().mockResolvedValue(false),
@@ -52,6 +53,13 @@ function createService(
   // Mirrors `PoolManager.withSession`: runs `fn` against a `query` callback that proxies to
   // the same `run` mock, so transactional tests assert on the same call queue as autocommit tests.
   (pool.withSession as ReturnType<typeof vi.fn>).mockImplementation(
+    async (connectionId: string, fn: (query: (frag: SqlFragment) => Promise<DriverResult>) => Promise<unknown>) => {
+      const query = (frag: SqlFragment) => run(connectionId, frag);
+      return fn(query);
+    },
+  );
+  // Same proxy for the engine read-only transaction (Phase 31), so runReadOnlyQuery tests assert on `run`.
+  (pool.withReadOnlyTransaction as ReturnType<typeof vi.fn>).mockImplementation(
     async (connectionId: string, fn: (query: (frag: SqlFragment) => Promise<DriverResult>) => Promise<unknown>) => {
       const query = (frag: SqlFragment) => run(connectionId, frag);
       return fn(query);
@@ -68,6 +76,7 @@ function createService(
     auditRecord,
     run,
     withSession: pool.withSession as ReturnType<typeof vi.fn>,
+    withReadOnlyTransaction: pool.withReadOnlyTransaction as ReturnType<typeof vi.fn>,
     isReadOnly: pool.isReadOnly as ReturnType<typeof vi.fn>,
     metadataService,
     record,
@@ -620,5 +629,59 @@ describe('QueryService.execute — empty input', () => {
     expect(response).toEqual({ statements: [], transactional: false, statementCount: 0 });
     expect(run).not.toHaveBeenCalled();
     expect(record).not.toHaveBeenCalled();
+  });
+});
+
+describe('QueryService.runReadOnlyQuery (Phase 31)', () => {
+  it('runs a proven SELECT inside the engine read-only transaction and returns bounded rows', async () => {
+    const run = vi
+      .fn()
+      .mockResolvedValueOnce(
+        result([{ id: 1, email: 'a@x.com' }], { fields: [{ name: 'id', dataTypeID: 23 }, { name: 'email', dataTypeID: 1043 }] }),
+      )
+      .mockResolvedValueOnce(pgTypeResult({ 23: 'int4', 1043: 'varchar' }));
+    const { service, withReadOnlyTransaction } = createService(run);
+
+    const stmt = await service.runReadOnlyQuery('conn-1', 'SELECT * FROM users');
+
+    // Ran through the read-only transaction seam (defense-in-depth).
+    expect(withReadOnlyTransaction).toHaveBeenCalledWith('conn-1', expect.any(Function));
+    // Bounded paged window.
+    const frag = run.mock.calls[0]![1];
+    expect(frag.sql).toContain('AS __prost_query LIMIT $1 OFFSET $2');
+    expect(stmt.kind).toBe('rows');
+    expect(stmt.rows).toEqual([{ id: 1, email: 'a@x.com' }]);
+  });
+
+  it('refuses a multi-statement input', async () => {
+    const { service, run } = createService();
+    await expect(service.runReadOnlyQuery('conn-1', 'SELECT 1; SELECT 2')).rejects.toThrow(/single read-only SELECT/i);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-SELECT statement', async () => {
+    const { service, run } = createService();
+    await expect(service.runReadOnlyQuery('conn-1', 'DELETE FROM users')).rejects.toThrow(/read-only SELECT/i);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('refuses a data-modifying CTE (never runs it — caught by the AST write-scan or as unparseable)', async () => {
+    const { service, run } = createService();
+    await expect(
+      service.runReadOnlyQuery('conn-1', "WITH x AS (INSERT INTO users(email) VALUES ('a') RETURNING id) SELECT * FROM x"),
+    ).rejects.toThrow(/read-only SELECT|parse/i);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('refuses EXPLAIN', async () => {
+    const { service, run } = createService();
+    await expect(service.runReadOnlyQuery('conn-1', 'EXPLAIN SELECT * FROM users')).rejects.toThrow(/EXPLAIN/i);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('refuses an unparseable statement (no lexical fallback for model SQL)', async () => {
+    const { service, run } = createService();
+    await expect(service.runReadOnlyQuery('conn-1', 'SELECT ((( totally not sql')).rejects.toThrow(/parse/i);
+    expect(run).not.toHaveBeenCalled();
   });
 });

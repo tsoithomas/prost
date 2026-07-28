@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Download, Pencil, Star, Trash2, X } from 'lucide-react';
 import clsx from 'clsx';
 import type { QueryHistoryDto } from '@prost/shared-types';
-import { Checkbox, IconButton, Input, Surface } from '@prost/ui';
+import { IconButton, Input, Surface, Switch } from '@prost/ui';
 import {
   useClearHistory,
   useDeleteHistory,
@@ -105,7 +105,7 @@ export function QueryHistoryList({ connectionId, onSelect }: QueryHistoryListPro
       </div>
 
       <label className="flex cursor-pointer items-center gap-xs px-sm text-xs text-text-muted">
-        <Checkbox checked={allConnections} onChange={(e) => setAllConnections(e.target.checked)} />
+        <Switch checked={allConnections} onChange={(e) => setAllConnections(e.target.checked)} />
         All connections
       </label>
 

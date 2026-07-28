@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Bot,
   Check,
   Copy,
   CornerDownLeft,
   Download,
-  FileCode,
   History,
+  Play,
   Settings2,
   Square,
   SquarePen,
@@ -15,9 +16,9 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import type { ChatMessage, ChatMode } from '@prost/shared-types';
+import type { ChatMessage } from '@prost/shared-types';
 import './chatMarkdown.css';
-import { Button, IconButton, Surface } from '@prost/ui';
+import { Button, IconButton, Surface, Switch } from '@prost/ui';
 import {
   fetchConversation,
   streamAiChat,
@@ -25,6 +26,7 @@ import {
   useConversations,
   useDeleteConversation,
   useLlmEndpoints,
+  useRunReadQuery,
   type ChatTokenUsage,
 } from '../api/ai';
 import { ApiError, apiErrorDetail } from '../lib/apiClient';
@@ -36,11 +38,20 @@ interface Props {
   connectionId: string;
 }
 
+/** Cap on consecutive auto-runs per user turn, so an agent can't loop propose→run→propose forever. */
+const MAX_AUTO_RUNS = 3;
+
+/** The first fenced ```sql block whose statement reads like a query (SELECT/WITH), or `null`. */
+function firstReadQueryBlock(content: string): string | null {
+  const match = /```sql\s*([\s\S]*?)```/i.exec(content);
+  const sql = match?.[1]?.trim();
+  return sql && /^(select|with)\b/i.test(sql) ? sql : null;
+}
+
 export function ChatPanel({ connectionId }: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [usages, setUsages] = useState<Record<number, ChatTokenUsage>>({});
   const [input, setInput] = useState('');
-  const [mode, setMode] = useState<ChatMode>('ask');
   const [error, setError] = useState<string | null>(null);
   const [manageOpen, setManageOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -48,18 +59,31 @@ export function ChatPanel({ connectionId }: Props) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const historyBtnRef = useRef<HTMLDivElement>(null);
+  // Viewport-anchored position for the history dropdown, which portals to <body> to escape the AI
+  // panel's `overflow-hidden` (otherwise it's clipped by the sidebar edge).
+  const [historyPos, setHistoryPos] = useState<{ top: number; right: number } | null>(null);
+  // Streaming status as a ref so post-stream callbacks (auto-run feed-back) see the up-to-date value.
+  const isStreamingRef = useRef(false);
+  // Bounds auto-run to a few rounds per user turn so a propose→run→propose loop can't run away.
+  const autoRunCountRef = useRef(0);
+  const pendingAutoRunSqlRef = useRef<string | null>(null);
+  // Always-current messages, so post-stream callbacks (the run→feed-back turn) append to the latest
+  // history instead of a stale closure snapshot (which would wipe the question + proposed SQL).
+  const messagesRef = useRef<ChatMessage[]>([]);
+  // The connection we've already auto-loaded the latest conversation for (once per connection).
+  const autoLoadedConnRef = useRef<string | null>(null);
+  // Live conversation id so a follow-up turn appends to the same thread despite the async id assignment.
+  const conversationIdRef = useRef<string | null>(null);
 
   const { data: endpoints = [], isLoading: endpointsLoading } = useLlmEndpoints();
   const { data: conversations = [] } = useConversations(connectionId);
   const appendConversation = useAppendConversation(connectionId);
   const deleteConversation = useDeleteConversation(connectionId);
   const loadQuery = useWorkspaceStore((state) => state.loadQuery);
-  // The active query tab's SQL — the subject for Explain mode (falls back to the first query tab).
-  const activeQuerySql = useWorkspaceStore((state) => {
-    const active = state.tabs.find((t) => t.id === state.activeTabId);
-    const target = active?.kind === 'query' ? active : state.tabs.find((t) => t.kind === 'query');
-    return target?.sql?.trim() ?? '';
-  });
+  const runReadQuery = useRunReadQuery(connectionId);
+  const autoRunReadQueries = useAiStore((s) => s.autoRunReadQueries);
+  const setAutoRunReadQueries = useAiStore((s) => s.setAutoRunReadQueries);
 
   const selectedEndpointId = useAiStore((s) => s.selectedEndpointId);
   const selectedModel = useAiStore((s) => s.selectedModel);
@@ -87,16 +111,29 @@ export function ChatPanel({ connectionId }: Props) {
   // Abort any in-flight stream when the panel unmounts.
   useEffect(() => () => abortRef.current?.abort(), []);
 
-  function sendMessage(text: string, sendMode: ChatMode) {
-    if (!text || isStreaming || !selectedEndpointId || !selectedModel) return;
+  // Mirror the latest messages + conversation id into refs for callbacks that fire outside the render.
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+
+  function sendMessage(text: string) {
+    if (!text || isStreamingRef.current || !selectedEndpointId || !selectedModel) return;
 
     const userMsg: ChatMessage = { role: 'user', content: text };
-    const next: ChatMessage[] = [...messages, userMsg];
+    // Build from the live ref, not the render's `messages` closure — the feed-back turn runs from an
+    // older closure and would otherwise drop the prior turns.
+    const next: ChatMessage[] = [...messagesRef.current, userMsg];
     const assistantIndex = next.length; // index of the seeded assistant message below
     // Seed an empty assistant message that fills in as deltas stream in.
-    setMessages([...next, { role: 'assistant', content: '' }]);
+    const seeded = [...next, { role: 'assistant' as const, content: '' }];
+    messagesRef.current = seeded;
+    setMessages(seeded);
     setInput('');
     setError(null);
+    isStreamingRef.current = true;
     setIsStreaming(true);
 
     const controller = new AbortController();
@@ -106,7 +143,7 @@ export function ChatPanel({ connectionId }: Props) {
 
     streamAiChat(
       connectionId,
-      { messages: next, mode: sendMode, endpointId: selectedEndpointId, model: selectedModel },
+      { messages: next, endpointId: selectedEndpointId, model: selectedModel },
       {
         signal: controller.signal,
         onUsage: (usage) => setUsages((prev) => ({ ...prev, [assistantIndex]: usage })),
@@ -125,15 +162,28 @@ export function ChatPanel({ connectionId }: Props) {
       },
     )
       .then(() => {
-        // Persist the completed exchange, adopting the server-assigned id for the thread.
+        // Persist the completed exchange, adopting the server-assigned id for the thread. Use the id
+        // ref (not the closure) so a follow-up turn (the run→feed-back) lands in the SAME conversation
+        // rather than forking a new one — otherwise a reload would show only the tail without the question.
         if (!assistantContent) return;
         appendConversation.mutate(
           {
-            ...(conversationId ? { conversationId } : {}),
+            ...(conversationIdRef.current ? { conversationId: conversationIdRef.current } : {}),
             messages: [userMsg, { role: 'assistant', content: assistantContent }],
           },
-          { onSuccess: (convo) => setConversationId(convo.id) },
+          {
+            onSuccess: (convo) => {
+              conversationIdRef.current = convo.id;
+              setConversationId(convo.id);
+            },
+          },
         );
+        // Auto-run: if enabled (read live, not from a stale closure) and under the round cap, queue the
+        // first proposed read-only query to run once streaming has fully settled (in `finally`).
+        if (useAiStore.getState().autoRunReadQueries && autoRunCountRef.current < MAX_AUTO_RUNS) {
+          const sql = firstReadQueryBlock(assistantContent);
+          if (sql) pendingAutoRunSqlRef.current = sql;
+        }
       })
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === 'AbortError') return; // Stop: keep partial
@@ -153,9 +203,38 @@ export function ChatPanel({ connectionId }: Props) {
         }
       })
       .finally(() => {
+        isStreamingRef.current = false;
         setIsStreaming(false);
         abortRef.current = null;
+        const auto = pendingAutoRunSqlRef.current;
+        pendingAutoRunSqlRef.current = null;
+        if (auto) {
+          autoRunCountRef.current += 1;
+          void handleRunReadQuery(auto);
+        }
       });
+  }
+
+  /**
+   * Run a read-only query the assistant proposed (Phase 31). The server proves + engine-enforces
+   * read-only; a sanitized sample is fed back so the model answers inline. A refusal (422) surfaces its
+   * reason. Used by the per-query "Run" button and auto-run. The fed-back turn is plain text (no ```
+   * fences) since user messages render raw, not as markdown.
+   */
+  async function handleRunReadQuery(sql: string) {
+    if (isStreamingRef.current || runReadQuery.isPending) return;
+    setError(null);
+    try {
+      const res = await runReadQuery.mutateAsync({ sql });
+      const note = res.sample.truncated ? ' (truncated sample)' : '';
+      const feedback =
+        `Results of the query I proposed${note}, as JSON (columns then rows):\n` +
+        `${JSON.stringify({ columns: res.sample.columns, rows: res.sample.rows })}\n\n` +
+        `Answer the original question using these results.`;
+      sendMessage(feedback);
+    } catch (err) {
+      setError(apiErrorDetail(err, 'Could not run the query.'));
+    }
   }
 
   function handleStop() {
@@ -195,31 +274,34 @@ export function ChatPanel({ connectionId }: Props) {
   }
 
   function handleSend() {
-    if (mode === 'explain') {
-      // Explain's subject is the current editor query; any typed text is an extra instruction.
-      const typed = input.trim();
-      if (!activeQuerySql && !typed) return;
-      const parts: string[] = [];
-      if (activeQuerySql) parts.push(`Explain this query:\n\`\`\`sql\n${activeQuerySql}\n\`\`\``);
-      if (typed) parts.push(typed);
-      sendMessage(parts.join('\n\n'), 'explain');
-      return;
-    }
-    sendMessage(input.trim(), mode);
+    // A fresh user turn resets the auto-run budget (bounds a runaway propose→run→propose loop).
+    autoRunCountRef.current = 0;
+    sendMessage(input.trim());
   }
 
-  const canSend = mode === 'explain' ? Boolean(activeQuerySql || input.trim()) : Boolean(input.trim());
+  const canSend = Boolean(input.trim());
 
-  // Consume a prompt handed in from elsewhere ("Fix with AI"): switch to Ask mode and auto-send once a
-  // model is selected, then clear the hand-off so it doesn't re-fire. If the panel just opened, the
-  // model may not be picked yet — this effect re-runs when the selection lands.
+  // Consume a prompt handed in from elsewhere ("Fix with AI"): auto-send once a model is selected, then
+  // clear the hand-off so it doesn't re-fire. If the panel just opened, the model may not be picked yet
+  // — this effect re-runs when the selection lands.
   useEffect(() => {
     if (!pendingChatPrompt || !selectedEndpointId || !selectedModel) return;
-    setMode('ask');
-    sendMessage(pendingChatPrompt, 'ask');
+    sendMessage(pendingChatPrompt);
     clearPendingChatPrompt();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingChatPrompt, selectedEndpointId, selectedModel]);
+
+  // On open (and per connection), resume the most recent conversation so the user can continue it —
+  // but only into a fresh, empty panel, and never over a "Fix with AI" hand-off that's taking over.
+  useEffect(() => {
+    if (pendingChatPrompt || conversations.length === 0) return;
+    if (autoLoadedConnRef.current === connectionId) return;
+    autoLoadedConnRef.current = connectionId;
+    if (messages.length === 0 && conversationId === null) {
+      void handleLoadConversation(conversations[0]!.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionId, conversations, pendingChatPrompt]);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -277,46 +359,54 @@ export function ChatPanel({ connectionId }: Props) {
               </optgroup>
             ))}
           </select>
-          <div className="relative">
+          <div ref={historyBtnRef} className="relative">
             <IconButton
               aria-label="Chat history"
-              onClick={() => setHistoryOpen((v) => !v)}
+              onClick={() => {
+                const rect = historyBtnRef.current?.getBoundingClientRect();
+                if (rect) setHistoryPos({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                setHistoryOpen((v) => !v);
+              }}
               disabled={conversations.length === 0}
             >
               <History size={15} />
             </IconButton>
-            {historyOpen ? (
-              <>
-                <div className="fixed inset-0 z-10" onClick={() => setHistoryOpen(false)} />
-                <Surface
-                  level="overlay"
-                  bordered
-                  className="absolute right-0 top-8 z-20 max-h-80 w-64 overflow-y-auto rounded-sm p-xs shadow-lg"
-                >
-                  {conversations.map((c) => (
-                    <div key={c.id} className="group flex items-center gap-xs rounded-sm hover:bg-surface-hover">
-                      <button
-                        type="button"
-                        onClick={() => void handleLoadConversation(c.id)}
-                        className={`flex-1 truncate px-sm py-1.5 text-left text-xs ${
-                          c.id === conversationId ? 'text-accent' : 'text-text'
-                        }`}
-                        title={c.title ?? 'Untitled'}
-                      >
-                        {c.title ?? 'Untitled'}
-                      </button>
-                      <IconButton
-                        aria-label={`Delete conversation ${c.title ?? ''}`}
-                        className="mr-1 opacity-0 transition-opacity group-hover:opacity-100"
-                        onClick={() => handleDeleteConversation(c.id)}
-                      >
-                        <Trash2 size={13} />
-                      </IconButton>
-                    </div>
-                  ))}
-                </Surface>
-              </>
-            ) : null}
+            {historyOpen && historyPos
+              ? createPortal(
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setHistoryOpen(false)} />
+                    <Surface
+                      level="overlay"
+                      bordered
+                      className="fixed z-50 max-h-80 w-64 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-sm p-xs shadow-lg"
+                      style={{ top: historyPos.top, right: historyPos.right }}
+                    >
+                      {conversations.map((c) => (
+                        <div key={c.id} className="group flex items-center gap-xs rounded-sm hover:bg-surface-hover">
+                          <button
+                            type="button"
+                            onClick={() => void handleLoadConversation(c.id)}
+                            className={`flex-1 truncate px-sm py-1.5 text-left text-xs ${
+                              c.id === conversationId ? 'text-accent' : 'text-text'
+                            }`}
+                            title={c.title ?? 'Untitled'}
+                          >
+                            {c.title ?? 'Untitled'}
+                          </button>
+                          <IconButton
+                            aria-label={`Delete conversation ${c.title ?? ''}`}
+                            className="mr-1 opacity-0 transition-opacity group-hover:opacity-100"
+                            onClick={() => handleDeleteConversation(c.id)}
+                          >
+                            <Trash2 size={13} />
+                          </IconButton>
+                        </div>
+                      ))}
+                    </Surface>
+                  </>,
+                  document.body,
+                )
+              : null}
           </div>
           <IconButton
             aria-label="New chat"
@@ -330,22 +420,19 @@ export function ChatPanel({ connectionId }: Props) {
           </IconButton>
         </div>
 
-        {/* Mode selector */}
-        <div className="flex gap-1 border-b border-border px-sm py-1">
-          {(['ask', 'generateSql', 'explain'] as ChatMode[]).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => setMode(m)}
-              className={`rounded-sm px-sm py-0.5 text-xs transition-colors ${
-                mode === m
-                  ? 'bg-accent-muted font-medium text-accent'
-                  : 'text-text-muted hover:bg-surface-hover hover:text-text'
-              }`}
-            >
-              {m === 'ask' ? 'Ask' : m === 'generateSql' ? 'Generate SQL' : 'Explain'}
-            </button>
-          ))}
+        {/* Agentic auto-run toggle */}
+        <div className="flex items-center border-b border-border px-sm py-1">
+          <label
+            className="ml-auto flex items-center gap-xs text-xs text-text-muted"
+            title="Run the assistant's proposed read-only queries automatically, without a per-query confirm."
+          >
+            <Switch
+              checked={autoRunReadQueries}
+              onChange={(e) => setAutoRunReadQueries(e.target.checked)}
+              aria-label="Auto-run read-only queries"
+            />
+            Auto-run
+          </label>
         </div>
 
         {/* Message list */}
@@ -359,7 +446,7 @@ export function ChatPanel({ connectionId }: Props) {
             // Skip the seeded empty assistant placeholder — the typing indicator stands in until the
             // first token lands.
             msg.role === 'assistant' && msg.content === '' ? null : (
-              <MessageBubble key={i} msg={msg} usage={usages[i]} onLoadSql={loadQuery} />
+              <MessageBubble key={i} msg={msg} usage={usages[i]} onLoadSql={loadQuery} onRunReadQuery={handleRunReadQuery} />
             ),
           )}
           {awaitingFirstToken ? <TypingIndicator /> : null}
@@ -369,18 +456,12 @@ export function ChatPanel({ connectionId }: Props) {
 
         {/* Input */}
         <Surface level="raised" className="border-t border-border p-sm">
-          {mode === 'explain' ? (
-            <p className="mb-1 flex items-center gap-xs text-xs text-text-faint">
-              <FileCode size={12} />
-              {activeQuerySql ? 'Explaining your current query' : 'Open or type a query to explain'}
-            </p>
-          ) : null}
           <div className="flex items-end gap-sm">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={placeholderForMode(mode, Boolean(activeQuerySql))}
+              placeholder="Ask a question, generate SQL, or paste a query to explain…"
               rows={2}
               className="min-h-[2.5rem] flex-1 resize-none rounded-sm border border-border bg-surface px-sm py-xs text-sm text-text placeholder-text-faint focus:border-accent focus:outline-none"
             />
@@ -406,25 +487,16 @@ export function ChatPanel({ connectionId }: Props) {
   );
 }
 
-function placeholderForMode(mode: ChatMode, hasQuery: boolean): string {
-  switch (mode) {
-    case 'generateSql':
-      return 'Describe the query you want…';
-    case 'explain':
-      return hasQuery ? 'Add a question, or just send to explain your query…' : 'Type a query to explain…';
-    default:
-      return 'Ask about your schema, generate SQL…';
-  }
-}
-
 function MessageBubble({
   msg,
   usage,
   onLoadSql,
+  onRunReadQuery,
 }: {
   msg: ChatMessage;
   usage?: ChatTokenUsage;
   onLoadSql: (sql: string) => void;
+  onRunReadQuery: (sql: string) => void;
 }) {
   const isUser = msg.role === 'user';
 
@@ -438,7 +510,7 @@ function MessageBubble({
         {isUser ? (
           <span className="whitespace-pre-wrap">{msg.content}</span>
         ) : (
-          <MarkdownMessage content={msg.content} onLoadSql={onLoadSql} />
+          <MarkdownMessage content={msg.content} onLoadSql={onLoadSql} onRunReadQuery={onRunReadQuery} />
         )}
       </div>
       {usage ? (
@@ -462,7 +534,15 @@ function nodeText(node: React.ReactNode): string {
 }
 
 /** Renders an assistant reply as GitHub-flavored markdown; code blocks get copy + SQL load actions. */
-function MarkdownMessage({ content, onLoadSql }: { content: string; onLoadSql: (sql: string) => void }) {
+function MarkdownMessage({
+  content,
+  onLoadSql,
+  onRunReadQuery,
+}: {
+  content: string;
+  onLoadSql: (sql: string) => void;
+  onRunReadQuery: (sql: string) => void;
+}) {
   return (
     <div className="chat-markdown space-y-sm break-words leading-relaxed">
       <ReactMarkdown
@@ -504,7 +584,7 @@ function MarkdownMessage({ content, onLoadSql }: { content: string; onLoadSql: (
             }
             // `children` carries highlight.js token spans; `raw` is the plain text for the buttons.
             return (
-              <CodeBlock lang={match?.[1]} code={raw} codeClassName={className} onLoadSql={onLoadSql}>
+              <CodeBlock lang={match?.[1]} code={raw} codeClassName={className} onLoadSql={onLoadSql} onRunReadQuery={onRunReadQuery}>
                 {children}
               </CodeBlock>
             );
@@ -522,21 +602,36 @@ function CodeBlock({
   code,
   codeClassName,
   onLoadSql,
+  onRunReadQuery,
   children,
 }: {
   lang?: string;
   code: string;
   codeClassName?: string;
   onLoadSql: (sql: string) => void;
+  onRunReadQuery: (sql: string) => void;
   children: React.ReactNode;
 }) {
+  // The server proves + engine-enforces read-only, so "Run" is safe to offer on any SQL block; a
+  // non-read statement returns a clear refusal rather than executing.
+  const isSql = lang === 'sql';
   return (
     <div className="mt-sm">
       <pre className="overflow-x-auto rounded-sm bg-surface-sunken p-sm font-mono text-xs text-text">
         <code className={codeClassName}>{children}</code>
       </pre>
       <div className="mt-xs flex items-center gap-md">
-        {lang === 'sql' ? (
+        {isSql ? (
+          <button
+            type="button"
+            onClick={() => onRunReadQuery(code)}
+            className="flex items-center gap-xs text-xs text-accent hover:underline"
+          >
+            <Play size={11} />
+            Run (read-only)
+          </button>
+        ) : null}
+        {isSql ? (
           <button
             type="button"
             onClick={() => onLoadSql(code)}

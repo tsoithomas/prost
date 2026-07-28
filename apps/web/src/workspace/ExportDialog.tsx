@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import type { ExportFormat, ExportRequest, RowFilter } from '@prost/shared-types';
-import { Button, IconButton, Input, Surface } from '@prost/ui';
+import { Button, IconButton, Input, Surface, Switch } from '@prost/ui';
 import { useExport } from '../api/export';
 import { apiErrorDetail } from '../lib/apiClient';
 
@@ -119,11 +119,11 @@ export function ExportDialog({ open, onClose, connectionId, target }: Props) {
           {format === 'sql' ? (
             <div className="flex flex-col gap-sm">
               <label className="flex items-center gap-sm text-sm text-text">
-                <input type="checkbox" checked={includeSchema} onChange={(e) => setIncludeSchema(e.target.checked)} aria-label="Include schema" />
+                <Switch checked={includeSchema} onChange={(e) => setIncludeSchema(e.target.checked)} aria-label="Include schema" />
                 Include schema (CREATE TABLE)
               </label>
               <label className="flex items-center gap-sm text-sm text-text">
-                <input type="checkbox" checked={includeData} onChange={(e) => setIncludeData(e.target.checked)} aria-label="Include data" />
+                <Switch checked={includeData} onChange={(e) => setIncludeData(e.target.checked)} aria-label="Include data" />
                 Include data (INSERT)
               </label>
             </div>
@@ -131,7 +131,7 @@ export function ExportDialog({ open, onClose, connectionId, target }: Props) {
 
           {format !== 'sql' && hasFilter ? (
             <label className="flex items-center gap-sm text-sm text-text">
-              <input type="checkbox" checked={applyFilter} onChange={(e) => setApplyFilter(e.target.checked)} aria-label="Apply current filter" />
+              <Switch checked={applyFilter} onChange={(e) => setApplyFilter(e.target.checked)} aria-label="Apply current filter" />
               Apply current filter
             </label>
           ) : null}
