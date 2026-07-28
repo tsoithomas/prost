@@ -1,12 +1,13 @@
 import { Body, Controller, HttpCode, HttpException, Logger, Param, Post, Res, UseGuards } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
-import type { ChatResponse } from '@prost/shared-types';
+import type { ChartSuggestResponse, ChatResponse } from '@prost/shared-types';
 import { UserThrottlerGuard } from '../common/user-throttler.guard';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import { AiService } from './ai.service';
 import type { TokenUsage } from './ai-provider.service';
 import { ChatDto } from './dto/chat.dto';
+import { ChartSuggestDto } from './dto/chart-suggest.dto';
 
 const AI_THROTTLE = {
   default: {
@@ -47,6 +48,24 @@ export class AiController {
     @Body() dto: ChatDto,
   ): Promise<ChatResponse> {
     return this.aiService.chat(user.userId, id, dto);
+  }
+
+  /**
+   * Suggest a chart for an already-loaded result page. The client sends only column metadata + a small
+   * row sample; the response is a validated suggestion or `null` (manual charting works regardless).
+   */
+  @SkipThrottle()
+  @UseGuards(UserThrottlerGuard)
+  @Throttle(AI_THROTTLE)
+  @Post(':id/ai/chart-suggest')
+  @HttpCode(200)
+  async chartSuggest(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: ChartSuggestDto,
+  ): Promise<ChartSuggestResponse> {
+    const suggestion = await this.aiService.suggestChart(user.userId, id, dto);
+    return { suggestion };
   }
 
   /**

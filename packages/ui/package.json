@@ -12,7 +12,8 @@
   "dependencies": {
     "@prost/shared-types": "workspace:*",
     "ag-grid-community": "^33",
-    "clsx": "^2"
+    "clsx": "^2",
+    "recharts": "^2.15.0"
   },
   "peerDependencies": {
     "react": "^19"

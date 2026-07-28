@@ -1,6 +1,6 @@
 import { BadRequestException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
-import type { ChatRequest } from '@prost/shared-types';
+import type { ChartSuggestRequest, ChatRequest, ColumnMetadata } from '@prost/shared-types';
 import type { ConnectionsService } from '../connections/connections.service';
 import type { PoolManager } from '../database/pool-manager.service';
 import type { HistoryService } from '../history/history.service';
@@ -238,5 +238,104 @@ describe('AiService.chat', () => {
     provider.complete = vi.fn().mockImplementation(async () => { order.push('provider'); return 'done'; });
     await service.chat('user-1', 'conn-1', REQ);
     expect(order).toEqual(['retrieval', 'provider']);
+  });
+});
+
+function col(name: string, dataType: string): ColumnMetadata {
+  return { name, dataType, nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null };
+}
+
+const CHART_COLUMNS: ColumnMetadata[] = [col('status', 'text'), col('count', 'integer')];
+
+const CHART_REQ: ChartSuggestRequest = {
+  endpointId: 'ep-1',
+  model: 'gpt-4o',
+  columns: CHART_COLUMNS,
+  sample: [{ status: 'open', count: 3 }],
+};
+
+describe('AiService.suggestChart', () => {
+  it('returns a validated suggestion parsed from the model JSON', async () => {
+    const { service } = createService({
+      providerResponse: '{"type":"bar","categoryColumn":"status","valueColumn":"count","aggregation":"sum"}',
+    });
+    const result = await service.suggestChart('user-1', 'conn-1', CHART_REQ);
+    expect(result).toEqual({ type: 'bar', categoryColumn: 'status', valueColumn: 'count', aggregation: 'sum' });
+  });
+
+  it('parses a suggestion embedded in prose/markdown and keeps an explicit aggregation', async () => {
+    const { service } = createService({
+      providerResponse: 'Sure!\n```json\n{"type":"pie","categoryColumn":"status","valueColumn":"count","aggregation":"avg"}\n```',
+    });
+    const result = await service.suggestChart('user-1', 'conn-1', CHART_REQ);
+    expect(result).toEqual({ type: 'pie', categoryColumn: 'status', valueColumn: 'count', aggregation: 'avg' });
+  });
+
+  it('defaults aggregation to "sum" when the model omits or invalidates it', async () => {
+    const omitted = createService({ providerResponse: '{"type":"bar","categoryColumn":"status","valueColumn":"count"}' });
+    expect(await omitted.service.suggestChart('user-1', 'conn-1', CHART_REQ)).toEqual({
+      type: 'bar', categoryColumn: 'status', valueColumn: 'count', aggregation: 'sum',
+    });
+
+    const invalid = createService({
+      providerResponse: '{"type":"bar","categoryColumn":"status","valueColumn":"count","aggregation":"median"}',
+    });
+    expect(await invalid.service.suggestChart('user-1', 'conn-1', CHART_REQ)).toMatchObject({ aggregation: 'sum' });
+  });
+
+  it('returns null when the model names a column that does not exist', async () => {
+    const { service } = createService({
+      providerResponse: '{"type":"bar","categoryColumn":"status","valueColumn":"ghost"}',
+    });
+    expect(await service.suggestChart('user-1', 'conn-1', CHART_REQ)).toBeNull();
+  });
+
+  it('returns null for an invalid chart type or unparseable content', async () => {
+    const bad = createService({ providerResponse: '{"type":"scatter","categoryColumn":"status","valueColumn":"count"}' });
+    expect(await bad.service.suggestChart('user-1', 'conn-1', CHART_REQ)).toBeNull();
+
+    const garbage = createService({ providerResponse: 'no json here' });
+    expect(await garbage.service.suggestChart('user-1', 'conn-1', CHART_REQ)).toBeNull();
+  });
+
+  it('rejects a model not on the endpoint with BadRequestException', async () => {
+    const { service, provider } = createService();
+    await expect(
+      service.suggestChart('user-1', 'conn-1', { ...CHART_REQ, model: 'gpt-nonexistent' }),
+    ).rejects.toThrow(BadRequestException);
+    expect(provider.complete).not.toHaveBeenCalled();
+  });
+
+  it('maps a provider failure to ServiceUnavailableException', async () => {
+    const { service } = createService({ providerThrows: true });
+    await expect(service.suggestChart('user-1', 'conn-1', CHART_REQ)).rejects.toThrow(ServiceUnavailableException);
+  });
+
+  it('sends no schema context — only columns + the sample (never buildContext)', async () => {
+    const { service, retrieval, provider } = createService({
+      providerResponse: '{"type":"bar","categoryColumn":"status","valueColumn":"count"}',
+    });
+    await service.suggestChart('user-1', 'conn-1', CHART_REQ);
+    expect(retrieval.buildContext).not.toHaveBeenCalled();
+    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    expect(opts.systemPrompt).toContain('status');
+    expect(opts.systemPrompt).toContain('count');
+  });
+
+  it('caps the sample at 15 rows and truncates long values before sending', async () => {
+    const { service, provider } = createService({
+      providerResponse: '{"type":"bar","categoryColumn":"status","valueColumn":"count"}',
+    });
+    const longValue = 'x'.repeat(500);
+    const sample = Array.from({ length: 50 }, (_, i) => ({ status: longValue, count: i }));
+    await service.suggestChart('user-1', 'conn-1', { ...CHART_REQ, sample });
+
+    const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    // The prompt embeds the sanitized sample as JSON; parse it back out to assert the caps.
+    const jsonSlice = opts.systemPrompt.slice(opts.systemPrompt.indexOf('['), opts.systemPrompt.indexOf(']') + 1);
+    const sent = JSON.parse(jsonSlice) as { status: string }[];
+    expect(sent).toHaveLength(15);
+    expect(sent[0]!.status.length).toBeLessThanOrEqual(101); // 100 chars + ellipsis
+    expect(sent[0]!.status).not.toContain(longValue);
   });
 });

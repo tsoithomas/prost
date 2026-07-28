@@ -3,6 +3,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { formatterLanguage, SqlEditorView } from './SqlEditorView';
 import { renderWithProviders } from '../test/renderWithProviders';
+import { ApiError } from '../lib/apiClient';
 import type {
   CommandStatementResult,
   DbEngineDescriptor,
@@ -20,6 +21,20 @@ vi.mock('@monaco-editor/react', () => ({
 
 vi.mock('ag-grid-react', () => ({
   AgGridReact: () => <div data-testid="grid" />,
+}));
+
+// The chart panel is exercised in ResultChartPanel.test; here we only assert the Grid/Chart toggle
+// swaps to it, so a light stub keeps recharts out of this suite.
+vi.mock('./ResultChartPanel', () => ({
+  ResultChartPanel: () => <div data-testid="result-chart-panel" />,
+}));
+
+// FixWithAiButton renders only when an LLM endpoint exists — provide one so the error action shows.
+vi.mock('../api/ai', () => ({
+  useLlmEndpoints: () => ({
+    data: [{ id: 'ep-1', name: 'E', baseUrl: '', models: ['m1'], hasApiKey: true, contextBudget: null, maxOutputTokens: null, createdAt: '' }],
+  }),
+  useSuggestChart: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('../grid/columnDefs', () => ({
@@ -64,12 +79,14 @@ vi.mock('../api/grid', () => ({
 
 const mockExecuteMutate = vi.fn();
 const mockExplainMutate = vi.fn();
+// Mutable so a test can simulate a transport-level failure (the `executeQuery.error` surface).
+let mockExecuteError: unknown = null;
 
 vi.mock('../api/query', () => ({
   useExecuteQuery: () => ({
     mutate: mockExecuteMutate,
     isPending: false,
-    error: null,
+    error: mockExecuteError,
   }),
   useExplainQuery: () => ({
     mutate: mockExplainMutate,
@@ -89,6 +106,7 @@ vi.mock('../api/snippets', () => ({
 
 afterEach(() => {
   vi.clearAllMocks();
+  mockExecuteError = null;
 });
 
 function makeRowsResult(overrides: Partial<RowsStatementResult> = {}): RowsStatementResult {
@@ -374,5 +392,42 @@ describe('SqlEditorView — rolled-back transaction note', () => {
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
 
     expect(screen.getByText(/2 of 3 statement\(s\) ran/)).toBeInTheDocument();
+  });
+});
+
+describe('SqlEditorView — chart view', () => {
+  it('toggling to Chart swaps the grid for the chart panel without a re-fetch', async () => {
+    simulateQuery(makeResponse([makeRowsResult({ rows: [{ id: 1 }, { id: 2 }] })]));
+    renderWithProviders(<SqlEditorView />);
+
+    await userEvent.click(screen.getByRole('button', { name: /run/i }));
+    expect(screen.getByTestId('grid')).toBeInTheDocument();
+    expect(mockExecuteMutate).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole('button', { name: /^chart$/i }));
+    expect(screen.getByTestId('result-chart-panel')).toBeInTheDocument();
+    expect(screen.queryByTestId('grid')).not.toBeInTheDocument();
+    // Charting reads the already-loaded page — no additional query is issued.
+    expect(mockExecuteMutate).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByRole('button', { name: /^grid$/i }));
+    expect(screen.getByTestId('grid')).toBeInTheDocument();
+    expect(screen.queryByTestId('result-chart-panel')).not.toBeInTheDocument();
+  });
+
+  it('does not offer the Grid/Chart toggle for a non-rows result', async () => {
+    simulateQuery(makeResponse([makeCommandResult()]));
+    renderWithProviders(<SqlEditorView />);
+    await userEvent.click(screen.getByRole('button', { name: /run/i }));
+    expect(screen.queryByRole('button', { name: /^chart$/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('SqlEditorView — explain a transport error', () => {
+  it('offers "Fix with AI" on the query-failure surface', async () => {
+    mockExecuteError = new ApiError(500, 'SQL_ERROR', 'relation "ghost" does not exist', 'corr-9');
+    renderWithProviders(<SqlEditorView />);
+    expect(screen.getByText('relation "ghost" does not exist')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /fix with ai/i })).toBeInTheDocument();
   });
 });

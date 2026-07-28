@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   AppendMessagesBody,
+  ChartSuggestRequest,
+  ChartSuggestResponse,
   ChatRequest,
   ChatResponse,
   ConversationDetailDto,
@@ -99,6 +101,20 @@ export function useDeleteConversation(connectionId: string) {
       }),
     onSuccess: () =>
       void queryClient.invalidateQueries({ queryKey: conversationsKey(connectionId) }),
+  });
+}
+
+/**
+ * Ask the model to suggest a chart for an already-loaded result page (`POST :id/ai/chart-suggest`).
+ * Sends only column metadata + a small row sample; resolves to a suggestion or `null`.
+ */
+export function useSuggestChart(connectionId: string | null) {
+  return useMutation({
+    mutationFn: (req: ChartSuggestRequest) =>
+      apiFetch<ChartSuggestResponse>(`/connections/${connectionId!}/ai/chart-suggest`, {
+        method: 'POST',
+        body: req,
+      }),
   });
 }
 

@@ -42,7 +42,7 @@ passes **and** it violates none of the architecture principles.
 | [26](./phase-26-query-plan-viz.md) | Query-plan visualization | ✅ Complete |
 | [27](./phase-27-session-monitoring.md) | Active-session monitoring & kill-query | ✅ Complete |
 | [28](./phase-28-audit-trail.md) | Mutation & DDL audit trail | ✅ Complete |
-| [29](./phase-29-error-insights.md) | Error explanation & result insights | 📋 Planned |
+| [29](./phase-29-error-insights.md) | Error explanation & result insights | ✅ Complete |
 | [30](./phase-30-data-export-import.md) | Data export & import (CSV/JSON) | 📋 Planned |
 | [31](./phase-31-agentic-queries.md) | Agentic read-only query execution | 📋 Planned |
 | [32](./phase-32-ssh-tunneling.md) | SSH tunneling (needs §13 amendment) | 📋 Planned |
@@ -54,10 +54,10 @@ post-MVP wave** — two "strengthening" phases (11, 12) that harden already-buil
 remaining backlog (13–22); **all complete**, with the backlog now exhausted. Their sequencing lives
 in [`roadmap-phase-11-22.md`](./roadmap-phase-11-22.md). Phases 23–33 are the **third wave** — a
 fresh, backlog-independent set across three tracks (DBA depth, production safety/ops, AI depth),
-sequenced in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). Phases 23–28 are **complete** (FK
+sequenced in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). Phases 23–29 are **complete** (FK
 metadata + relational navigation, read-only schema-object browsing, read-only/environment guardrails,
-query-plan visualization, active-session monitoring, and a mutation & DDL audit trail); 29–33 remain
-**planned**.
+query-plan visualization, active-session monitoring, a mutation & DDL audit trail, and error explanation
++ result-insight charts); 30–33 remain **planned**.
 
 ## Sequencing notes
 

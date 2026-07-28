@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChatPanel } from '../ai/ChatPanel';
+import { useAiStore } from '../stores/aiStore';
 import { useConnectionStore } from '../stores/connectionStore';
 import { Workspace } from '../workspace/Workspace';
 import { MobileBottomNav } from './MobileBottomNav';
@@ -16,6 +17,13 @@ export interface MobileShellProps {
 export function MobileShell({ onOpenConnections }: MobileShellProps) {
   const [activeTab, setActiveTab] = useState<MobileTab>('explorer');
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
+  const pendingChatPrompt = useAiStore((state) => state.pendingChatPrompt);
+
+  // "Fix/Explain with AI" queues a chat prompt via aiStore (which opens the desktop right sidebar).
+  // On mobile there's no sidebar — switch to the AI tab so the queued prompt is visible + auto-sent.
+  useEffect(() => {
+    if (pendingChatPrompt !== null) setActiveTab('ai');
+  }, [pendingChatPrompt]);
 
   return (
     <div className="flex h-screen flex-col bg-bg text-text">

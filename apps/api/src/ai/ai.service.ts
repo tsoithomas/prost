@@ -1,5 +1,13 @@
 import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import type { ChatRequest, ChatResponse } from '@prost/shared-types';
+import type {
+  ChartAggregation,
+  ChartSuggestRequest,
+  ChartSuggestion,
+  ChartType,
+  ChatRequest,
+  ChatResponse,
+  ColumnMetadata,
+} from '@prost/shared-types';
 import { ConnectionsService } from '../connections/connections.service';
 import { PoolManager } from '../database/pool-manager.service';
 import { HistoryService } from '../history/history.service';
@@ -11,6 +19,13 @@ import { RetrievalService } from './retrieval.service';
 const FEW_SHOT_LIMIT = 5;
 /** Skip pathologically long history entries so a single query can't dominate the prompt. */
 const FEW_SHOT_MAX_SQL_CHARS = 600;
+
+/** Cap on rows sent to the model for a chart suggestion (opt-in, bounded — Phase 29 Decision 3). */
+const CHART_SAMPLE_ROWS = 15;
+/** Truncate long cell values in the sample so a single field can't bloat the prompt or leak a blob. */
+const CHART_SAMPLE_VALUE_CHARS = 100;
+const CHART_TYPES: ChartType[] = ['bar', 'line', 'pie'];
+const CHART_AGGREGATIONS: ChartAggregation[] = ['none', 'count', 'sum', 'avg', 'min', 'max'];
 
 @Injectable()
 export class AiService {
@@ -104,18 +119,59 @@ export class AiService {
     };
   }
 
+  /**
+   * Suggest a chart (type + category/value columns) for an already-loaded result page. The request
+   * carries only the result's column metadata and a small, opt-in row sample (re-capped + sanitized
+   * here, never trusting the client's length) — no schema context, no full page. Returns `null` when
+   * the model can't produce a valid suggestion, so manual charting always works (Decision 3).
+   */
+  async suggestChart(
+    userId: string,
+    connectionId: string,
+    req: ChartSuggestRequest,
+  ): Promise<ChartSuggestion | null> {
+    const endpoint = await this.resolveEndpoint(userId, connectionId, req.endpointId, req.model);
+    const systemPrompt = buildChartSuggestPrompt(req.columns, sanitizeSample(req.sample));
+
+    let content: string;
+    try {
+      content = await this.provider.complete({
+        baseUrl: endpoint.baseUrl,
+        apiKey: endpoint.apiKey,
+        model: req.model,
+        systemPrompt,
+        messages: [{ role: 'user', content: 'Suggest a chart for this result.' }],
+        ...(endpoint.maxOutputTokens != null ? { maxOutputTokens: endpoint.maxOutputTokens } : {}),
+      });
+    } catch {
+      throw new ServiceUnavailableException('AI provider request failed.');
+    }
+
+    return parseChartSuggestion(content, req.columns);
+  }
+
+  /** Ownership + endpoint resolution + model validation — the seam shared by chat and chart-suggest. */
+  private async resolveEndpoint(
+    userId: string,
+    connectionId: string,
+    endpointId: string,
+    model: string,
+  ): Promise<DecryptedEndpoint> {
+    await this.connectionsService.assertOwnership(userId, connectionId);
+    const endpoint = await this.llmEndpointService.getDecrypted(userId, endpointId);
+    if (!endpoint.models.includes(model)) {
+      throw new BadRequestException('Model not available on this endpoint');
+    }
+    return endpoint;
+  }
+
   /** Shared validation + prompt assembly for both the blocking and streaming chat paths. */
   private async prepareChat(
     userId: string,
     connectionId: string,
     req: ChatRequest,
   ): Promise<{ endpoint: DecryptedEndpoint; systemPrompt: string }> {
-    await this.connectionsService.assertOwnership(userId, connectionId);
-
-    const endpoint = await this.llmEndpointService.getDecrypted(userId, req.endpointId);
-    if (!endpoint.models.includes(req.model)) {
-      throw new BadRequestException('Model not available on this endpoint');
-    }
+    const endpoint = await this.resolveEndpoint(userId, connectionId, req.endpointId, req.model);
 
     // Context is a names-only table index; the model pulls per-table detail via get_table_schema.
     const schemaContext = await this.retrieval.buildContext(connectionId, {
@@ -205,4 +261,72 @@ Rules:
 - Never suggest DDL or DML that modifies data unless the user explicitly requests it.
 - Keep answers accurate and free of unnecessary padding.
 - Do not reveal connection credentials, passwords, or internal system details.`;
+}
+
+/** Bound + truncate the row sample sent for a chart suggestion (never trust the client's size). */
+function sanitizeSample(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows.slice(0, CHART_SAMPLE_ROWS).map((row) => {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(row)) {
+      out[key] =
+        typeof value === 'string' && value.length > CHART_SAMPLE_VALUE_CHARS
+          ? `${value.slice(0, CHART_SAMPLE_VALUE_CHARS)}…`
+          : value;
+    }
+    return out;
+  });
+}
+
+/** A JSON-only prompt: from the result's columns + a small sample, pick one chart + its two columns. */
+function buildChartSuggestPrompt(columns: ColumnMetadata[], sample: Record<string, unknown>[]): string {
+  const columnList = columns.map((c) => `- ${c.name} (${c.dataType})`).join('\n');
+  return `You suggest a single chart to visualize a tabular query result.
+
+Columns:
+${columnList}
+
+A small sample of the rows (JSON):
+${JSON.stringify(sample)}
+
+Task:
+- Choose one chart type: "bar", "line", or "pie".
+- Choose the category column (x-axis / pie slice label) and the numeric value column (y-axis / slice size).
+- The value column must hold numbers; the category column should be a low-cardinality label or a time axis.
+- Choose how to aggregate the value per category: "sum", "avg", "min", "max", "count", or "none".
+  - "sum"/"avg"/"min"/"max" need a numeric value column; "count" counts rows per category (value column
+    ignored); "none" plots the raw rows without grouping (use only when each category appears once, e.g. a
+    time series or a result that is already grouped). Prefer "sum" when unsure.
+
+Respond with ONLY a compact JSON object and nothing else, using exact column names from the list:
+{"type":"bar","categoryColumn":"<name>","valueColumn":"<name>","aggregation":"sum"}
+If no sensible chart exists, respond with {"type":null}.`;
+}
+
+/** Parse the model's JSON reply into a validated suggestion; `null` on any parse/validation failure. */
+function parseChartSuggestion(content: string, columns: ColumnMetadata[]): ChartSuggestion | null {
+  const match = content.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(match[0]);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object') return null;
+
+  const { type, categoryColumn, valueColumn, aggregation } = parsed as Record<string, unknown>;
+  if (typeof type !== 'string' || !CHART_TYPES.includes(type as ChartType)) return null;
+  if (typeof categoryColumn !== 'string' || typeof valueColumn !== 'string') return null;
+
+  const names = new Set(columns.map((c) => c.name));
+  if (!names.has(categoryColumn) || !names.has(valueColumn)) return null;
+
+  // Aggregation is optional in the reply: many models omit it. Default to `sum` rather than reject.
+  const agg =
+    typeof aggregation === 'string' && CHART_AGGREGATIONS.includes(aggregation as ChartAggregation)
+      ? (aggregation as ChartAggregation)
+      : 'sum';
+
+  return { type: type as ChartType, categoryColumn, valueColumn, aggregation: agg };
 }

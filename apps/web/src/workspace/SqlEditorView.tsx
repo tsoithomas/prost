@@ -49,6 +49,7 @@ import { createCursorDatasource } from './cursorDatasource';
 import { createQueryPageDatasource } from './queryPageDatasource';
 import { PlanPanel, StatementResultPanel } from './StatementResultPanel';
 import { QueryPlanView } from './QueryPlanView';
+import { ResultChartPanel } from './ResultChartPanel';
 import { statementAtOffset } from './statementRanges';
 import { useMonacoCompletions } from './useMonacoCompletions';
 import { FixWithAiButton } from '../ai/FixWithAiButton';
@@ -108,6 +109,9 @@ export function SqlEditorView() {
   // Bumped on every run / tab switch so the infinite grid rebuilds its datasource + cache for
   // the new result (used in the grid `key`).
   const [resultEpoch, setResultEpoch] = useState(0);
+  // Results lens for a single rows result: the grid, or a client-side chart over the loaded page
+  // (Phase 29). Reset to 'grid' on every new result / tab switch.
+  const [resultView, setResultView] = useState<'grid' | 'chart'>('grid');
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   // When a streamed result hits the server-side row budget, the count of rows actually delivered.
@@ -241,6 +245,7 @@ export function SqlEditorView() {
     editorRef.current?.setValue(storedSql);
     setResponse(storedResponse);
     setResultEpoch((e) => e + 1);
+    setResultView('grid');
     setPendingInsert(null);
     setSelectedRows([]);
     setSaveSnippetName(null);
@@ -277,6 +282,7 @@ export function SqlEditorView() {
           onSuccess: (data) => {
             setResponse(data);
             setResultEpoch((e) => e + 1);
+            setResultView('grid');
             setStreamTruncatedAt(null);
             setStreamReaped(false);
             setEphemeralRenderOverrides({});
@@ -646,6 +652,27 @@ export function SqlEditorView() {
                     : `${single.rows.length} row${single.rows.length === 1 ? '' : 's'}`}{' '}
                   · {single.executionTimeMs} ms
                 </span>
+                <div className="flex overflow-hidden rounded-sm border border-border">
+                  <Button
+                    type="button"
+                    variant={resultView === 'grid' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setResultView('grid')}
+                    className="rounded-none border-0"
+                  >
+                    Grid
+                  </Button>
+                  <div className="w-px bg-border" />
+                  <Button
+                    type="button"
+                    variant={resultView === 'chart' ? 'secondary' : 'ghost'}
+                    size="sm"
+                    onClick={() => setResultView('chart')}
+                    className="rounded-none border-0"
+                  >
+                    Chart
+                  </Button>
+                </div>
               </>
             ) : null}
             {!planResult && single?.kind === 'command' ? (
@@ -672,6 +699,13 @@ export function SqlEditorView() {
               {error instanceof ApiError && error.correlationId ? (
                 <p className="text-xs text-text-faint">ref: {error.correlationId}</p>
               ) : null}
+              <FixWithAiButton
+                sql={sql}
+                message={apiErrorMessage(error, 'Query failed.')}
+                {...(errorCode ? { code: errorCode } : {})}
+                engineLabel={descriptor?.label}
+                className="mt-sm"
+              />
             </div>
           ) : !connectionId ? (
             <div className="flex h-full items-center justify-center text-sm text-text-faint">
@@ -683,23 +717,27 @@ export function SqlEditorView() {
             </div>
           ) : single ? (
             single.kind === 'rows' ? (
-              <AgGridReact
-                key={`${activeTabId}.${resultEpoch}`}
-                theme={prostGridTheme}
-                columnDefs={columnDefs}
-                rowModelType="infinite"
-                datasource={datasource}
-                cacheBlockSize={PAGE_SIZE}
-                maxBlocksInCache={10}
-                maxConcurrentDatasourceRequests={1}
-                getRowId={getRowId}
-                pinnedTopRowData={pinnedTopRowData}
-                rowSelection={editable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: false } : undefined}
-                onGridReady={onGridReady}
-                onSelectionChanged={onSelectionChanged}
-                onCellValueChanged={onCellValueChanged}
-                onCellClicked={onCellClicked}
-              />
+              resultView === 'chart' && connectionId ? (
+                <ResultChartPanel connectionId={connectionId} columns={single.columns} rows={single.rows} />
+              ) : (
+                <AgGridReact
+                  key={`${activeTabId}.${resultEpoch}`}
+                  theme={prostGridTheme}
+                  columnDefs={columnDefs}
+                  rowModelType="infinite"
+                  datasource={datasource}
+                  cacheBlockSize={PAGE_SIZE}
+                  maxBlocksInCache={10}
+                  maxConcurrentDatasourceRequests={1}
+                  getRowId={getRowId}
+                  pinnedTopRowData={pinnedTopRowData}
+                  rowSelection={editable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: false } : undefined}
+                  onGridReady={onGridReady}
+                  onSelectionChanged={onSelectionChanged}
+                  onCellValueChanged={onCellValueChanged}
+                  onCellClicked={onCellClicked}
+                />
+              )
             ) : single.kind === 'command' ? (
               <div className="flex h-full items-center justify-center text-sm text-text-faint">
                 {single.command} — {single.rowCount} row{single.rowCount === 1 ? '' : 's'} affected.

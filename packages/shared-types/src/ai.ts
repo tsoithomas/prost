@@ -1,3 +1,5 @@
+import type { ColumnMetadata } from './metadata.js';
+
 export type ChatRole = 'user' | 'assistant';
 
 export interface ChatMessage {
@@ -17,6 +19,44 @@ export interface ChatRequest {
 export interface ChatResponse {
   message: ChatMessage;
   suggestedSql?: string;
+}
+
+/** The chart kinds the result-insights view can render (Phase 29). */
+export type ChartType = 'bar' | 'line' | 'pie';
+
+/**
+ * How the chart groups rows by the category column (Phase 29.1). `none` plots raw rows 1:1;
+ * `count` counts rows per category (value column ignored); the rest aggregate the numeric value
+ * column per category.
+ */
+export type ChartAggregation = 'none' | 'count' | 'sum' | 'avg' | 'min' | 'max';
+
+/**
+ * An AI-suggested chart over a result page: a type, the category (x) and value (y) columns, and how to
+ * aggregate the value per category. The server always fills `aggregation` (defaulting to `sum`).
+ */
+export interface ChartSuggestion {
+  type: ChartType;
+  categoryColumn: string;
+  valueColumn: string;
+  aggregation: ChartAggregation;
+}
+
+/**
+ * Request an AI chart suggestion for an already-loaded result page. Carries the column metadata and a
+ * small, capped sample of rows (the server caps + sanitizes defensively) — an explicit, opt-in
+ * exception to the no-row-data posture, scoped to this one suggestion (Phase 29 Decision 3).
+ */
+export interface ChartSuggestRequest {
+  endpointId: string;
+  model: string;
+  columns: ColumnMetadata[];
+  sample: Record<string, unknown>[];
+}
+
+/** The suggestion, or `null` when the model couldn't produce a valid one (charting still works manually). */
+export interface ChartSuggestResponse {
+  suggestion: ChartSuggestion | null;
 }
 
 /** A persisted chat thread (summary form, for the conversation list). */
