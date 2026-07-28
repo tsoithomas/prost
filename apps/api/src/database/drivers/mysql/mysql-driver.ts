@@ -15,6 +15,7 @@ import type {
   KillSessionMode,
   QueryPlanNode,
   SchemaObjectKind,
+  TableStructure,
 } from '@prost/shared-types';
 import {
   createConnection,
@@ -484,6 +485,19 @@ export class MysqlDriver implements DbDriver {
   buildDropIndex = (ref: TableRef, indexName: string) => sql.mysqlBuildDropIndex(ref, indexName);
   buildDropTable = (ref: TableRef) => sql.mysqlBuildDropTable(ref);
   buildTruncateTable = (ref: TableRef) => sql.mysqlBuildTruncateTable(ref);
+
+  // --- SQL export (Phase 30.1) ---
+  qualifyTable = (ref: TableRef) => sql.mysqlQualifyTable(ref);
+  formatLiteral = (value: unknown, column: ColumnMetadata) => sql.mysqlFormatLiteral(value, column);
+
+  /** MySQL's native `SHOW CREATE TABLE` gives a faithful DDL string; `structure` is unused. */
+  async buildTableDdl(q: DriverQueryFn, ref: TableRef, _structure: TableStructure): Promise<string> {
+    const { rows } = await q(sql.mysqlBuildShowCreateTable(ref));
+    const row = rows[0] as Record<string, unknown> | undefined;
+    const ddl = row?.['Create Table'];
+    if (typeof ddl !== 'string') throw new NotFoundException(`Could not read DDL for "${ref.name}"`);
+    return `${ddl};`;
+  }
 
   async describeResultColumns(
     _query: DriverQueryFn,

@@ -7,6 +7,7 @@ import type {
   KillSessionMode,
   QueryPlanNode,
   SchemaObjectKind,
+  TableStructure,
 } from '@prost/shared-types';
 import type {
   ConnectionParams,
@@ -145,6 +146,23 @@ export interface DbDriver {
   buildDropTable(ref: TableRef): SqlFragment;
   /** Empty a table (PG/MySQL `TRUNCATE`; SQLite has no TRUNCATE → `DELETE FROM`). */
   buildTruncateTable(ref: TableRef): SqlFragment;
+
+  // --- SQL export (Phase 30.1) ---
+  /** The quoted, qualified table name for an INSERT header (schema.table / db.table / "table"). */
+  qualifyTable(ref: TableRef): string;
+  /**
+   * Format a JS value as an inline SQL literal for a `.sql` export (INSERT VALUES). Output-only — every
+   * write to a live DB still binds params. Dialect-specific escaping (PG/SQLite `''`, MySQL `\\`), plus
+   * booleans, dates, and binary→hex. `column` is a type hint.
+   */
+  formatLiteral(value: unknown, column: ColumnMetadata): string;
+  /**
+   * A full `CREATE TABLE` DDL block (+ any secondary `CREATE INDEX` / FK statements). MySQL/SQLite return
+   * the engine's native, faithful DDL (`SHOW CREATE TABLE` / `sqlite_master.sql`); Postgres reconstructs
+   * a best-effort block from `structure`. Takes the query fn (like `insertRow`) since MySQL/SQLite must
+   * hit the catalog.
+   */
+  buildTableDdl(q: DriverQueryFn, ref: TableRef, structure: TableStructure): Promise<string>;
 
   // --- query-editor support ---
   /** Resolve result-column types into ColumnMetadata. PG runs a pg_type OID lookup through

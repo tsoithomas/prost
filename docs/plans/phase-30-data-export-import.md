@@ -91,9 +91,24 @@ Roadmap item: Phase 30 in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). 
 
 `pnpm -w build`, `pnpm -w lint`, `pnpm -w test` all pass.
 
+## Amendment (Phase 30.1) — SQL export
+
+A follow-up added a **`sql` export format** and a **multi-table schema/data dump**, partially superseding
+the first out-of-scope bullet below:
+
+- Single-table/schema export to `.sql` (`CREATE TABLE` DDL and/or batched multi-row `INSERT`s), streamed
+  via the same cursor. Schema DDL is **native/faithful** on MySQL (`SHOW CREATE TABLE`) and SQLite
+  (`sqlite_master.sql`); **best-effort reconstruction** on Postgres (no native table DDL — CHECK
+  constraints and identity/serial nuance are not captured).
+- New driver methods `formatLiteral` (per-dialect value literals), `qualifyTable`, `buildTableDdl`.
+  Launch from the DatabaseOverview header and each sidebar schema-tree row (`SchemaExportDialog`).
+- Still **export-only** (read-safe): restoring/importing a `.sql` dump is not part of this — see the
+  Phase 30 CSV import path for data loading. Full `pg_dump` fidelity remains out of scope.
+
 ## Out of scope (later phases / explicitly deferred)
 
-- `pg_dump`/`mysqldump`-style schema+data dump/restore (structural backup is a separate concern).
-- Excel/Parquet and other binary formats (CSV + JSON only in v1).
+- `mysqldump`-style *restore* + full `pg_dump` fidelity (CHECK constraints, identity exactness, sequences,
+  ownership/grants). SQL schema+data *export* is now supported (see the amendment above).
+- Excel/Parquet and other binary formats (CSV + JSON + SQL only).
 - Upsert/merge on import (insert-only; conflict handling beyond "report and continue/abort" deferred).
 - Scheduled/recurring exports (no background jobs — §13).

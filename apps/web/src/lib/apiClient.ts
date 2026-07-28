@@ -80,3 +80,54 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
 
   return data as T;
 }
+
+/**
+ * POSTs `body` and saves the (streamed) response as a file download. Auth is bearer-token only, so a
+ * plain `<a href>` to a protected endpoint can't authenticate — we fetch with the header, read the
+ * whole response as a blob (bounded by the server's export row budget), then click a temporary
+ * object-URL anchor. On a non-2xx, parses the JSON error envelope into an `ApiError` (the error path
+ * is small JSON, not a stream). The download filename comes from `Content-Disposition`, else `fallbackName`.
+ */
+export async function downloadFile(path: string, body: unknown, fallbackName: string): Promise<void> {
+  const { token } = useAuthStore.getState();
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const response = await fetch(`${BASE_URL}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+
+  if (response.status === 401) {
+    useAuthStore.getState().clear();
+    if (typeof window !== 'undefined') window.location.assign('/login');
+  }
+
+  if (!response.ok) {
+    const envelope = (await response.json().catch(() => null)) as Partial<ErrorEnvelope> | null;
+    throw new ApiError(
+      response.status,
+      envelope?.error ?? 'INTERNAL_ERROR',
+      envelope?.message ?? response.statusText,
+      envelope?.correlationId ?? '',
+    );
+  }
+
+  const blob = await response.blob();
+  const filename = filenameFromDisposition(response.headers.get('Content-Disposition')) ?? fallbackName;
+  const url = URL.createObjectURL(blob);
+  try {
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+/** Extract a `filename="…"` from a `Content-Disposition` header, if present. */
+function filenameFromDisposition(header: string | null): string | undefined {
+  if (!header) return undefined;
+  const match = /filename="?([^"]+)"?/i.exec(header);
+  return match?.[1];
+}

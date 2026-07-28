@@ -19,6 +19,8 @@ import { ConversationModule } from './conversations/conversation.module';
 import { SnippetModule } from './snippets/snippet.module';
 import { SessionsModule } from './sessions/sessions.module';
 import { AuditModule } from './audit/audit.module';
+import { ExportModule } from './export/export.module';
+import { ImportModule } from './import/import.module';
 
 const globalThrottleGuard: Provider = { provide: APP_GUARD, useClass: ThrottlerGuard };
 
@@ -54,6 +56,8 @@ const globalThrottleGuard: Provider = { provide: APP_GUARD, useClass: ThrottlerG
     SnippetModule,
     SessionsModule,
     AuditModule,
+    ExportModule,
+    ImportModule,
   ],
   controllers: [AppController],
   providers: [globalThrottleGuard],

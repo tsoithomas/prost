@@ -10,6 +10,7 @@ import type {
 } from '@prost/shared-types';
 import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
 import { buildAddForeignKeyClause, normalizeAddForeignKey, normalizeDropForeignKey } from '../fk-ddl';
+import { formatLiteral, mysqlQuoteString } from '../literal';
 
 const ALLOWED_TYPES = new Set([
   'BIGINT',
@@ -254,6 +255,29 @@ export const mysqlPlaceholder = (_index: number): string => '?';
 function qualify(ref: TableRef): string {
   const table = mysqlQuoteIdent(ref.name);
   return ref.namespace ? `${mysqlQuoteIdent(ref.namespace)}.${table}` : table;
+}
+
+/** The quoted, qualified table name (exported for the SQL-export INSERT builder). */
+export function mysqlQualifyTable(ref: TableRef): string {
+  return qualify(ref);
+}
+
+/** A MySQL value literal for SQL export (Phase 30.1): backslash-escaped strings, `1`/`0` booleans, `X'..'` binary. */
+export function mysqlFormatLiteral(value: unknown, column: ColumnMetadata): string {
+  return formatLiteral(value, column, {
+    bool: (v) => (v ? '1' : '0'),
+    bytes: (hex) => `X'${hex}'`,
+    quoteString: mysqlQuoteString,
+  });
+}
+
+/**
+ * `SHOW CREATE TABLE` — MySQL's native, faithful table DDL (columns, PK, indexes, FKs, engine, charset).
+ * It can't be parameterized, so the identifier is inlined through `mysqlQuoteIdent`. The result row's
+ * `Create Table` column holds the statement.
+ */
+export function mysqlBuildShowCreateTable(ref: TableRef): SqlFragment {
+  return { sql: `SHOW CREATE TABLE ${qualify(ref)}`, params: [] };
 }
 
 export function mysqlInList(

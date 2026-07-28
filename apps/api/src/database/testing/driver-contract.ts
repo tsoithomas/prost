@@ -229,6 +229,25 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [3]));
     });
 
+    it('inserts a batch of rows in one transaction via buildInsertRow (import path)', async (ctx) => {
+      skipIfUnreachable(ctx);
+      // Mirrors ImportService.batch: many buildInsertRow fragments through one transactional `q`.
+      const rows = [[40, 'batch-a'], [41, 'batch-b'], [42, 'batch-c']];
+      await driver.withTransaction(pool!, async (q) => {
+        for (const [id, name] of rows) {
+          await q(driver.buildInsertRow(ref, [['id', id], ['name', name]]));
+        }
+      });
+
+      const sel = await driver.query(pool!, driver.buildSelectRows(ref, {
+        whereClause: `WHERE ${driver.quoteIdent('name')} ${driver.whereDialect.likeOperator} ${driver.placeholder(1)}`,
+        whereParams: ['batch-%'], orderColumn: 'id', sortDir: 'ASC', limit: 10, offset: 0,
+      }));
+      expect(sel.rows.length).toBe(3);
+
+      for (const [id] of rows) await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [id]));
+    });
+
     it('updateRow returning the row when set to its current value', async (ctx) => {
       skipIfUnreachable(ctx);
       const cols: ColumnMetadata[] = [

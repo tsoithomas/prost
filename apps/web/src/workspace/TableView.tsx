@@ -12,11 +12,13 @@ import type {
   IGetRowsParams,
   SelectionChangedEvent,
 } from 'ag-grid-community';
-import { CopyPlus, Filter, Plus, Redo2, Save, Search, Trash2, Undo2, X } from 'lucide-react';
+import { CopyPlus, Download, Filter, Plus, Redo2, Save, Search, Trash2, Undo2, Upload, X } from 'lucide-react';
 import type { BulkRowEdit, ColumnMetadata, ColumnRenderMode, FilterOperator, GridResponse, RowConcurrency, RowFilter } from '@prost/shared-types';
 import { ROW_VERSION_KEY } from '@prost/shared-types';
 import { Badge, Button, IconButton, Input, prostGridTheme, Toast } from '@prost/ui';
 import { FilterPanel, operatorsForColumn } from './FilterPanel';
+import { ExportDialog } from './ExportDialog';
+import { ImportModal } from '../import/ImportModal';
 import { TableStructurePanel } from './TableStructurePanel';
 import { useConnection } from '../api/connections';
 import { useBulkUpdate, useDeleteRow, useInsertRow } from '../api/grid';
@@ -83,6 +85,8 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<RowFilter | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -605,6 +609,11 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
             >
               <Trash2 size={14} />
             </IconButton>
+            {writable ? (
+              <IconButton aria-label="Import CSV" title="Import CSV into this table" onClick={() => setImportOpen(true)}>
+                <Upload size={14} />
+              </IconButton>
+            ) : null}
             <IconButton
               aria-label="Save new row"
               onClick={handleSaveInsert}
@@ -645,6 +654,11 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
           </>
         ) : null}
         <div className="ml-auto flex items-center gap-sm">
+          {viewMode === 'rows' ? (
+            <IconButton aria-label="Export" title="Export table" onClick={() => setExportOpen(true)}>
+              <Download size={14} />
+            </IconButton>
+          ) : null}
           {viewMode === 'rows' && countQuery.data ? (
             <span className="text-xs text-text-faint">
               {filterKey ? '' : '~'}{countQuery.data.totalRows.toLocaleString()} rows
@@ -736,6 +750,21 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         ))}
       </div>
       {confirmDialog}
+      <ExportDialog
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        connectionId={connectionId}
+        target={{ scope: 'table', schema, table, ...(activeFilter ? { filter: activeFilter } : {}) }}
+      />
+      <ImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        connectionId={connectionId}
+        schema={schema}
+        table={table}
+        columns={columnsQuery.data?.columns ?? []}
+        onImported={() => gridApiRef.current?.refreshInfiniteCache()}
+      />
     </div>
   );
 }

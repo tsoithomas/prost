@@ -47,6 +47,10 @@ async function bootstrap() {
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
   app.enableCors({ origin: allowedOrigins });
+  // Import posts batches of parsed CSV rows as JSON; the Express default (~100 kb) is far too small.
+  // Applies to all JSON bodies — configurable via IMPORT_BODY_LIMIT (default 10 MB).
+  const jsonBodyLimit = config.get<string>('IMPORT_BODY_LIMIT') ?? '10mb';
+  app.useBodyParser('json', { limit: jsonBodyLimit });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   app.useGlobalFilters(new AllExceptionsFilter());
   serveSpa(app);

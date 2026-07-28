@@ -11,5 +11,6 @@ import { QueryService } from './query.service';
   imports: [ConnectionsModule, MetadataModule, HistoryModule, AuditModule],
   controllers: [QueryController],
   providers: [QueryService, CursorSessionService],
+  exports: [QueryService],
 })
 export class QueryModule {}

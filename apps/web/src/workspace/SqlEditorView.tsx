@@ -11,7 +11,7 @@ import type {
   IDatasource,
   SelectionChangedEvent,
 } from 'ag-grid-community';
-import { Bookmark, Play, Plus, Save, Trash2, WandSparkles, X } from 'lucide-react';
+import { Bookmark, Download, Play, Plus, Save, Trash2, WandSparkles, X } from 'lucide-react';
 import { format } from 'sql-formatter';
 import type { ColumnRenderMode, DbEngineDescriptor, ExecuteQueryResponse, QueryPlanResult } from '@prost/shared-types';
 import {
@@ -50,6 +50,7 @@ import { createQueryPageDatasource } from './queryPageDatasource';
 import { PlanPanel, StatementResultPanel } from './StatementResultPanel';
 import { QueryPlanView } from './QueryPlanView';
 import { ResultChartPanel } from './ResultChartPanel';
+import { ExportDialog } from './ExportDialog';
 import { statementAtOffset } from './statementRanges';
 import { useMonacoCompletions } from './useMonacoCompletions';
 import { FixWithAiButton } from '../ai/FixWithAiButton';
@@ -112,6 +113,7 @@ export function SqlEditorView() {
   // Results lens for a single rows result: the grid, or a client-side chart over the loaded page
   // (Phase 29). Reset to 'grid' on every new result / tab switch.
   const [resultView, setResultView] = useState<'grid' | 'chart'>('grid');
+  const [exportOpen, setExportOpen] = useState(false);
   const [pendingInsert, setPendingInsert] = useState<Record<string, unknown> | null>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   // When a streamed result hits the server-side row budget, the count of rows actually delivered.
@@ -673,6 +675,9 @@ export function SqlEditorView() {
                     Chart
                   </Button>
                 </div>
+                <IconButton aria-label="Export results" title="Export query result" onClick={() => setExportOpen(true)}>
+                  <Download size={14} />
+                </IconButton>
               </>
             ) : null}
             {!planResult && single?.kind === 'command' ? (
@@ -791,6 +796,14 @@ export function SqlEditorView() {
         ))}
       </div>
       {confirmDialog}
+      {connectionId && editableResult ? (
+        <ExportDialog
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
+          connectionId={connectionId}
+          target={{ scope: 'query', sql: editableResult.sql }}
+        />
+      ) : null}
     </div>
   );
 }

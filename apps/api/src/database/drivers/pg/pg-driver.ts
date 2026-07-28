@@ -11,6 +11,7 @@ import type {
   KillSessionMode,
   QueryPlanNode,
   SchemaObjectKind,
+  TableStructure,
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
@@ -291,6 +292,18 @@ export class PgDriver implements DbDriver {
   buildDropIndex = (ref: TableRef, indexName: string) => sql.pgBuildDropIndex(ref, indexName);
   buildDropTable = (ref: TableRef) => sql.pgBuildDropTable(ref);
   buildTruncateTable = (ref: TableRef) => sql.pgBuildTruncateTable(ref);
+
+  // --- SQL export (Phase 30.1) ---
+  qualifyTable = (ref: TableRef) => sql.pgQualifyTable(ref);
+  formatLiteral = (value: unknown, column: ColumnMetadata) => sql.pgFormatLiteral(value, column);
+
+  /** Postgres has no native table DDL — reconstruct (best-effort) from faithful catalog columns + structure. */
+  async buildTableDdl(q: DriverQueryFn, ref: TableRef, structure: TableStructure): Promise<string> {
+    const { rows } = await q(sql.pgBuildTableColumnsForDdl(ref));
+    const columns = rows as unknown as sql.PgDdlColumn[];
+    const primaryKey = structure.columns.filter((c) => c.isPrimaryKey).map((c) => c.name);
+    return sql.pgAssembleCreateTable(ref, columns, primaryKey, structure.indexes, structure.foreignKeys);
+  }
 
   async describeResultColumns(
     query: DriverQueryFn,

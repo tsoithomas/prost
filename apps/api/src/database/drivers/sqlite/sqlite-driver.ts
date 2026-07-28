@@ -10,6 +10,7 @@ import type {
   KillSessionMode,
   QueryPlanNode,
   SchemaObjectKind,
+  TableStructure,
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
@@ -259,6 +260,20 @@ export class SqliteDriver implements DbDriver {
   buildDropIndex = (ref: TableRef, indexName: string) => sql.sqliteBuildDropIndex(ref, indexName);
   buildDropTable = (ref: TableRef) => sql.sqliteBuildDropTable(ref);
   buildTruncateTable = (ref: TableRef) => sql.sqliteBuildTruncateTable(ref);
+
+  // --- SQL export (Phase 30.1) ---
+  qualifyTable = (ref: TableRef) => sql.sqliteQualifyTable(ref);
+  formatLiteral = (value: unknown, column: ColumnMetadata) => sql.sqliteFormatLiteral(value, column);
+
+  /** SQLite's `sqlite_master.sql` is the faithful original DDL; `structure` is unused. */
+  async buildTableDdl(q: DriverQueryFn, ref: TableRef, _structure: TableStructure): Promise<string> {
+    const { rows } = await q(sql.sqliteBuildTableDdlSource(ref));
+    const statements = rows
+      .map((r) => (r as Record<string, unknown>).sql)
+      .filter((s): s is string => typeof s === 'string' && s.trim().length > 0);
+    if (statements.length === 0) throw new NotFoundException(`Table "${ref.name}" not found`);
+    return statements.map((s) => `${s.trim()};`).join('\n');
+  }
 
   async describeResultColumns(
     _query: DriverQueryFn,

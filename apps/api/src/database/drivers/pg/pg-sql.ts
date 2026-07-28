@@ -6,12 +6,15 @@ import type {
   ColumnMetadata,
   CreateIndexRequest,
   CreateTableRequest,
+  ForeignKeyMetadata,
+  IndexMetadata,
   KillSessionMode,
   NewColumn,
   SchemaObjectKind,
 } from '@prost/shared-types';
 import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
 import { buildAddForeignKeyClause, normalizeAddForeignKey, normalizeDropForeignKey } from '../fk-ddl';
+import { formatLiteral, standardQuoteString } from '../literal';
 
 const ALLOWED_TYPES = new Set([
   'integer', 'bigint', 'smallint', 'serial', 'bigserial',
@@ -522,6 +525,98 @@ export function pgBuildUpdateRowGuarded(
 export function pgBuildDeleteRow(ref: TableRef, pkColumns: string[], pkValues: unknown[]): SqlFragment {
   const whereClause = pkColumns.map((c, i) => `${pgQuoteIdent(c)} = ${pgPlaceholder(i + 1)}`).join(' AND ');
   return { sql: `DELETE FROM ${qualify(ref)} WHERE ${whereClause}`, params: pkValues };
+}
+
+/** The quoted, schema-qualified table name (exported for the SQL-export INSERT builder). */
+export function pgQualifyTable(ref: TableRef): string {
+  return qualify(ref);
+}
+
+/** A PG value literal for SQL export (Phase 30.1). */
+export function pgFormatLiteral(value: unknown, column: ColumnMetadata): string {
+  return formatLiteral(value, column, {
+    bool: (v) => (v ? 'TRUE' : 'FALSE'),
+    // Under standard_conforming_strings (default), '\xHEX' is the literal text \xHEX, which bytea input reads as hex.
+    bytes: (hex) => `'\\x${hex}'`,
+    quoteString: standardQuoteString,
+  });
+}
+
+/**
+ * A catalog query returning faithful column definitions for CREATE TABLE reconstruction: `format_type`
+ * preserves length/precision (`character varying(255)`) and `pg_get_expr` renders the real default
+ * expression (`nextval(...)`, etc.) — both lossy in `information_schema`.
+ */
+export function pgBuildTableColumnsForDdl(ref: TableRef): SqlFragment {
+  return {
+    sql: `SELECT a.attname AS name,
+       format_type(a.atttypid, a.atttypmod) AS type,
+       a.attnotnull AS not_null,
+       pg_get_expr(d.adbin, d.adrelid) AS "default"
+FROM pg_attribute a
+JOIN pg_class c ON c.oid = a.attrelid
+JOIN pg_namespace n ON n.oid = c.relnamespace
+LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+WHERE n.nspname = $1 AND c.relname = $2 AND a.attnum > 0 AND NOT a.attisdropped
+ORDER BY a.attnum`,
+    params: [ref.namespace ?? 'public', ref.name],
+  };
+}
+
+/** One faithful column row from `pgBuildTableColumnsForDdl`. */
+export interface PgDdlColumn {
+  name: string;
+  type: string;
+  not_null: boolean;
+  default: string | null;
+}
+
+/**
+ * Assembles a best-effort `CREATE TABLE` (+ secondary `CREATE INDEX` and FK `ALTER TABLE`) for Postgres
+ * from faithful column rows plus the table's `IndexMetadata`/`ForeignKeyMetadata`. Postgres has no native
+ * single-call table DDL, so this reconstruction is lossy — CHECK constraints and identity/serial nuance
+ * are not captured (noted in the emitted header).
+ */
+export function pgAssembleCreateTable(
+  ref: TableRef,
+  columns: PgDdlColumn[],
+  primaryKey: string[],
+  indexes: IndexMetadata[],
+  foreignKeys: ForeignKeyMetadata[],
+): string {
+  const colDefs = columns.map((col) => {
+    let def = `  ${pgQuoteIdent(col.name)} ${col.type}`;
+    if (col.not_null) def += ' NOT NULL';
+    if (col.default != null && col.default !== '') def += ` DEFAULT ${col.default}`;
+    return def;
+  });
+  if (primaryKey.length > 0) {
+    colDefs.push(`  PRIMARY KEY (${primaryKey.map(pgQuoteIdent).join(', ')})`);
+  }
+
+  const parts = [
+    `/* best-effort reconstruction — CHECK constraints and identity/serial nuance are not captured */`,
+    `CREATE TABLE ${qualify(ref)} (\n${colDefs.join(',\n')}\n);`,
+  ];
+
+  // Secondary indexes (skip the PK-backing index; its columns are the PRIMARY KEY above). `definition`
+  // is `pg_get_indexdef` — a ready-made, faithful CREATE INDEX statement.
+  for (const idx of indexes) {
+    if (idx.isPrimary) continue;
+    if (idx.definition) parts.push(`${idx.definition};`);
+  }
+
+  for (const fk of foreignKeys) {
+    const refTable = fk.referencedSchema
+      ? `${pgQuoteIdent(fk.referencedSchema)}.${pgQuoteIdent(fk.referencedTable)}`
+      : pgQuoteIdent(fk.referencedTable);
+    let clause = `ALTER TABLE ${qualify(ref)} ADD CONSTRAINT ${pgQuoteIdent(fk.constraintName)} FOREIGN KEY (${fk.columns.map(pgQuoteIdent).join(', ')}) REFERENCES ${refTable} (${fk.referencedColumns.map(pgQuoteIdent).join(', ')})`;
+    if (fk.onDelete) clause += ` ON DELETE ${fk.onDelete}`;
+    if (fk.onUpdate) clause += ` ON UPDATE ${fk.onUpdate}`;
+    parts.push(`${clause};`);
+  }
+
+  return parts.join('\n');
 }
 
 export function pgBuildCreateTable(req: CreateTableRequest): SqlFragment {

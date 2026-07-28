@@ -9,6 +9,7 @@ import type {
   SchemaObjectKind,
 } from '@prost/shared-types';
 import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
+import { formatLiteral, standardQuoteString } from '../literal';
 
 const SAFE_DEFAULT_PATTERN = /^(\d+|true|false|null|now\(\)|current_timestamp|gen_random_uuid\(\))$/i;
 
@@ -150,6 +151,35 @@ export const sqlitePlaceholder = (_index: number): string => '?';
 function qualify(ref: TableRef): string {
   const table = sqliteQuoteIdent(ref.name);
   return ref.namespace ? `${sqliteQuoteIdent(ref.namespace)}.${table}` : table;
+}
+
+/** The quoted, qualified table name (exported for the SQL-export INSERT builder). */
+export function sqliteQualifyTable(ref: TableRef): string {
+  return qualify(ref);
+}
+
+/** A SQLite value literal for SQL export (Phase 30.1): standard `''` strings, `1`/`0` booleans, `X'..'` blobs. */
+export function sqliteFormatLiteral(value: unknown, column: ColumnMetadata): string {
+  return formatLiteral(value, column, {
+    bool: (v) => (v ? '1' : '0'),
+    bytes: (hex) => `X'${hex}'`,
+    quoteString: standardQuoteString,
+  });
+}
+
+/**
+ * The faithful `CREATE TABLE` text plus any `CREATE INDEX` for a table, straight from `sqlite_master`
+ * (auto/PK indexes have a NULL `sql` and are skipped). One row per statement; the driver joins them.
+ */
+export function sqliteBuildTableDdlSource(ref: TableRef): SqlFragment {
+  return {
+    sql: `SELECT sql FROM sqlite_master
+WHERE sql IS NOT NULL AND (
+  (type = 'table' AND name = ?) OR (type = 'index' AND tbl_name = ?)
+)
+ORDER BY (type = 'index')`,
+    params: [ref.name, ref.name],
+  };
 }
 
 export function sqliteBuildListTables(): SqlFragment {

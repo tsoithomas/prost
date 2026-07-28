@@ -1,6 +1,7 @@
-import { Eraser, Rows3, Search, StretchHorizontal, Table2, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { Download, Eraser, Rows3, Search, StretchHorizontal, Table2, Trash2 } from 'lucide-react';
 import type { TableOverview } from '@prost/shared-types';
-import { IconButton, Toast } from '@prost/ui';
+import { Button, IconButton, Toast } from '@prost/ui';
 import { useDropTable, useTruncateTable } from '../api/ddl';
 import { useEngineDescriptor } from '../api/databaseEngines';
 import { useSchemaOverview } from '../api/metadata';
@@ -8,6 +9,7 @@ import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
 import { apiErrorDetail } from '../lib/apiClient';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { SchemaExportDialog } from './SchemaExportDialog';
 
 export interface DatabaseOverviewProps {
   connectionId: string;
@@ -46,6 +48,7 @@ export function DatabaseOverview({ connectionId, schema, writable = true }: Data
   const truncateTable = useTruncateTable(connectionId);
   const { confirm, dialog: confirmDialog } = useConfirm();
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
+  const [exportOpen, setExportOpen] = useState(false);
 
   async function handleEmpty(name: string) {
     const ok = await confirm({
@@ -103,6 +106,12 @@ export function DatabaseOverview({ connectionId, schema, writable = true }: Data
             {data.totalRowEstimate !== null ? ` · ${formatRows(data.totalRowEstimate)} rows` : ''}
             {data.totalSizeBytes !== null ? ` · ${formatBytes(data.totalSizeBytes)}` : ''}
           </span>
+          {data.tables.length > 0 ? (
+            <Button variant="secondary" size="sm" className="ml-auto" onClick={() => setExportOpen(true)}>
+              <Download size={13} />
+              Export
+            </Button>
+          ) : null}
         </header>
 
         {data.tables.length === 0 ? (
@@ -196,6 +205,8 @@ export function DatabaseOverview({ connectionId, schema, writable = true }: Data
           </div>
         )}
       </div>
+
+      <SchemaExportDialog open={exportOpen} onClose={() => setExportOpen(false)} connectionId={connectionId} schema={schema} />
 
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-sm p-md sm:items-end">
         {toasts.map((toast) => (
