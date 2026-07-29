@@ -47,6 +47,19 @@ passes **and** it violates none of the architecture principles.
 | [31](./phase-31-agentic-queries.md) | Agentic read-only query execution | ✅ Complete |
 | [32](./phase-32-ssh-tunneling.md) | SSH tunneling | ✅ Complete |
 | [33](./phase-33-ai-schema-suggestions.md) | AI schema-change suggestions | ✅ Complete |
+| [34](./phase-34-settings-redesign.md) | Settings & preferences redesign (unified modal + fine-tune styling) | 🔲 Planned |
+| [35](./phase-35-accessibility-hardening.md) | Accessibility & keyboard-navigation hardening | 🔲 Planned |
+| [36](./phase-36-er-diagram.md) | ER diagram / relationship visualization | 🔲 Planned |
+| [37](./phase-37-column-profiling.md) | Column profiling & table data statistics | 🔲 Planned |
+| [38](./phase-38-object-comments.md) | Table & column documentation (native comments) | 🔲 Planned |
+| [39](./phase-39-data-masking.md) | Data masking / sensitive-column redaction | 🔲 Planned |
+| [40](./phase-40-perf-insights.md) | On-demand query-performance insights & index advisor | 🔲 Planned |
+| [41](./phase-41-schema-diff.md) | Schema comparison & migration diff (live-vs-live) | 🔲 Planned |
+| [42](./phase-42-data-generation.md) | Data generation / test-data seeding | 🔲 Planned |
+| [43](./phase-43-saved-dashboards.md) | Saved dashboards / pinned result charts | 🔲 Planned |
+| [44](./phase-44-grid-conflict-detection.md) | Grid concurrency: optimistic-conflict detection | 🔲 Planned |
+| [45](./phase-45-ai-query-rewrite.md) | AI query-optimization & rewrite advisor | 🔲 Planned |
+| [46](./phase-46-ai-data-editing.md) | AI-assisted data editing with preview | 🔲 Planned |
 
 Phases 0–5 are the **MVP** (complete). Phases 6–10 are the **first post-MVP wave** drawn from
 [`../future-features.md`](../future-features.md) (all complete). Phases 11–22 are the **second
@@ -59,6 +72,14 @@ sequenced in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). Phases 23–3
 guardrails, query-plan visualization, active-session monitoring, a mutation & DDL audit trail, error
 explanation + result-insight charts, streaming CSV/JSON data export & import, agentic read-only query
 execution, SSH tunneling, and AI schema-change suggestions) — the third wave is now **exhausted**.
+Phases 34–46 are the **fourth wave** — a "depth within the rails" set that stays single-user and
+self-hosted (no team/multi-tenant, RBAC, new engines, or background jobs), mixing new features (ER diagram,
+column profiling, native-comment documentation, data masking, on-demand perf/index advisor, schema diff,
+data generation, saved dashboards, AI query-rewrite and AI-assisted data editing) with strengthening of
+shipped features (a redesigned settings experience, accessibility hardening, and grid concurrency
+detection). It is sequenced in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md); every hard dependency
+lands on an already-complete phase, and its only §13 amendment unfreezes ER diagrams. Phases 34–46 are
+**all planned** (not yet implemented).
 
 ## Sequencing notes
 

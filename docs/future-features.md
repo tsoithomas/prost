@@ -17,11 +17,18 @@ and links back to its source for full context where one exists.
 > management, global search, preferences/theming expansion, streaming results). All complete; see
 > [`plans/README.md`](./plans/README.md) for the status table.
 >
-> The **next wave is Phases 23–33** — a fresh, backlog-independent set (this file fed nothing into
+> The **next wave was Phases 23–33** — a fresh, backlog-independent set (this file fed nothing into
 > it) across three tracks: DBA/power-user depth, production safety & ops, and AI depth. It is
 > sequenced in [`plans/roadmap-phase-23-33.md`](./plans/roadmap-phase-23-33.md), with per-phase docs
 > under [`plans/`](./plans/). The sections below are kept as **provenance** for the 6–22 wave; they
 > no longer represent open work.
+>
+> **A fourth wave — Phases 34–46 — is now planned** (a "depth within the rails" set: settings redesign,
+> accessibility, ER diagram, column profiling, native-comment docs, data masking, on-demand perf/index
+> advisor, schema diff, data generation, saved dashboards, grid conflict detection, AI query-rewrite, and
+> AI-assisted data editing). It too is backlog-independent — this file fed nothing into it — and stays
+> single-user/self-hosted (no team/RBAC/new-engines/background-jobs). See
+> [`plans/roadmap-phase-34-46.md`](./plans/roadmap-phase-34-46.md).
 
 ---
 

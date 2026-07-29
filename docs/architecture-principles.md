@@ -180,6 +180,13 @@ add-on.
   is browsing, not editing. What stays frozen is *creating/altering/dropping* these objects and
   *executing* functions/procedures or *refreshing* materialized views from the UI; browsing adds no
   write or execute path.
+- **ER diagrams are in scope** (Phase 36), unfrozen now that foreign-key metadata exists (Phase 23).
+  An ER diagram is a **read-only rendering** of the same server-validated FK metadata the app already
+  surfaces (`ForeignKeyMetadata` via the driver/catalog seam, §1/§4) — it adds **no** write or execute
+  path, and is a *narrow sibling view* in the workspace shell, never a forked grid (§5). Interactive
+  navigation from the diagram reuses the existing relational-navigation path (Phase 23). What stays
+  frozen is *editing* relationships from the diagram (that is FK-constraint DDL, gated as ever) and
+  persisting diagram layouts.
 - **AI features are no longer blanket out-of-scope** — they're tracked for upcoming
   development in [`docs/future-features.md`](./future-features.md) (e.g. a schema-aware
   chat/RAG assistant). They remain subject to every other principle: no path to a target DB
