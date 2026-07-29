@@ -3,6 +3,7 @@ import { DatabaseEnginesController } from './database-engines.controller';
 import { DB_DRIVERS } from './db-driver.interface';
 import { DbDriverRegistry } from './db-driver.registry';
 import { PoolManager } from './pool-manager.service';
+import { SshTunnelService } from './ssh-tunnel.service';
 import { MysqlDriver } from './drivers/mysql/mysql-driver';
 import { PgDriver } from './drivers/pg/pg-driver';
 import { SqliteDriver } from './drivers/sqlite/sqlite-driver';
@@ -20,6 +21,7 @@ import { SqliteDriver } from './drivers/sqlite/sqlite-driver';
       inject: [PgDriver, MysqlDriver, SqliteDriver],
     },
     DbDriverRegistry,
+    SshTunnelService,
     PoolManager,
   ],
   exports: [PoolManager, DbDriverRegistry, PgDriver, MysqlDriver, SqliteDriver],

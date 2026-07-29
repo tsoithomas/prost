@@ -1,11 +1,12 @@
 import { IsBoolean, IsInt, IsOptional, IsString, IsUUID, Max, Min, MinLength } from 'class-validator';
 import type { TestConnectionDto as TestConnectionDtoShape, DbEngine } from '@prost/shared-types';
+import { SshFieldsDto } from './ssh-fields.dto';
 
 /**
  * Tests either a saved connection (by `id`, falling back to its stored credentials when
  * `password` is blank) or an unsaved set of connection params (all fields required).
  */
-export class TestConnectionDto implements TestConnectionDtoShape {
+export class TestConnectionDto extends SshFieldsDto implements TestConnectionDtoShape {
   @IsOptional()
   @IsUUID()
   id?: string;

@@ -4,9 +4,10 @@ import {
   type ConnectionEnvironment,
   type UpdateConnectionDto as UpdateConnectionDtoShape,
 } from '@prost/shared-types';
+import { SshFieldsDto } from './ssh-fields.dto';
 
 /** All fields optional; an empty/omitted `password` means "keep the stored credential". */
-export class UpdateConnectionDto implements UpdateConnectionDtoShape {
+export class UpdateConnectionDto extends SshFieldsDto implements UpdateConnectionDtoShape {
   @IsOptional()
   @IsString()
   @MinLength(1)

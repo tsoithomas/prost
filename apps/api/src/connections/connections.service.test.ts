@@ -25,6 +25,14 @@ function buildConnection(overrides: Partial<Connection> = {}): Connection {
     sslRejectUnauthorized: true,
     environment: 'dev',
     readOnly: false,
+    sshEnabled: false,
+    sshHost: null,
+    sshPort: null,
+    sshUsername: null,
+    sshAuthMethod: null,
+    encryptedSshSecret: null,
+    sshKeyPassphraseEncrypted: null,
+    sshHostFingerprint: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-02T00:00:00.000Z'),
     ...overrides,
@@ -79,6 +87,7 @@ describe('toConnectionDto', () => {
       sslEnabled: false,
       sslRejectUnauthorized: true,
       environment: 'dev',
+      ssh: { sshEnabled: false },
       capabilities: { hasSchemas: true, readOnly: false },
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-02T00:00:00.000Z',
@@ -134,7 +143,7 @@ describe('ConnectionsService', () => {
 
     await service.test('user-1', { ...validUnsavedFields, engine: 'mysql' });
 
-    expect(poolManager.testConnection).toHaveBeenCalledWith('mysql', expect.objectContaining(validUnsavedFields));
+    expect(poolManager.testConnection).toHaveBeenCalledWith('mysql', expect.objectContaining(validUnsavedFields), undefined);
   });
 
   it('rejects an unknown engine before persistence', async () => {
@@ -166,7 +175,7 @@ describe('ConnectionsService', () => {
 
     await service.test('user-1', { id: 'conn-1', engine: 'mysql', password: 'x' });
 
-    expect(poolManager.testConnection).toHaveBeenCalledWith('postgres', expect.any(Object));
+    expect(poolManager.testConnection).toHaveBeenCalledWith('postgres', expect.any(Object), undefined);
   });
 
   it('persists environment and readOnly on create', async () => {
@@ -199,5 +208,71 @@ describe('ConnectionsService.isReadOnly', () => {
 
     const writable = createService(buildConnection({ readOnly: false }));
     await expect(writable.service.isReadOnly('conn-1')).resolves.toBe(false);
+  });
+});
+
+describe('ConnectionsService — SSH (Phase 32)', () => {
+  const sshFields = {
+    name: 'Tunneled',
+    host: 'db.internal',
+    port: 5432,
+    database: 'app',
+    username: 'app',
+    password: 'secret',
+    sslEnabled: false,
+    sslRejectUnauthorized: true,
+    environment: 'prod' as const,
+    readOnly: false,
+    sshEnabled: true,
+    sshHost: 'bastion.example.com',
+    sshPort: 22,
+    sshUsername: 'jump',
+    sshAuthMethod: 'key' as const,
+    sshSecret: '-----BEGIN OPENSSH PRIVATE KEY-----…',
+    sshKeyPassphrase: 'pp',
+  };
+
+  it('encrypts the SSH secret + passphrase and stores the non-secret fields', async () => {
+    const { service, connection } = createService();
+    const encrypt = (service as unknown as { crypto: { encrypt: ReturnType<typeof vi.fn> } }).crypto.encrypt;
+
+    await service.create('user-1', sshFields);
+
+    const data = connection.create.mock.calls[0]![0].data;
+    expect(data).toMatchObject({ sshEnabled: true, sshHost: 'bastion.example.com', sshPort: 22, sshUsername: 'jump', sshAuthMethod: 'key' });
+    expect(data.encryptedSshSecret).toBeDefined();
+    expect(data.sshKeyPassphraseEncrypted).toBeDefined();
+    // The raw secret is encrypted, never stored in the clear.
+    expect(encrypt).toHaveBeenCalledWith(sshFields.sshSecret);
+    expect(JSON.stringify(data)).not.toContain('BEGIN OPENSSH');
+  });
+
+  it('never returns the SSH secret in the ConnectionDto (write-only)', async () => {
+    const stored = buildConnection({
+      sshEnabled: true, sshHost: 'bastion', sshPort: 22, sshUsername: 'jump', sshAuthMethod: 'key',
+      encryptedSshSecret: { iv: 'iv', tag: 'tag', data: 'data' } as never, sshHostFingerprint: 'SHA256:abc',
+    });
+    const dto = toConnectionDto(stored, CAPS) as unknown as Record<string, unknown>;
+
+    expect(dto.ssh).toMatchObject({ sshEnabled: true, sshHost: 'bastion', sshUsername: 'jump', sshHostFingerprint: 'SHA256:abc' });
+    expect(dto).not.toHaveProperty('encryptedSshSecret');
+    expect(dto).not.toHaveProperty('sshSecret');
+    expect(JSON.stringify(dto)).not.toContain('encryptedSshSecret');
+  });
+
+  it('passes the decrypted SSH config through to testConnection for a saved SSH connection', async () => {
+    const stored = buildConnection({
+      sshEnabled: true, sshHost: 'bastion', sshPort: 2222, sshUsername: 'jump', sshAuthMethod: 'key',
+      encryptedSshSecret: { iv: 'iv', tag: 'tag', data: 'data' } as never,
+    });
+    const { service, poolManager } = createService(stored);
+
+    await service.test('user-1', { id: 'conn-1' });
+
+    expect(poolManager.testConnection).toHaveBeenCalledWith(
+      'postgres',
+      expect.any(Object),
+      expect.objectContaining({ sshHost: 'bastion', sshPort: 2222, sshUsername: 'jump', authMethod: 'key', secret: 'stored-password' }),
+    );
   });
 });

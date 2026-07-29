@@ -1,23 +1,23 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConnectionModal } from './ConnectionModal';
 import { renderWithProviders } from '../test/renderWithProviders';
 
+const { mockCreateMutate, mockTestMutate, testState } = vi.hoisted(() => ({
+  mockCreateMutate: vi.fn(),
+  mockTestMutate: vi.fn(),
+  // Mutable so a test can seed a stage-specific test result.
+  testState: { data: null as unknown, isPending: false, isError: false, error: null },
+}));
+
 // Stub all API mutation hooks — the import-flow test is purely client-side.
 vi.mock('../api/connections', () => ({
   useConnections: () => ({ data: [], isLoading: false }),
-  useCreateConnection: () => ({ mutate: vi.fn(), isPending: false, reset: vi.fn() }),
+  useCreateConnection: () => ({ mutate: mockCreateMutate, isPending: false, reset: vi.fn() }),
   useUpdateConnection: () => ({ mutate: vi.fn(), isPending: false }),
   useDeleteConnection: () => ({ mutate: vi.fn() }),
-  useTestConnection: () => ({
-    mutate: vi.fn(),
-    isPending: false,
-    data: null,
-    isError: false,
-    error: null,
-    reset: vi.fn(),
-  }),
+  useTestConnection: () => ({ mutate: mockTestMutate, reset: vi.fn(), ...testState }),
 }));
 
 vi.mock('../api/databaseEngines', () => ({
@@ -176,5 +176,65 @@ describe('ConnectionModal — connection-string import', () => {
 
     // An error message should appear (the import field stays open).
     expect(screen.getByPlaceholderText(/postgres:\/\//i)).toBeInTheDocument();
+  });
+});
+
+describe('ConnectionModal — SSH tunnel (Phase 32)', () => {
+  afterEach(() => {
+    mockCreateMutate.mockClear();
+    mockTestMutate.mockClear();
+    testState.data = null;
+  });
+
+  async function fillRequiredFields() {
+    await userEvent.type(screen.getByPlaceholderText('My Database'), 'Tunneled');
+    await userEvent.type(screen.getByPlaceholderText('localhost'), 'db.internal');
+    const [database, username] = screen.getAllByPlaceholderText('postgres') as HTMLInputElement[];
+    await userEvent.type(database!, 'app');
+    await userEvent.type(username!, 'app');
+    // The DB password (its input has no placeholder for a new connection) is the last password field before SSH is on.
+    const pwInputs = document.querySelectorAll('input[type="password"]');
+    await userEvent.type(pwInputs[0] as HTMLElement, 'dbpass');
+  }
+
+  it('hides the SSH fields until the toggle is on', async () => {
+    renderModal();
+    expect(screen.queryByPlaceholderText('bastion.example.com')).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: /connect via ssh/i }));
+    expect(screen.getByPlaceholderText('bastion.example.com')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('jump')).toBeInTheDocument();
+  });
+
+  it('includes the SSH fields in the create payload', async () => {
+    renderModal();
+    await fillRequiredFields();
+    await userEvent.click(screen.getByRole('checkbox', { name: /connect via ssh/i }));
+    await userEvent.type(screen.getByPlaceholderText('bastion.example.com'), 'bastion');
+    await userEvent.type(screen.getByPlaceholderText('jump'), 'jumpuser');
+    await userEvent.type(screen.getByPlaceholderText('-----BEGIN OPENSSH PRIVATE KEY-----'), 'THE-KEY');
+
+    await userEvent.click(screen.getByRole('button', { name: /^connect$/i }));
+
+    expect(mockCreateMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ sshEnabled: true, sshHost: 'bastion', sshUsername: 'jumpuser', sshAuthMethod: 'key', sshSecret: 'THE-KEY' }),
+      expect.any(Object),
+    );
+  });
+
+  it('switches to password auth fields', async () => {
+    renderModal();
+    await userEvent.click(screen.getByRole('checkbox', { name: /connect via ssh/i }));
+    // Key mode by default → key textarea present.
+    expect(screen.getByPlaceholderText('-----BEGIN OPENSSH PRIVATE KEY-----')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /^password$/i }));
+    expect(screen.queryByPlaceholderText('-----BEGIN OPENSSH PRIVATE KEY-----')).not.toBeInTheDocument();
+  });
+
+  it('prefixes a failed SSH test with the stage', () => {
+    testState.data = { ok: false, message: 'SSH authentication failed', stage: 'ssh' };
+    renderModal();
+    expect(screen.getByText(/SSH:\s*SSH authentication failed/i)).toBeInTheDocument();
   });
 });

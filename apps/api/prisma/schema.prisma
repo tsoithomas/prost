@@ -64,6 +64,17 @@ model Connection {
   // enforced server-side at the write choke point (PoolManager.assertWritable).
   environment          String   @default("dev")
   readOnly             Boolean  @default(false)
+  // Phase 32: optional SSH tunnel. All nullable so existing (direct) connections are unaffected. The
+  // SSH secret (private key OR password) and the optional key passphrase are encrypted like
+  // `encryptedCredentials`; `sshHostFingerprint` is captured trust-on-first-use and verified thereafter.
+  sshEnabled           Boolean  @default(false)
+  sshHost              String?
+  sshPort              Int?
+  sshUsername          String?
+  sshAuthMethod        String? // 'key' | 'password'
+  encryptedSshSecret   Json?
+  sshKeyPassphraseEncrypted Json?
+  sshHostFingerprint   String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 

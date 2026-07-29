@@ -5,8 +5,9 @@ import {
   type CreateConnectionDto as CreateConnectionDtoShape,
   type DbEngine,
 } from '@prost/shared-types';
+import { SshFieldsDto } from './ssh-fields.dto';
 
-export class CreateConnectionDto implements CreateConnectionDtoShape {
+export class CreateConnectionDto extends SshFieldsDto implements CreateConnectionDtoShape {
   @IsString()
   @MinLength(1)
   name!: string;

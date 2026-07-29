@@ -166,8 +166,14 @@ add-on.
 
 - Supported target engines are PostgreSQL, MySQL 8.0+, and SQLite — added through the driver
   seam, not by branching feature code. Out of scope until explicitly revisited: other engines
-  (e.g. MariaDB, SQL Server, Oracle), SSH tunneling, ER diagrams, team/multi-tenant features,
+  (e.g. MariaDB, SQL Server, Oracle), ER diagrams, team/multi-tenant features,
   stored-procedure/trigger **editing or execution**, advanced RBAC, background jobs, scheduling.
+- **SSH tunneling is in scope** (Phase 32), unfrozen with one rule: the tunnel is owned by
+  `PoolManager` and is just another **transport** to reach a target DB under the single seam (§1) —
+  it opens a local forwarded port before the driver's pool is created and is torn down with that pool
+  (the Phase-11 idle/LRU lifecycle reaps it too). It is **never** a second choke point, and drivers
+  stay SSH-unaware (they connect to the local endpoint exactly as to a direct host). The SSH secret is
+  encrypted at rest like any credential (§3) and never returned in a DTO.
 - **Read-only browsing of schema objects is in scope** (Phase 24). Listing and *displaying the
   definition* of views, materialized views, sequences, functions/procedures, triggers, and enum
   types — sourced from the same server-validated driver/catalog seam as table metadata (§1, §4) —

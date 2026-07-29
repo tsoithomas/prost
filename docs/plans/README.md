@@ -45,7 +45,7 @@ passes **and** it violates none of the architecture principles.
 | [29](./phase-29-error-insights.md) | Error explanation & result insights | ✅ Complete |
 | [30](./phase-30-data-export-import.md) | Data export & import (CSV/JSON) | ✅ Complete |
 | [31](./phase-31-agentic-queries.md) | Agentic read-only query execution | ✅ Complete |
-| [32](./phase-32-ssh-tunneling.md) | SSH tunneling (needs §13 amendment) | 📋 Planned |
+| [32](./phase-32-ssh-tunneling.md) | SSH tunneling | ✅ Complete |
 | [33](./phase-33-ai-schema-suggestions.md) | AI schema-change suggestions | 📋 Planned |
 
 Phases 0–5 are the **MVP** (complete). Phases 6–10 are the **first post-MVP wave** drawn from
@@ -54,11 +54,11 @@ post-MVP wave** — two "strengthening" phases (11, 12) that harden already-buil
 remaining backlog (13–22); **all complete**, with the backlog now exhausted. Their sequencing lives
 in [`roadmap-phase-11-22.md`](./roadmap-phase-11-22.md). Phases 23–33 are the **third wave** — a
 fresh, backlog-independent set across three tracks (DBA depth, production safety/ops, AI depth),
-sequenced in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). Phases 23–31 are **complete** (FK
+sequenced in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). Phases 23–32 are **complete** (FK
 metadata + relational navigation, read-only schema-object browsing, read-only/environment guardrails,
 query-plan visualization, active-session monitoring, a mutation & DDL audit trail, error explanation
-+ result-insight charts, streaming CSV/JSON data export & import, and agentic read-only query
-execution); 32–33 remain **planned**.
++ result-insight charts, streaming CSV/JSON data export & import, agentic read-only query execution,
+and SSH tunneling); only Phase 33 (AI schema-change suggestions) remains **planned**.
 
 ## Sequencing notes
 

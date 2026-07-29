@@ -75,6 +75,24 @@ export interface ConnectionCapabilities {
   readOnly: boolean;
 }
 
+/** SSH auth method for a tunneled connection (Phase 32). */
+export type SshAuthMethod = 'key' | 'password';
+
+/**
+ * The non-secret SSH tunnel fields surfaced on `ConnectionDto` (Phase 32). Present only when
+ * `sshEnabled`. The private key / password / passphrase are **write-only** and never appear here,
+ * exactly like the DB password. `sshHostFingerprint` is captured trust-on-first-use.
+ */
+export interface SshConnectionInfo {
+  sshEnabled: boolean;
+  sshHost?: string;
+  sshPort?: number;
+  sshUsername?: string;
+  sshAuthMethod?: SshAuthMethod;
+  /** The jump host's key fingerprint, stored on first connect and verified thereafter (TOFU). */
+  sshHostFingerprint?: string;
+}
+
 export interface ConnectionDto {
   id: string;
   name: string;
@@ -88,12 +106,30 @@ export interface ConnectionDto {
   sslRejectUnauthorized: boolean;
   /** Environment label (Phase 25); drives prod/staging theming. Read-only state lives in `capabilities.readOnly`. */
   environment: ConnectionEnvironment;
+  /** SSH tunnel config (non-secret fields only), Phase 32. */
+  ssh: SshConnectionInfo;
   capabilities: ConnectionCapabilities;
   createdAt: string;
   updatedAt: string;
 }
 
-export interface CreateConnectionDto {
+/**
+ * SSH tunnel input (Phase 32) — the secret fields are write-only (sent on create/update, never
+ * returned). Included on create/update/test DTOs when the user enables SSH.
+ */
+export interface SshConnectionInput {
+  sshEnabled: boolean;
+  sshHost?: string;
+  sshPort?: number;
+  sshUsername?: string;
+  sshAuthMethod?: SshAuthMethod;
+  /** Private key (key auth) or password (password auth). Write-only. */
+  sshSecret?: string;
+  /** Optional passphrase protecting the private key (key auth only). Write-only. */
+  sshKeyPassphrase?: string;
+}
+
+export interface CreateConnectionDto extends Partial<SshConnectionInput> {
   name: string;
   engine?: DbEngine;
   host: string;
@@ -108,8 +144,11 @@ export interface CreateConnectionDto {
   readOnly: boolean;
 }
 
-/** All fields optional; an empty/omitted `password` means "keep the stored credential". */
-export interface UpdateConnectionDto {
+/**
+ * All fields optional; an empty/omitted `password` means "keep the stored credential". Likewise an
+ * empty/omitted `sshSecret` keeps the stored SSH secret.
+ */
+export interface UpdateConnectionDto extends Partial<SshConnectionInput> {
   name?: string;
   host?: string;
   port?: number;
@@ -126,7 +165,7 @@ export interface UpdateConnectionDto {
  * Tests either a saved connection (`id`, falling back to its stored credentials when
  * `password` is blank) or an unsaved set of connection params (all fields required).
  */
-export interface TestConnectionDto {
+export interface TestConnectionDto extends Partial<SshConnectionInput> {
   id?: string;
   engine?: DbEngine;
   host?: string;
@@ -142,4 +181,8 @@ export interface TestConnectionResult {
   ok: boolean;
   message: string;
   serverVersion?: string;
+  /** Which stage failed/succeeded, so the UI can distinguish SSH-tunnel from DB errors (Phase 32). */
+  stage?: 'ssh' | 'db';
+  /** The jump host's key fingerprint observed during a successful SSH test (shown for confirmation). */
+  sshHostFingerprint?: string;
 }

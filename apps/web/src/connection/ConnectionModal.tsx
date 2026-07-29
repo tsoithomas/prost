@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, Cable, Database, Eye, EyeOff, Plus, Save, Trash2, X, Zap } from 'lucide-react';
 import clsx from 'clsx';
-import type { ConnectionDto, ConnectionEnvironment, DbEngine, DbEngineDescriptor } from '@prost/shared-types';
+import type { ConnectionDto, ConnectionEnvironment, DbEngine, DbEngineDescriptor, SshAuthMethod } from '@prost/shared-types';
 import { CONNECTION_ENVIRONMENTS, isSystemConnectionId } from '@prost/shared-types';
 import { parseConnectionString } from '@prost/utils';
 import { Badge, Button, IconButton, Input, Surface, Switch } from '@prost/ui';
@@ -36,6 +36,15 @@ interface ConnectionFormState {
   sslRejectUnauthorized: boolean;
   environment: ConnectionEnvironment;
   readOnly: boolean;
+  // SSH tunnel (Phase 32). `sshSecret`/`sshKeyPassphrase` are write-only — blank on edit, never fetched back.
+  sshEnabled: boolean;
+  sshHost: string;
+  sshPort: string;
+  sshUsername: string;
+  sshAuthMethod: SshAuthMethod;
+  sshSecret: string;
+  sshKeyPassphrase: string;
+  sshHostFingerprint: string;
 }
 
 const blankForm: ConnectionFormState = {
@@ -50,6 +59,14 @@ const blankForm: ConnectionFormState = {
   sslRejectUnauthorized: true,
   environment: 'dev',
   readOnly: false,
+  sshEnabled: false,
+  sshHost: '',
+  sshPort: '22',
+  sshUsername: '',
+  sshAuthMethod: 'key',
+  sshSecret: '',
+  sshKeyPassphrase: '',
+  sshHostFingerprint: '',
 };
 
 const ENVIRONMENT_LABELS: Record<ConnectionEnvironment, string> = {
@@ -106,6 +123,7 @@ const fallbackNetworkEngine: DbEngineDescriptor = {
 };
 
 function toFormState(connection: ConnectionDto): ConnectionFormState {
+  const ssh = connection.ssh;
   return {
     engine: connection.engine,
     name: connection.name,
@@ -118,6 +136,15 @@ function toFormState(connection: ConnectionDto): ConnectionFormState {
     sslRejectUnauthorized: connection.sslRejectUnauthorized,
     environment: connection.environment,
     readOnly: connection.capabilities.readOnly,
+    // Non-secret SSH fields hydrate; the key/password/passphrase stay blank (write-only, like the password).
+    sshEnabled: ssh.sshEnabled,
+    sshHost: ssh.sshHost ?? '',
+    sshPort: String(ssh.sshPort ?? 22),
+    sshUsername: ssh.sshUsername ?? '',
+    sshAuthMethod: ssh.sshAuthMethod ?? 'key',
+    sshSecret: '',
+    sshKeyPassphrase: '',
+    sshHostFingerprint: ssh.sshHostFingerprint ?? '',
   };
 }
 
@@ -258,6 +285,20 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
     return null;
   }
 
+  /** The SSH fields for a create/update/test payload — secrets omitted when blank (write-only, keep stored). */
+  function sshPayload() {
+    if (!form.sshEnabled) return { sshEnabled: false };
+    return {
+      sshEnabled: true,
+      sshHost: form.sshHost,
+      sshPort: Number(form.sshPort),
+      sshUsername: form.sshUsername,
+      sshAuthMethod: form.sshAuthMethod,
+      ...(form.sshSecret ? { sshSecret: form.sshSecret } : {}),
+      ...(form.sshAuthMethod === 'key' && form.sshKeyPassphrase ? { sshKeyPassphrase: form.sshKeyPassphrase } : {}),
+    };
+  }
+
   function handleTest() {
     const error = validate(!selectedId);
     if (error) {
@@ -276,6 +317,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
       password: form.password || undefined,
       sslEnabled: form.sslEnabled,
       sslRejectUnauthorized: form.sslRejectUnauthorized,
+      ...sshPayload(),
     });
   }
 
@@ -301,10 +343,11 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
           sslRejectUnauthorized: form.sslRejectUnauthorized,
           environment: form.environment,
           readOnly: form.readOnly,
+          ...sshPayload(),
         },
       },
       {
-        onSuccess: () => setForm((prev) => ({ ...prev, password: '' })),
+        onSuccess: () => setForm((prev) => ({ ...prev, password: '', sshSecret: '', sshKeyPassphrase: '' })),
         onError: (err) => setFormError(apiErrorMessage(err, 'Failed to save connection.')),
       },
     );
@@ -359,6 +402,7 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
         sslRejectUnauthorized: form.sslRejectUnauthorized,
         environment: form.environment,
         readOnly: form.readOnly,
+        ...sshPayload(),
       },
       {
         onSuccess: (created) => {
@@ -613,6 +657,102 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
                 ) : null}
               </div>
 
+              {/* SSH tunnel (Phase 32) — reach a DB behind a bastion. Mirrors the SSL toggle-reveals-fields pattern. */}
+              <div className="flex flex-col gap-sm">
+                <label className="flex w-max items-center gap-sm text-sm text-text">
+                  <Switch checked={form.sshEnabled} onChange={(event) => updateField('sshEnabled', event.target.checked)} />
+                  Connect via SSH
+                </label>
+                {form.sshEnabled ? (
+                  <div className="flex flex-col gap-md pl-lg">
+                    <div className="grid grid-cols-4 gap-md">
+                      <FormField label="SSH Host" className="col-span-2">
+                        <Input className="font-mono" value={form.sshHost} onChange={(e) => updateField('sshHost', e.target.value)} placeholder="bastion.example.com" />
+                      </FormField>
+                      <FormField label="Port">
+                        <Input className="font-mono" value={form.sshPort} onChange={(e) => updateField('sshPort', e.target.value)} placeholder="22" />
+                      </FormField>
+                      <FormField label="SSH User">
+                        <Input className="font-mono" value={form.sshUsername} onChange={(e) => updateField('sshUsername', e.target.value)} placeholder="jump" />
+                      </FormField>
+                    </div>
+
+                    <FormField label="Authentication">
+                      <div className="flex gap-xs">
+                        {(['key', 'password'] as SshAuthMethod[]).map((method) => (
+                          <button
+                            key={method}
+                            type="button"
+                            onClick={() => updateField('sshAuthMethod', method)}
+                            className={clsx(
+                              'flex-1 rounded-sm border px-sm py-1.5 text-xs font-medium transition-colors',
+                              form.sshAuthMethod === method
+                                ? 'border-accent bg-accent-muted text-accent'
+                                : 'border-border text-text-muted hover:bg-surface-hover hover:text-text',
+                            )}
+                          >
+                            {method === 'key' ? 'Private key' : 'Password'}
+                          </button>
+                        ))}
+                      </div>
+                    </FormField>
+
+                    {form.sshAuthMethod === 'key' ? (
+                      <>
+                        <FormField label="Private key">
+                          <div className="flex flex-col gap-xs">
+                            <textarea
+                              value={form.sshSecret}
+                              onChange={(e) => updateField('sshSecret', e.target.value)}
+                              placeholder={selectedId && form.sshHostFingerprint ? '•••••••• (stored — paste to replace)' : '-----BEGIN OPENSSH PRIVATE KEY-----'}
+                              rows={3}
+                              className="w-full resize-none rounded-sm border border-border bg-surface px-sm py-xs font-mono text-xs text-text placeholder-text-faint focus:border-accent focus:outline-none"
+                            />
+                            <label className="flex w-max cursor-pointer items-center gap-xs text-xs text-accent hover:underline">
+                              Upload key file…
+                              <input
+                                type="file"
+                                accept=".pem,.key,text/plain"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) void file.text().then((text) => updateField('sshSecret', text));
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </FormField>
+                        <FormField label="Key passphrase (optional)">
+                          <Input
+                            type="password"
+                            className="font-mono"
+                            value={form.sshKeyPassphrase}
+                            onChange={(e) => updateField('sshKeyPassphrase', e.target.value)}
+                            placeholder={selectedId ? '•••••••• (leave blank to keep)' : ''}
+                          />
+                        </FormField>
+                      </>
+                    ) : (
+                      <FormField label="SSH password">
+                        <Input
+                          type="password"
+                          className="font-mono"
+                          value={form.sshSecret}
+                          onChange={(e) => updateField('sshSecret', e.target.value)}
+                          placeholder={selectedId ? '••••••••' : ''}
+                        />
+                      </FormField>
+                    )}
+
+                    {form.sshHostFingerprint ? (
+                      <p className="text-xs text-text-faint">
+                        Trusted host key: <span className="font-mono">{form.sshHostFingerprint}</span>
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+
               <div className="h-px bg-border" />
 
               <div className="flex flex-col gap-sm">
@@ -646,6 +786,8 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
 
               {testConnection.data ? (
                 <Badge variant={testConnection.data.ok ? 'success' : 'danger'} className="w-max">
+                  {/* Prefix a failure with the stage so SSH vs DB errors are unmistakable (Phase 32). */}
+                  {!testConnection.data.ok && testConnection.data.stage === 'ssh' ? 'SSH: ' : ''}
                   {testConnection.data.message}
                   {testConnection.data.serverVersion ? ` · ${engineLabel} ${testConnection.data.serverVersion}` : ''}
                 </Badge>

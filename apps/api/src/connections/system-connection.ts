@@ -36,6 +36,7 @@ export function buildSystemConnectionDto(databaseUrl: string): ConnectionDto {
     sslRejectUnauthorized: true,
     // The app's own live database — labeled prod so it gets the unmistakable treatment; already read-only.
     environment: 'prod',
+    ssh: { sshEnabled: false },
     capabilities: { hasSchemas: false, readOnly: true },
     createdAt: epoch,
     updatedAt: epoch,
