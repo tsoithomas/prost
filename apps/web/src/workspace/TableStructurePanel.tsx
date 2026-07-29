@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { ColumnMetadata } from '@prost/shared-types';
 import { Badge, Button, IconButton } from '@prost/ui';
 import { ColumnTypePill } from '../grid/columnDefs';
@@ -10,6 +10,8 @@ import { AddColumnModal } from '../ddl/AddColumnModal';
 import { AddForeignKeyModal } from '../ddl/AddForeignKeyModal';
 import { CreateIndexModal } from '../ddl/CreateIndexModal';
 import { EditColumnModal } from '../ddl/EditColumnModal';
+import { SchemaSuggestionList } from '../ddl/SchemaSuggestionList';
+import { useSchemaSuggestions } from '../ddl/useSchemaSuggestions';
 import { useConfirm } from '../hooks/useConfirm';
 import { useTableStructure } from '../api/metadata';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -37,6 +39,7 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
   const dropIndex = useDropIndex(connectionId, schema, table);
   const alterTable = useAlterTable(connectionId, schema, table);
   const { confirm, dialog: confirmDialog } = useConfirm();
+  const suggest = useSchemaSuggestions(connectionId);
 
   const revealColumn = useWorkspaceStore((state) => state.revealColumn);
   const clearRevealColumn = useWorkspaceStore((state) => state.clearRevealColumn);
@@ -119,6 +122,33 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
       />
 
       <div className="h-full space-y-lg overflow-y-auto p-lg">
+        {/* AI schema advice (Phase 33). Writes, so it's hidden on read-only alongside the DDL actions;
+            the server refuses it there regardless. */}
+        {writable ? (
+          <section>
+            <div className="mb-sm flex items-center justify-between">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-text-faint">Suggestions</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => suggest.request({ tables: [{ schema, table }] })}
+                disabled={suggest.isPending}
+              >
+                <Sparkles size={13} />
+                {suggest.isPending ? 'Thinking…' : 'Suggest improvements'}
+              </Button>
+            </div>
+            {suggest.suggestions !== null || suggest.isPending ? (
+              <SchemaSuggestionList
+                connectionId={connectionId}
+                suggestions={suggest.suggestions ?? []}
+                loading={suggest.isPending}
+                error={suggest.error}
+              />
+            ) : null}
+          </section>
+        ) : null}
+
         <section>
           <div className="mb-sm flex items-center justify-between">
             <h2 className="text-xs font-medium uppercase tracking-wider text-text-faint">

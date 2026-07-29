@@ -1,7 +1,12 @@
 import { Body, Controller, HttpCode, HttpException, Logger, Param, Post, Req, Res, UseGuards } from '@nestjs/common';
 import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
-import type { ChartSuggestResponse, ChatResponse, RunReadQueryResponse } from '@prost/shared-types';
+import type {
+  ChartSuggestResponse,
+  ChatResponse,
+  RunReadQueryResponse,
+  SchemaSuggestResponse,
+} from '@prost/shared-types';
 import { UserThrottlerGuard } from '../common/user-throttler.guard';
 import type { RequestWithCorrelationId } from '../common/correlation-id.middleware';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
@@ -10,6 +15,7 @@ import type { TokenUsage } from './ai-provider.service';
 import { ChatDto } from './dto/chat.dto';
 import { ChartSuggestDto } from './dto/chart-suggest.dto';
 import { RunReadQueryDto } from './dto/run-read-query.dto';
+import { SchemaSuggestDto } from './dto/schema-suggest.dto';
 
 const AI_THROTTLE = {
   default: {
@@ -87,6 +93,32 @@ export class AiController {
     @Req() req: RequestWithCorrelationId,
   ): Promise<RunReadQueryResponse> {
     return this.aiService.runReadQuery(user.userId, id, dto.sql, req.correlationId);
+  }
+
+  /**
+   * Propose schema changes — typed DDL requests, never SQL (Phase 33). Every candidate is filtered
+   * through the suggestable allow-list and re-validated against live metadata via the existing DDL
+   * preview, so only changes that actually compile are returned; applying one still goes through the
+   * normal DDL confirm → execute path. Rejected outright (403) on read-only connections.
+   */
+  @SkipThrottle()
+  @UseGuards(UserThrottlerGuard)
+  @Throttle(AI_THROTTLE)
+  @Post(':id/ai/schema-suggest')
+  @HttpCode(200)
+  async schemaSuggest(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: SchemaSuggestDto,
+    @Req() req: RequestWithCorrelationId,
+  ): Promise<SchemaSuggestResponse> {
+    const suggestions = await this.aiService.suggestSchemaChanges(
+      user.userId,
+      id,
+      dto,
+      req.correlationId,
+    );
+    return { suggestions };
   }
 
   /**

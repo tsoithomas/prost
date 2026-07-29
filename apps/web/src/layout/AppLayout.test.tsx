@@ -11,6 +11,7 @@ vi.mock('./StatusBar', () => ({ StatusBar: () => <div data-testid="status-bar" /
 vi.mock('../mobile/MobileShell', () => ({ MobileShell: () => <div data-testid="mobile-shell" /> }));
 vi.mock('../connection/ConnectionModal', () => ({ ConnectionModal: () => null }));
 vi.mock('../search/CommandPalette', () => ({ CommandPalette: () => null }));
+vi.mock('../ddl/DdlSuggestionHost', () => ({ DdlSuggestionHost: () => null }));
 
 // Controlled mocks for hooks that drive the logic under test.
 vi.mock('../hooks/useMediaQuery', () => ({

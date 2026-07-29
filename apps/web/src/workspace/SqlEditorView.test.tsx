@@ -35,6 +35,7 @@ vi.mock('../api/ai', () => ({
     data: [{ id: 'ep-1', name: 'E', baseUrl: '', models: ['m1'], hasApiKey: true, contextBudget: null, maxOutputTokens: null, createdAt: '' }],
   }),
   useSuggestChart: () => ({ mutate: vi.fn(), isPending: false }),
+  useSuggestSchemaChanges: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock('../grid/columnDefs', () => ({

@@ -13,7 +13,7 @@ const MAX_TOOL_TABLES = 15;
 
 const FORBIDDEN_CONTEXT_PATTERNS = ['password', 'secret', 'api_key', 'token', 'credential'];
 
-interface TableRef {
+export interface TableRef {
   schema: string;
   name: string;
 }
@@ -21,6 +21,16 @@ interface TableRef {
 @Injectable()
 export class RetrievalService {
   constructor(private readonly metadataService: MetadataService) {}
+
+  /**
+   * Every table in the database as `{ schema, name }` — the flat index both `buildContext` and
+   * `describeTables` are built on, exposed so callers can resolve names against what actually exists
+   * (e.g. Phase 33 matching table names out of a SQL string). Names only, never row values.
+   */
+  async listTables(connectionId: string): Promise<TableRef[]> {
+    const schemas = await this.metadataService.getSchemas(connectionId);
+    return schemas.flatMap((s) => s.tables.map((t) => ({ schema: s.name, name: t.name })));
+  }
 
   /**
    * The schema context is a **names-only index of every table** in the database — no columns, no
@@ -34,10 +44,7 @@ export class RetrievalService {
     opts: { maxChars?: number } = {},
   ): Promise<string> {
     const maxChars = opts.maxChars ?? DEFAULT_TOKEN_BUDGET_CHARS;
-    const schemas = await this.metadataService.getSchemas(connectionId);
-    const tables: TableRef[] = schemas.flatMap((s) =>
-      s.tables.map((t) => ({ schema: s.name, name: t.name })),
-    );
+    const tables = await this.listTables(connectionId);
     if (tables.length === 0) return '';
 
     const header = `-- All ${tables.length} tables in the database. Columns are NOT shown here — call the get_table_schema tool for a table's columns and foreign keys before referencing it.`;
@@ -65,10 +72,7 @@ export class RetrievalService {
    * Schema metadata only, same seam as the rest of retrieval — never row values (principle §1).
    */
   async describeTables(connectionId: string, names: string[]): Promise<string> {
-    const schemas = await this.metadataService.getSchemas(connectionId);
-    const all: TableRef[] = schemas.flatMap((s) =>
-      s.tables.map((t) => ({ schema: s.name, name: t.name })),
-    );
+    const all = await this.listTables(connectionId);
     const overviewCache = new Map<string, Map<string, TableOverview>>();
 
     const blocks: string[] = [];

@@ -73,3 +73,60 @@ describe('AddColumnModal', () => {
     });
   });
 });
+
+// Phase 33: an AI "add column" suggestion opens this modal pre-filled via `DdlSuggestionHost`.
+describe('AddColumnModal — seeded from a suggestion', () => {
+  beforeEach(() => {
+    descriptor.current = MYSQL;
+    mockPreview.mockClear();
+    mockMutate.mockClear();
+  });
+
+  it('seeds every field from initialColumn and previews it without interaction', () => {
+    renderWithProviders(
+      <AddColumnModal
+        open onClose={vi.fn()} connectionId="conn-1" schema="shop" table="orders"
+        initialColumn={{ name: 'note', type: 'varchar(255)', nullable: true, isPrimaryKey: false, default: "''" }}
+      />,
+    );
+
+    expect(screen.getByDisplayValue('note')).toBeInTheDocument();
+    expect(mockPreview).toHaveBeenLastCalledWith('conn-1', {
+      kind: 'alterTable',
+      request: {
+        kind: 'addColumn', schema: 'shop', table: 'orders',
+        column: {
+          name: 'note', type: 'varchar(255)', nullable: true,
+          isPrimaryKey: false, autoIncrement: false, default: "''",
+        },
+      },
+    });
+  });
+
+  it('submits the seeded column unchanged', async () => {
+    renderWithProviders(
+      <AddColumnModal
+        open onClose={vi.fn()} connectionId="conn-1" schema="shop" table="orders"
+        initialColumn={{ name: 'note', type: 'int', nullable: false, isPrimaryKey: false }}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add Column' }));
+
+    expect(mockMutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: 'addColumn',
+        column: expect.objectContaining({ name: 'note', type: 'int', nullable: false }),
+      }),
+      expect.anything(),
+    );
+  });
+
+  it('still opens blank for the normal Add column flow', () => {
+    renderWithProviders(
+      <AddColumnModal open onClose={vi.fn()} connectionId="conn-1" schema="shop" table="orders" />,
+    );
+    // No name yet, so there is nothing to preview.
+    expect(mockPreview).toHaveBeenLastCalledWith('conn-1', null);
+  });
+});

@@ -1,5 +1,7 @@
 import type { ColumnMetadata } from './metadata.js';
 import type { ExecuteQueryResponse } from './grid.js';
+import type { AlterTableRequest, CreateIndexRequest } from './ddl.js';
+import type { QueryPlanResult } from './plan.js';
 
 export type ChatRole = 'user' | 'assistant';
 
@@ -81,6 +83,62 @@ export interface ChartSuggestRequest {
 /** The suggestion, or `null` when the model couldn't produce a valid one (charting still works manually). */
 export interface ChartSuggestResponse {
   suggestion: ChartSuggestion | null;
+}
+
+/**
+ * The `AlterTableOperation` kinds an AI schema suggestion may propose (Phase 33). Additive and
+ * in-place only — every destructive kind (`dropColumn`, `dropForeignKey`) is absent by design, so a
+ * hallucinating model cannot propose a drop. The single source of truth for the allow-list: the
+ * server validates against it and the frontend switches on it (principle §6).
+ */
+export const SUGGESTABLE_ALTER_OPS = [
+  'addColumn',
+  'setNotNull',
+  'setDefault',
+  'changeType',
+] as const;
+export type SuggestableAlterOp = (typeof SUGGESTABLE_ALTER_OPS)[number];
+
+/**
+ * The narrowed subset of `DdlPreviewRequest` an AI suggestion may propose (Phase 33). `dropIndex`,
+ * `dropTable`, `truncateTable`, `createTable` and `addForeignKey` are deliberately excluded — the
+ * assistant advises on indexes and in-place column changes, nothing destructive.
+ */
+export type SchemaSuggestionChange =
+  | { kind: 'createIndex'; request: CreateIndexRequest }
+  | { kind: 'alterTable'; request: AlterTableRequest };
+
+/**
+ * One AI-proposed schema change, already re-validated server-side against live metadata via the
+ * existing DDL preview (Phase 33 Decision 3) — so `sql` doubles as proof the candidate compiles.
+ * Applying it still routes through the normal DDL modal → preview → confirm → execute path; the
+ * assistant never executes DDL itself (principle §8).
+ */
+export interface SchemaSuggestion {
+  change: SchemaSuggestionChange;
+  /** Why this change, tied to the plan/metadata it was derived from. */
+  rationale: string;
+  /** Server-rendered SQL from `DdlService.preview`. */
+  sql: string;
+}
+
+/**
+ * Ask for schema-change suggestions grounded in schema metadata and, optionally, an `EXPLAIN` plan
+ * (Phase 26) plus the SQL it came from. No row data is sent: the server strips the plan down to node
+ * types and costs, redacting literals (Decision 1).
+ */
+export interface SchemaSuggestRequest {
+  endpointId: string;
+  model: string;
+  /** Tables to ground the advice in. When omitted, resolved from `sql` against the schema index. */
+  tables?: { schema: string; table: string }[];
+  plan?: QueryPlanResult;
+  sql?: string;
+}
+
+/** Surviving suggestions — candidates that failed re-validation are dropped, never surfaced. */
+export interface SchemaSuggestResponse {
+  suggestions: SchemaSuggestion[];
 }
 
 /** A persisted chat thread (summary form, for the conversation list). */

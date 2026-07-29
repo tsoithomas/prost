@@ -78,3 +78,68 @@ describe('EditColumnModal', () => {
     expect(screen.getByRole('option', { name: 'int' })).toBeInTheDocument();
   });
 });
+
+// Phase 33: an AI suggestion opens this same modal, seeding + highlighting the section it targets.
+describe('EditColumnModal — seeded from a suggestion', () => {
+  beforeEach(() => {
+    descriptor.current = BASE;
+    mockPreview.mockClear();
+  });
+
+  it('seeds the new type from a changeType suggestion and previews it unprompted', () => {
+    renderWithProviders(
+      <EditColumnModal
+        open onClose={vi.fn()} col={COLUMN} connectionId="conn-1" schema="public" table="orders"
+        initialOperation={{ kind: 'changeType', column: 'total', type: 'text' }}
+      />,
+    );
+
+    expect(mockPreview).toHaveBeenLastCalledWith('conn-1', {
+      kind: 'alterTable',
+      request: {
+        kind: 'changeType', schema: 'public', table: 'orders',
+        columnName: 'total', type: 'text', using: undefined,
+      },
+    });
+  });
+
+  it('seeds the default value from a setDefault suggestion', () => {
+    renderWithProviders(
+      <EditColumnModal
+        open onClose={vi.fn()} col={COLUMN} connectionId="conn-1" schema="public" table="orders"
+        initialOperation={{ kind: 'setDefault', column: 'total', default: '0' }}
+      />,
+    );
+
+    expect(screen.getByDisplayValue('0')).toBeInTheDocument();
+  });
+
+  it('flips the nullable checkbox for a setNotNull suggestion', () => {
+    renderWithProviders(
+      <EditColumnModal
+        open onClose={vi.fn()} col={COLUMN} connectionId="conn-1" schema="public" table="orders"
+        initialOperation={{ kind: 'setNotNull', column: 'total', notNull: true }}
+      />,
+    );
+
+    // The column is nullable today; the suggestion proposes NOT NULL, so the box starts unchecked.
+    expect(screen.getByRole('checkbox', { name: 'Nullable' })).not.toBeChecked();
+  });
+
+  it('falls back to the column\'s own values when no suggestion is given', () => {
+    renderWithProviders(
+      <EditColumnModal
+        open onClose={vi.fn()} col={COLUMN} connectionId="conn-1" schema="public" table="orders"
+      />,
+    );
+
+    expect(screen.getByRole('checkbox', { name: 'Nullable' })).toBeChecked();
+    expect(mockPreview).toHaveBeenLastCalledWith('conn-1', {
+      kind: 'alterTable',
+      request: {
+        kind: 'changeType', schema: 'public', table: 'orders',
+        columnName: 'total', type: 'integer', using: undefined,
+      },
+    });
+  });
+});

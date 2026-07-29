@@ -1,9 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import userEvent from '@testing-library/user-event';
 import type { DbEngineDescriptor, TableStructure } from '@prost/shared-types';
 import { renderWithProviders } from '../test/renderWithProviders';
 import { TableStructurePanel } from './TableStructurePanel';
 
-const { mockStructure, mockDescriptor } = vi.hoisted(() => ({ mockStructure: vi.fn(), mockDescriptor: vi.fn() }));
+const { mockStructure, mockDescriptor, mockRequest } = vi.hoisted(() => ({
+  mockStructure: vi.fn(), mockDescriptor: vi.fn(), mockRequest: vi.fn(),
+}));
 
 vi.mock('../api/metadata', () => ({ useTableStructure: () => mockStructure() }));
 vi.mock('../api/databaseEngines', () => ({ useEngineDescriptor: () => mockDescriptor() }));
@@ -17,6 +20,11 @@ vi.mock('../ddl/AddColumnModal', () => ({ AddColumnModal: () => null }));
 vi.mock('../ddl/EditColumnModal', () => ({ EditColumnModal: () => null }));
 vi.mock('../ddl/CreateIndexModal', () => ({ CreateIndexModal: () => null }));
 vi.mock('../ddl/AddForeignKeyModal', () => ({ AddForeignKeyModal: () => null }));
+vi.mock('../ddl/useSchemaSuggestions', () => ({
+  useSchemaSuggestions: () => ({
+    suggestions: null, error: null, ready: true, isPending: false, request: mockRequest, reset: vi.fn(),
+  }),
+}));
 
 /** A descriptor whose only relevant field is the FK-DDL capability flag. */
 function descriptor(supportsForeignKeyDdl: boolean): Partial<DbEngineDescriptor> {
@@ -106,5 +114,30 @@ describe('TableStructurePanel — FK write affordances', () => {
       <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable={false} />,
     );
     expect(queryByText('Add foreign key')).not.toBeInTheDocument();
+  });
+});
+
+describe('TableStructurePanel — schema suggestions (Phase 33)', () => {
+  beforeEach(() => {
+    mockRequest.mockClear();
+    mockStructure.mockReturnValue({ data: STRUCTURE, isLoading: false, isError: false });
+    mockDescriptor.mockReturnValue(descriptor(true));
+  });
+
+  it('asks for suggestions scoped to this table', async () => {
+    const { getByText } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable />,
+    );
+
+    await userEvent.click(getByText('Suggest improvements'));
+
+    expect(mockRequest).toHaveBeenCalledWith({ tables: [{ schema: 'public', table: 'orders' }] });
+  });
+
+  it('hides the entry point on a read-only connection (writes are blocked)', () => {
+    const { queryByText } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable={false} />,
+    );
+    expect(queryByText('Suggest improvements')).not.toBeInTheDocument();
   });
 });

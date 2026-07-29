@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
+import type { NewColumn } from '@prost/shared-types';
 import { Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
 import { useEngineDescriptor } from '../api/databaseEngines';
 import { useAlterTable } from '../api/ddl';
@@ -21,15 +22,17 @@ interface Props {
   connectionId: string;
   schema: string;
   table: string;
+  /** Seed the form when opened from outside (e.g. an AI suggestion — Phase 33). */
+  initialColumn?: NewColumn;
 }
 
-export function AddColumnModal({ open, onClose, connectionId, schema, table }: Props) {
-  const [name, setName] = useState('');
-  const [type, setType] = useState('text');
-  const [nullable, setNullable] = useState(true);
-  const [isPrimaryKey, setIsPrimaryKey] = useState(false);
-  const [autoIncrement, setAutoIncrement] = useState(false);
-  const [defaultVal, setDefaultVal] = useState('');
+export function AddColumnModal({ open, onClose, connectionId, schema, table, initialColumn }: Props) {
+  const [name, setName] = useState(initialColumn?.name ?? '');
+  const [type, setType] = useState(initialColumn?.type ?? 'text');
+  const [nullable, setNullable] = useState(initialColumn?.nullable ?? true);
+  const [isPrimaryKey, setIsPrimaryKey] = useState(initialColumn?.isPrimaryKey ?? false);
+  const [autoIncrement, setAutoIncrement] = useState(initialColumn?.autoIncrement ?? false);
+  const [defaultVal, setDefaultVal] = useState(initialColumn?.default ?? '');
   const [formError, setFormError] = useState<string | null>(null);
 
   const descriptor = useEngineDescriptor(connectionId);
@@ -56,12 +59,21 @@ export function AddColumnModal({ open, onClose, connectionId, schema, table }: P
     : null;
   const { sql: previewSql } = useDdlPreview(connectionId, previewBody);
 
+  // Seed from `initialColumn` on open (undefined for the normal "Add column" flow, so this reduces to
+  // the same blank form), reset on close. Keyed on the serialized value — same idiom as
+  // `useDdlPreview` — so a caller re-creating the object each render can't stomp the user's edits.
+  const initialKey = JSON.stringify(initialColumn ?? null);
   useEffect(() => {
-    if (!open) {
-      setName(''); setType('text'); setNullable(true); setIsPrimaryKey(false);
-      setAutoIncrement(false); setDefaultVal(''); setFormError(null); alter.reset();
-    }
-  }, [open]);
+    const seed = (open ? (JSON.parse(initialKey) as NewColumn | null) : null) ?? null;
+    setName(seed?.name ?? '');
+    setType(seed?.type ?? 'text');
+    setNullable(seed?.nullable ?? true);
+    setIsPrimaryKey(seed?.isPrimaryKey ?? false);
+    setAutoIncrement(seed?.autoIncrement ?? false);
+    setDefaultVal(seed?.default ?? '');
+    setFormError(null);
+    if (!open) alter.reset();
+  }, [open, initialKey]);
 
   useEffect(() => {
     if (!open) return;

@@ -54,6 +54,8 @@ import { ExportDialog } from './ExportDialog';
 import { statementAtOffset } from './statementRanges';
 import { useMonacoCompletions } from './useMonacoCompletions';
 import { FixWithAiButton } from '../ai/FixWithAiButton';
+import { SchemaSuggestionList } from '../ddl/SchemaSuggestionList';
+import { useSchemaSuggestions } from '../ddl/useSchemaSuggestions';
 
 /** AG Grid infinite-model block size for editor query results (matches the server page size). */
 const PAGE_SIZE = 100;
@@ -110,6 +112,9 @@ export function SqlEditorView() {
   const [response, setResponse] = useState<ExecuteQueryResponse | null>(activeTab?.result ?? null);
   // Structured query plan (Phase 26). When set, it takes over the results slot; cleared on run/tab-switch.
   const [planResult, setPlanResult] = useState<QueryPlanResult | null>(null);
+  // The statement the current plan came from — grounds the Phase 33 index suggestions in the same
+  // query the user explained.
+  const [planSql, setPlanSql] = useState('');
   // Bumped on every run / tab switch so the infinite grid rebuilds its datasource + cache for
   // the new result (used in the grid `key`).
   const [resultEpoch, setResultEpoch] = useState(0);
@@ -133,6 +138,9 @@ export function SqlEditorView() {
 
   const executeQuery = useExecuteQuery(connectionId ?? '');
   const explainQuery = useExplainQuery(connectionId ?? '');
+  const suggest = useSchemaSuggestions(connectionId);
+  // Stable reference, so `runExplain` can depend on it honestly (a fresh plan clears stale advice).
+  const resetSuggestions = suggest.reset;
   const { data: schemaMetadata } = useMetadata(connectionId);
   useMonacoCompletions(monacoInstance, schemaMetadata);
 
@@ -335,12 +343,16 @@ export function SqlEditorView() {
       explainQuery.mutate(
         { sql: statement, analyze },
         {
-          onSuccess: (plan) => setPlanResult(plan),
+          onSuccess: (plan) => {
+            setPlanResult(plan);
+            setPlanSql(statement);
+            resetSuggestions();
+          },
           onError: (error) => pushToast('danger', apiErrorDetail(error, 'Failed to explain the statement.')),
         },
       );
     },
-    [connectionId, explainQuery, resolveActiveStatement, confirm, pushToast],
+    [connectionId, explainQuery, resolveActiveStatement, confirm, pushToast, resetSuggestions],
   );
 
   // Cmd/Ctrl+Shift+Enter: run the whole tab.
@@ -702,7 +714,30 @@ export function SqlEditorView() {
         </div>
         <div className="min-h-0 flex-1">
           {planResult ? (
-            <QueryPlanView plan={planResult} className="h-full" />
+            <QueryPlanView
+              plan={planResult}
+              className="h-full"
+              // Suggestions are DDL writes, so the entry point is hidden on read-only connections
+              // (the server refuses it there too).
+              {...(writable
+                ? {
+                    onSuggestIndexes: () => suggest.request({ plan: planResult, sql: planSql }),
+                    suggesting: suggest.isPending,
+                  }
+                : {})}
+              {...(suggest.suggestions !== null || suggest.isPending
+                ? {
+                    footer: (
+                      <SchemaSuggestionList
+                        connectionId={connectionId ?? ''}
+                        suggestions={suggest.suggestions ?? []}
+                        loading={suggest.isPending}
+                        error={suggest.error}
+                      />
+                    ),
+                  }
+                : {})}
+            />
           ) : error ? (
             <div className="flex h-full flex-col items-center justify-center gap-xs p-md text-center">
               <Badge variant="danger">{errorCode ?? 'ERROR'}</Badge>

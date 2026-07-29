@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Copy } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { ChevronDown, ChevronRight, Copy, Sparkles } from 'lucide-react';
 import clsx from 'clsx';
 import type { QueryPlanNode, QueryPlanResult } from '@prost/shared-types';
 import { Badge } from '@prost/ui';
@@ -116,13 +117,18 @@ function PlanNodeRow({ node, depth, analyze, max }: PlanNodeRowProps) {
 export interface QueryPlanViewProps {
   plan: QueryPlanResult;
   className?: string;
+  /** Offer "Suggest indexes" (Phase 33). Omitted on read-only connections, where DDL is blocked. */
+  onSuggestIndexes?: () => void;
+  suggesting?: boolean;
+  /** Rendered below the tree — where the caller puts the returned suggestions. */
+  footer?: ReactNode;
 }
 
 /**
  * Renders a `QueryPlanResult` as an expandable, heat-weighted tree (Phase 26). The most expensive
  * node (by estimated cost, or actual time under ANALYZE) stands out via the danger/warning tokens.
  */
-export function QueryPlanView({ plan, className }: QueryPlanViewProps) {
+export function QueryPlanView({ plan, className, onSuggestIndexes, suggesting = false, footer }: QueryPlanViewProps) {
   const max = useMemo(() => maxMetric(plan.root, plan.analyze), [plan]);
 
   return (
@@ -131,10 +137,21 @@ export function QueryPlanView({ plan, className }: QueryPlanViewProps) {
         <span className="font-medium text-text">Query plan</span>
         {plan.analyze ? <Badge variant="warning">Analyze · executed</Badge> : <Badge variant="neutral">Estimated</Badge>}
         <span>{plan.executionTimeMs} ms</span>
+        {onSuggestIndexes ? (
+          <button
+            type="button"
+            onClick={onSuggestIndexes}
+            disabled={suggesting}
+            className="ml-auto flex items-center gap-1 text-accent hover:underline disabled:opacity-50"
+          >
+            <Sparkles size={12} />
+            {suggesting ? 'Thinking…' : 'Suggest indexes'}
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => void navigator.clipboard?.writeText(plan.planText)}
-          className="ml-auto flex items-center gap-1 text-text-faint hover:text-text"
+          className={clsx('flex items-center gap-1 text-text-faint hover:text-text', !onSuggestIndexes && 'ml-auto')}
         >
           <Copy size={12} />
           Copy
@@ -142,6 +159,7 @@ export function QueryPlanView({ plan, className }: QueryPlanViewProps) {
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-sm">
         <PlanNodeRow node={plan.root} depth={0} analyze={plan.analyze} max={max} />
+        {footer ? <div className="mt-md">{footer}</div> : null}
       </div>
     </div>
   );

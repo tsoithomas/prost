@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { usePreferences } from '../api/preferences';
 import { ConnectionModal } from '../connection/ConnectionModal';
+import { DdlSuggestionHost } from '../ddl/DdlSuggestionHost';
 import { useIsMobile } from '../hooks/useMediaQuery';
 import { matchesChord, resolveBinding } from '../keybindings';
 import { MobileShell } from '../mobile/MobileShell';
@@ -74,6 +75,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <MobileShell onOpenConnections={openConnectionModal} />
         {connectionModal}
         <CommandPalette />
+        <DdlSuggestionHost />
       </>
     );
   }
@@ -89,6 +91,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <StatusBar />
       {connectionModal}
       <CommandPalette />
+      <DdlSuggestionHost />
     </div>
   );
 }

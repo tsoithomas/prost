@@ -10,6 +10,8 @@ const {
   mockRunMutateAsync,
   mockLoadQuery,
   mockFetchConversation,
+  mockSuggestRequest,
+  connectionBox,
   conversationsBox,
   runResult,
 } = vi.hoisted(() => ({
@@ -21,6 +23,9 @@ const {
   mockRunMutateAsync: vi.fn(),
   mockLoadQuery: vi.fn(),
   mockFetchConversation: vi.fn(),
+  mockSuggestRequest: vi.fn(),
+  // Mutable so a test can flip the connection to read-only.
+  connectionBox: { readOnly: false },
   // Mutable so a test can seed the "latest conversation" the panel should auto-resume.
   conversationsBox: { list: [] as { id: string }[] },
   runResult: {
@@ -41,6 +46,7 @@ vi.mock('../api/ai', () => ({
   useAppendConversation: () => ({ mutate: vi.fn() }),
   useDeleteConversation: () => ({ mutate: vi.fn() }),
   fetchConversation: mockFetchConversation,
+  useSuggestSchemaChanges: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 const aiState = {
@@ -66,6 +72,17 @@ vi.mock('../stores/workspaceStore', () => ({
   useWorkspaceStore: (sel: (s: typeof wsState) => unknown) => sel(wsState),
 }));
 
+vi.mock('../api/connections', () => ({
+  useActiveConnection: () => ({ capabilities: { readOnly: connectionBox.readOnly } }),
+}));
+
+vi.mock('../ddl/useSchemaSuggestions', () => ({
+  useSchemaSuggestions: () => ({
+    suggestions: null, error: null, ready: true, isPending: false,
+    request: mockSuggestRequest, reset: vi.fn(),
+  }),
+}));
+
 // The endpoints-management modal pulls its own CRUD hooks from ../api/ai; stub it (we mock the module).
 vi.mock('./LlmEndpointsModal', () => ({ LlmEndpointsModal: () => null }));
 
@@ -73,6 +90,7 @@ afterEach(() => {
   vi.clearAllMocks();
   aiState.autoRunReadQueries = false;
   conversationsBox.list = [];
+  connectionBox.readOnly = false;
 });
 
 async function sendAndWaitForProposal() {
@@ -144,5 +162,24 @@ describe('ChatPanel — resume latest conversation', () => {
     await waitFor(() => expect(mockFetchConversation).toHaveBeenCalledWith('conn-1', 'convo-latest'));
     expect(await screen.findByText('earlier question')).toBeInTheDocument();
     expect(screen.getByText('earlier answer')).toBeInTheDocument();
+  });
+});
+
+describe('ChatPanel — schema suggestions (Phase 33)', () => {
+  it('offers "Suggest indexes" on a SQL block and asks about that block\'s SQL', async () => {
+    await sendAndWaitForProposal();
+
+    await userEvent.click(screen.getByRole('button', { name: /suggest indexes/i }));
+
+    expect(mockSuggestRequest).toHaveBeenCalledWith({ sql: 'SELECT * FROM users' });
+  });
+
+  it('hides the button on a read-only connection, where DDL is blocked', async () => {
+    connectionBox.readOnly = true;
+    await sendAndWaitForProposal();
+
+    expect(screen.queryByRole('button', { name: /suggest indexes/i })).toBeNull();
+    // The read-only agentic run is still offered — it's the *writes* that are blocked.
+    expect(screen.getByRole('button', { name: /run \(read-only\)/i })).toBeTruthy();
   });
 });

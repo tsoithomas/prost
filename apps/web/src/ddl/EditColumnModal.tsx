@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { quoteIdent } from '@prost/utils';
-import type { ColumnMetadata } from '@prost/shared-types';
+import type { AlterTableOperation, ColumnMetadata } from '@prost/shared-types';
 import { Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
 import { useEngineDescriptor } from '../api/databaseEngines';
 import { useAlterTable } from '../api/ddl';
@@ -17,6 +17,12 @@ const FALLBACK_PG_TYPES = [
   'json', 'jsonb', 'bytea',
 ];
 
+/** The in-place column changes this modal can be pre-seeded with (Phase 33 — a subset of the DDL union). */
+export type EditColumnSeed = Extract<
+  AlterTableOperation,
+  { kind: 'setNotNull' } | { kind: 'setDefault' } | { kind: 'changeType' }
+>;
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -24,9 +30,11 @@ interface Props {
   connectionId: string;
   schema: string;
   table: string;
+  /** Seed + highlight one section when opened from outside (e.g. an AI suggestion — Phase 33). */
+  initialOperation?: EditColumnSeed;
 }
 
-export function EditColumnModal({ open, onClose, col, connectionId, schema, table }: Props) {
+export function EditColumnModal({ open, onClose, col, connectionId, schema, table, initialOperation }: Props) {
   const [newType, setNewType] = useState('text');
   const [usingExpr, setUsingExpr] = useState('');
   const [nullable, setNullable] = useState(true);
@@ -56,16 +64,25 @@ export function EditColumnModal({ open, onClose, col, connectionId, schema, tabl
     : null;
   const { sql: previewSql } = useDdlPreview(connectionId, previewBody);
 
+  // Seed from the column, then let `initialOperation` (an AI suggestion) override the one field it
+  // targets. Keyed on the serialized operation — same idiom as `useDdlPreview` — so a caller
+  // re-creating the object each render can't stomp the user's edits.
+  const seedKey = JSON.stringify(initialOperation ?? null);
   useEffect(() => {
-    if (open && col) {
-      setNewType(col.dataType);
-      setUsingExpr('');
-      setNullable(col.nullable);
-      setDefaultVal('');
-      setTypeError(null); setNullError(null); setDefaultError(null); setDropError(null);
-      alter.reset();
-    }
-  }, [open, col?.name]);
+    if (!open || !col) return;
+    const seed = JSON.parse(seedKey) as EditColumnSeed | null;
+    setNewType(seed?.kind === 'changeType' ? seed.type : col.dataType);
+    setUsingExpr(seed?.kind === 'changeType' ? seed.using ?? '' : '');
+    setNullable(seed?.kind === 'setNotNull' ? !seed.notNull : col.nullable);
+    setDefaultVal(seed?.kind === 'setDefault' ? seed.default ?? '' : '');
+    setTypeError(null); setNullError(null); setDefaultError(null); setDropError(null);
+    alter.reset();
+  }, [open, col?.name, seedKey]);
+
+  // Which section the suggestion targets, so the user's eye lands on it among the three.
+  const suggested = initialOperation?.kind ?? null;
+  const sectionClass = (kind: EditColumnSeed['kind']) =>
+    `flex flex-col gap-sm p-lg${suggested === kind ? ' bg-accent-muted' : ''}`;
 
   useEffect(() => {
     if (!open) return;
@@ -174,7 +191,7 @@ export function EditColumnModal({ open, onClose, col, connectionId, schema, tabl
 
           <div className="flex flex-col gap-0 overflow-y-auto divide-y divide-border">
             {/* Change type */}
-            <div className="flex flex-col gap-sm p-lg">
+            <div className={sectionClass('changeType')}>
               <span className="text-xs font-medium uppercase tracking-wider text-text-faint">Change type</span>
               <div className="flex items-end gap-sm">
                 <div className="flex-1">
@@ -205,7 +222,7 @@ export function EditColumnModal({ open, onClose, col, connectionId, schema, tabl
             </div>
 
             {/* Nullability */}
-            <div className="flex flex-col gap-sm p-lg">
+            <div className={sectionClass('setNotNull')}>
               <span className="text-xs font-medium uppercase tracking-wider text-text-faint">Nullability</span>
               <div className="flex items-center justify-between">
                 <label className="flex items-center gap-sm text-sm text-text">
@@ -226,7 +243,7 @@ export function EditColumnModal({ open, onClose, col, connectionId, schema, tabl
             </div>
 
             {/* Default */}
-            <div className="flex flex-col gap-sm p-lg">
+            <div className={sectionClass('setDefault')}>
               <span className="text-xs font-medium uppercase tracking-wider text-text-faint">Default value</span>
               <div className="flex items-center gap-sm">
                 <Input

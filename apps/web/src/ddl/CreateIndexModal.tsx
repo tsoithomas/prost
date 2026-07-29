@@ -15,13 +15,21 @@ interface Props {
   schema: string;
   table: string;
   availableColumns: ColumnMetadata[];
+  /** Seed the form when opened from outside (e.g. an AI suggestion — Phase 33). */
+  initialColumns?: string[];
+  initialUnique?: boolean;
+  initialMethod?: string;
+  initialName?: string;
 }
 
-export function CreateIndexModal({ open, onClose, connectionId, schema, table, availableColumns }: Props) {
-  const [selectedCols, setSelectedCols] = useState<string[]>([]);
-  const [unique, setUnique] = useState(false);
-  const [method, setMethod] = useState('btree');
-  const [indexName, setIndexName] = useState('');
+export function CreateIndexModal({
+  open, onClose, connectionId, schema, table, availableColumns,
+  initialColumns, initialUnique, initialMethod, initialName,
+}: Props) {
+  const [selectedCols, setSelectedCols] = useState<string[]>(initialColumns ?? []);
+  const [unique, setUnique] = useState(initialUnique ?? false);
+  const [method, setMethod] = useState(initialMethod ?? 'btree');
+  const [indexName, setIndexName] = useState(initialName ?? '');
   const [formError, setFormError] = useState<string | null>(null);
 
   const descriptor = useEngineDescriptor(connectionId);
@@ -42,12 +50,21 @@ export function CreateIndexModal({ open, onClose, connectionId, schema, table, a
     : null;
   const { sql: previewSql } = useDdlPreview(connectionId, previewBody);
 
+  // Seed from `initial*` on open (they're undefined for the normal "Add index" flow, so this reduces
+  // to the same blank form), and reset on close. Keyed on the serialized initials — same idiom as
+  // `useDdlPreview` — so a caller re-creating the array each render can't stomp the user's edits.
+  const initialKey = JSON.stringify([initialColumns, initialUnique, initialMethod, initialName]);
   useEffect(() => {
-    if (!open) {
-      setSelectedCols([]); setUnique(false); setMethod('btree');
-      setIndexName(''); setFormError(null); createIndex.reset();
-    }
-  }, [open]);
+    const [cols, uniq, meth, name] = JSON.parse(initialKey) as [
+      string[] | undefined, boolean | undefined, string | undefined, string | undefined,
+    ];
+    setSelectedCols(open ? cols ?? [] : []);
+    setUnique(open ? uniq ?? false : false);
+    setMethod(open ? meth ?? 'btree' : 'btree');
+    setIndexName(open ? name ?? '' : '');
+    setFormError(null);
+    if (!open) createIndex.reset();
+  }, [open, initialKey]);
 
   useEffect(() => {
     if (indexMethods.length > 0 && !indexMethods.includes(method)) {

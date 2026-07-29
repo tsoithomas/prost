@@ -9,6 +9,7 @@ import {
   History,
   Play,
   Settings2,
+  Sparkles,
   Square,
   SquarePen,
   Trash2,
@@ -29,6 +30,9 @@ import {
   useRunReadQuery,
   type ChatTokenUsage,
 } from '../api/ai';
+import { useActiveConnection } from '../api/connections';
+import { SchemaSuggestionList } from '../ddl/SchemaSuggestionList';
+import { useSchemaSuggestions } from '../ddl/useSchemaSuggestions';
 import { ApiError, apiErrorDetail } from '../lib/apiClient';
 import { useAiStore } from '../stores/aiStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -84,6 +88,9 @@ export function ChatPanel({ connectionId }: Props) {
   const runReadQuery = useRunReadQuery(connectionId);
   const autoRunReadQueries = useAiStore((s) => s.autoRunReadQueries);
   const setAutoRunReadQueries = useAiStore((s) => s.setAutoRunReadQueries);
+  // Schema suggestions are DDL writes, so the per-block entry point is hidden on read-only
+  // connections — the server refuses them there too (Phase 25).
+  const writable = !useActiveConnection()?.capabilities.readOnly;
 
   const selectedEndpointId = useAiStore((s) => s.selectedEndpointId);
   const selectedModel = useAiStore((s) => s.selectedModel);
@@ -446,7 +453,15 @@ export function ChatPanel({ connectionId }: Props) {
             // Skip the seeded empty assistant placeholder — the typing indicator stands in until the
             // first token lands.
             msg.role === 'assistant' && msg.content === '' ? null : (
-              <MessageBubble key={i} msg={msg} usage={usages[i]} onLoadSql={loadQuery} onRunReadQuery={handleRunReadQuery} />
+              <MessageBubble
+                key={i}
+                msg={msg}
+                usage={usages[i]}
+                connectionId={connectionId}
+                suggestable={writable}
+                onLoadSql={loadQuery}
+                onRunReadQuery={handleRunReadQuery}
+              />
             ),
           )}
           {awaitingFirstToken ? <TypingIndicator /> : null}
@@ -490,11 +505,15 @@ export function ChatPanel({ connectionId }: Props) {
 function MessageBubble({
   msg,
   usage,
+  connectionId,
+  suggestable,
   onLoadSql,
   onRunReadQuery,
 }: {
   msg: ChatMessage;
   usage?: ChatTokenUsage;
+  connectionId: string;
+  suggestable: boolean;
   onLoadSql: (sql: string) => void;
   onRunReadQuery: (sql: string) => void;
 }) {
@@ -510,7 +529,13 @@ function MessageBubble({
         {isUser ? (
           <span className="whitespace-pre-wrap">{msg.content}</span>
         ) : (
-          <MarkdownMessage content={msg.content} onLoadSql={onLoadSql} onRunReadQuery={onRunReadQuery} />
+          <MarkdownMessage
+            content={msg.content}
+            connectionId={connectionId}
+            suggestable={suggestable}
+            onLoadSql={onLoadSql}
+            onRunReadQuery={onRunReadQuery}
+          />
         )}
       </div>
       {usage ? (
@@ -536,10 +561,14 @@ function nodeText(node: React.ReactNode): string {
 /** Renders an assistant reply as GitHub-flavored markdown; code blocks get copy + SQL load actions. */
 function MarkdownMessage({
   content,
+  connectionId,
+  suggestable,
   onLoadSql,
   onRunReadQuery,
 }: {
   content: string;
+  connectionId: string;
+  suggestable: boolean;
   onLoadSql: (sql: string) => void;
   onRunReadQuery: (sql: string) => void;
 }) {
@@ -584,7 +613,15 @@ function MarkdownMessage({
             }
             // `children` carries highlight.js token spans; `raw` is the plain text for the buttons.
             return (
-              <CodeBlock lang={match?.[1]} code={raw} codeClassName={className} onLoadSql={onLoadSql} onRunReadQuery={onRunReadQuery}>
+              <CodeBlock
+                lang={match?.[1]}
+                code={raw}
+                codeClassName={className}
+                connectionId={connectionId}
+                suggestable={suggestable}
+                onLoadSql={onLoadSql}
+                onRunReadQuery={onRunReadQuery}
+              >
                 {children}
               </CodeBlock>
             );
@@ -601,6 +638,8 @@ function CodeBlock({
   lang,
   code,
   codeClassName,
+  connectionId,
+  suggestable,
   onLoadSql,
   onRunReadQuery,
   children,
@@ -608,6 +647,9 @@ function CodeBlock({
   lang?: string;
   code: string;
   codeClassName?: string;
+  connectionId: string;
+  /** False on read-only connections, where schema changes are blocked (Phase 25). */
+  suggestable: boolean;
   onLoadSql: (sql: string) => void;
   onRunReadQuery: (sql: string) => void;
   children: React.ReactNode;
@@ -615,12 +657,14 @@ function CodeBlock({
   // The server proves + engine-enforces read-only, so "Run" is safe to offer on any SQL block; a
   // non-read statement returns a clear refusal rather than executing.
   const isSql = lang === 'sql';
+  const suggest = useSchemaSuggestions(connectionId);
+
   return (
     <div className="mt-sm">
       <pre className="overflow-x-auto rounded-sm bg-surface-sunken p-sm font-mono text-xs text-text">
         <code className={codeClassName}>{children}</code>
       </pre>
-      <div className="mt-xs flex items-center gap-md">
+      <div className="mt-xs flex flex-wrap items-center gap-md">
         {isSql ? (
           <button
             type="button"
@@ -641,8 +685,28 @@ function CodeBlock({
             Load into editor
           </button>
         ) : null}
+        {isSql && suggestable ? (
+          <button
+            type="button"
+            onClick={() => suggest.request({ sql: code })}
+            disabled={suggest.isPending}
+            className="flex items-center gap-xs text-xs text-accent hover:underline disabled:opacity-50"
+          >
+            <Sparkles size={11} />
+            {suggest.isPending ? 'Thinking…' : 'Suggest indexes'}
+          </button>
+        ) : null}
         <CopyButton text={code} />
       </div>
+      {suggest.suggestions !== null || suggest.isPending ? (
+        <SchemaSuggestionList
+          connectionId={connectionId}
+          suggestions={suggest.suggestions ?? []}
+          loading={suggest.isPending}
+          error={suggest.error}
+          className="mt-sm"
+        />
+      ) : null}
     </div>
   );
 }

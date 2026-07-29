@@ -13,6 +13,8 @@ import type {
   LlmProbeResult,
   RunReadQueryRequest,
   RunReadQueryResponse,
+  SchemaSuggestRequest,
+  SchemaSuggestResponse,
   UpdateLlmEndpointBody,
 } from '@prost/shared-types';
 import { ApiError, BASE_URL, apiFetch } from '../lib/apiClient';
@@ -114,6 +116,22 @@ export function useSuggestChart(connectionId: string | null) {
   return useMutation({
     mutationFn: (req: ChartSuggestRequest) =>
       apiFetch<ChartSuggestResponse>(`/connections/${connectionId!}/ai/chart-suggest`, {
+        method: 'POST',
+        body: req,
+      }),
+  });
+}
+
+/**
+ * Ask the model to propose schema changes (`POST :id/ai/schema-suggest`, Phase 33). The server
+ * validates every candidate against live metadata and returns only those that compile, each with its
+ * rendered SQL — a read-only connection is refused with a 403 `ApiError`. Applying one still goes
+ * through the normal DDL modal → confirm → execute path.
+ */
+export function useSuggestSchemaChanges(connectionId: string | null) {
+  return useMutation({
+    mutationFn: (req: SchemaSuggestRequest) =>
+      apiFetch<SchemaSuggestResponse>(`/connections/${connectionId!}/ai/schema-suggest`, {
         method: 'POST',
         body: req,
       }),

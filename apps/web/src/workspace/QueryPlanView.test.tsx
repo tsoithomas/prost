@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { QueryPlanResult } from '@prost/shared-types';
 import { QueryPlanView } from './QueryPlanView';
 
@@ -35,6 +36,33 @@ describe('QueryPlanView', () => {
     expect(container.querySelectorAll('[data-heat="hot"]').length).toBeGreaterThanOrEqual(1);
     const indexRow = screen.getByText('Index Scan').closest('[data-heat]');
     expect(indexRow?.getAttribute('data-heat')).toBe('cool');
+  });
+
+  // Phase 33: the plan view is the primary entry point for index advice.
+  it('omits the suggest action unless a handler is given (read-only connections)', () => {
+    render(<QueryPlanView plan={plan} />);
+    expect(screen.queryByRole('button', { name: /suggest indexes/i })).toBeNull();
+  });
+
+  it('offers "Suggest indexes" and renders the returned suggestions in its footer', async () => {
+    const onSuggestIndexes = vi.fn();
+    render(
+      <QueryPlanView
+        plan={plan}
+        onSuggestIndexes={onSuggestIndexes}
+        footer={<div data-testid="suggestions" />}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: /suggest indexes/i }));
+
+    expect(onSuggestIndexes).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('suggestions')).toBeInTheDocument();
+  });
+
+  it('disables the suggest action while a request is in flight', () => {
+    render(<QueryPlanView plan={plan} onSuggestIndexes={vi.fn()} suggesting />);
+    expect(screen.getByRole('button', { name: /thinking/i })).toBeDisabled();
   });
 
   it('switches to actual timings under analyze', () => {

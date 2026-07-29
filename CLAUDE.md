@@ -92,6 +92,24 @@ editability analyzer already marks them non-editable — no new path) while othe
 `'object'` workspace tab rendering `DefinitionPanel` (a token-styled `<pre>` source view, no Monaco).
 Routing lives in `explorer/objectNavigation.ts`. No create/alter/drop, no execution — browsing only.
 
+**Phase 33 (AI schema-change suggestions)**: `POST :id/ai/schema-suggest` (`AiService.
+suggestSchemaChanges`) asks the model for **typed DDL change requests, never SQL**. `AiModule` now
+imports `DdlModule`, and each candidate is re-validated by the *existing* `DdlService.preview` —
+identifiers against live metadata, types against the driver allow-list — with failures **dropped**
+rather than surfaced, so a hallucinated column never reaches the UI. What may be proposed is pinned by
+`SUGGESTABLE_ALTER_OPS` / `SchemaSuggestionChange` in `@prost/shared-types` (`createIndex`, plus
+`addColumn`/`setNotNull`/`setDefault`/`changeType`); every destructive kind is structurally
+unrepresentable. `PoolManager.assertWritable` rejects the whole request (403) on read-only connections
+**before any provider call**. Grounding is schema-only: `RetrievalService.describeTables` (which gains
+a public `listTables` seam) plus a `sanitizePlanForPrompt`-stripped plan — `planText` and per-node
+`fields` dropped, literals in `detail` redacted, since PG echoes real values there. On the frontend a
+new `ddlStore` hands a change to `DdlSuggestionHost` (mounted in `AppLayout` in **both** shells, like
+`CommandPalette`), which opens the **existing** `CreateIndexModal`/`AddColumnModal`/`EditColumnModal`
+pre-filled via new optional `initial*` props — same preview, same mutations, same confirm gates, no new
+DDL route. `SchemaSuggestionList` + `useSchemaSuggestions` back three entry points, all hidden on
+read-only connections: "Suggest indexes" in `QueryPlanView`, "Suggest improvements" in
+`TableStructurePanel`, and a per-`sql`-block button in `ChatPanel`.
+
 ## Commands
 
 Package manager is pnpm (pinned via `packageManager` in `package.json`). If `pnpm` isn't

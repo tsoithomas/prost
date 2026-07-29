@@ -61,4 +61,39 @@ describe('CreateIndexModal', () => {
       },
     });
   });
+
+  // Phase 33: an AI suggestion opens this same modal pre-filled, via `DdlSuggestionHost`.
+  it('seeds the form from initial* props and previews them without any interaction', () => {
+    renderWithProviders(
+      <CreateIndexModal
+        open
+        onClose={vi.fn()}
+        connectionId="conn-1"
+        schema="shop"
+        table="items"
+        availableColumns={[{
+          name: 'id', dataType: 'int', nullable: false, isPrimaryKey: true,
+          autoIncrement: true, defaultValue: null,
+        }]}
+        initialColumns={['id']}
+        initialUnique
+        initialName="items_id_idx"
+      />,
+    );
+
+    expect(screen.getByRole('checkbox', { name: 'id' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Unique' })).toBeChecked();
+    expect(screen.getByDisplayValue('items_id_idx')).toBeTruthy();
+    expect(mockPreview).toHaveBeenLastCalledWith('conn-1', {
+      kind: 'createIndex',
+      request: {
+        schema: 'shop',
+        table: 'items',
+        columns: ['id'],
+        unique: true,
+        method: 'btree',
+        name: 'items_id_idx',
+      },
+    });
+  });
 });
