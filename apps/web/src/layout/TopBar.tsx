@@ -1,12 +1,10 @@
-import { useRef, useState } from 'react';
 import { Settings } from 'lucide-react';
 import { IconButton } from '@prost/ui';
 import logo from '../assets/logo.svg';
-import { SettingsPanel } from './SettingsPanel';
+import { useSettingsStore } from '../stores/settingsStore';
 
 export function TopBar() {
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const openSettings = useSettingsStore((state) => state.openSettings);
 
   return (
     <header className="flex h-8 shrink-0 items-center justify-between border-b border-border bg-surface px-md">
@@ -15,19 +13,9 @@ export function TopBar() {
         Prost
       </span>
       <div className="flex items-center gap-xs">
-        <div className="relative">
-          <IconButton
-            ref={settingsButtonRef}
-            aria-label="Settings"
-            variant={settingsOpen ? 'active' : 'ghost'}
-            onClick={() => setSettingsOpen((open) => !open)}
-          >
-            <Settings size={16} />
-          </IconButton>
-          {settingsOpen ? (
-            <SettingsPanel triggerRef={settingsButtonRef} onClose={() => setSettingsOpen(false)} />
-          ) : null}
-        </div>
+        <IconButton aria-label="Settings" variant="ghost" onClick={() => openSettings()}>
+          <Settings size={16} />
+        </IconButton>
       </div>
     </header>
   );

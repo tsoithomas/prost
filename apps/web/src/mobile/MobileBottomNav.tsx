@@ -1,5 +1,6 @@
 import { Bot, Network, Settings, Terminal } from 'lucide-react';
 import clsx from 'clsx';
+import { useThemeStore } from '../stores/themeStore';
 import type { MobileTab } from './MobileShell';
 
 const tabs: { key: MobileTab; label: string; icon: typeof Network }[] = [
@@ -15,9 +16,11 @@ export interface MobileBottomNavProps {
 }
 
 export function MobileBottomNav({ active, onChange }: MobileBottomNavProps) {
+  const aiEnabled = useThemeStore((s) => s.aiEnabled);
+  const visibleTabs = aiEnabled ? tabs : tabs.filter((t) => t.key !== 'ai');
   return (
     <nav className="flex min-h-14 shrink-0 items-center justify-around border-t border-border bg-surface-sunken px-sm pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
-      {tabs.map(({ key, label, icon: Icon }) => {
+      {visibleTabs.map(({ key, label, icon: Icon }) => {
         const isActive = key === active;
         return (
           <button

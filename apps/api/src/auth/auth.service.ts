@@ -1,8 +1,10 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { compare } from 'bcrypt';
+import { compare, hash } from 'bcrypt';
 import type { UserDto } from '@prost/shared-types';
 import { PrismaService } from '../prisma/prisma.service';
+
+const BCRYPT_ROUNDS = 10;
 
 @Injectable()
 export class AuthService {
@@ -24,6 +26,15 @@ export class AuthService {
   async getUser(userId: string): Promise<UserDto> {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     return toUserDto(user);
+  }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+    if (!(await compare(currentPassword, user.passwordHash))) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    const passwordHash = await hash(newPassword, BCRYPT_ROUNDS);
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } });
   }
 }
 

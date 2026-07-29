@@ -1,11 +1,15 @@
 import type {
   ColorMode,
   CustomPalette,
+  DataColorKey,
+  FontFamily,
   FontSize,
   GridDensity,
+  MonoFontFamily,
   PaletteTokenKey,
+  RadiusScale,
 } from '@prost/shared-types';
-import { PALETTE_TOKEN_KEYS } from '@prost/shared-types';
+import { DATA_COLOR_KEYS, PALETTE_TOKEN_KEYS } from '@prost/shared-types';
 
 export function resolveColorMode(mode: ColorMode): 'light' | 'dark' {
   if (mode === 'system') {
@@ -89,6 +93,102 @@ export function applyGridDensity(density: GridDensity): void {
   const v = GRID_DENSITY_VALUES[density];
   root.style.setProperty('--grid-spacing', v.spacing);
   root.style.setProperty('--grid-font-size', v.fontSize);
+}
+
+/**
+ * Explicit per-density row/header height (px), passed to AG Grid as the `rowHeight`/`headerHeight`
+ * grid options. AG Grid caches the theme's spacing-derived row height at init and only re-measures it
+ * via a ResizeObserver, so mutating `--grid-spacing` live re-styles cell padding/font but leaves the
+ * already-rendered rows at their old pixel height until reload. Setting the option makes a density
+ * change apply immediately, and AG Grid derives `--ag-line-height` from it — which vertically centers
+ * single-line cell text. Values mirror Quartz's default row height (`spacing * 6 + 1px`, with spacing
+ * 3/4/7 from `GRID_DENSITY_VALUES`) so the look matches the auto theme.
+ */
+export const GRID_DENSITY_ROW_HEIGHT: Record<GridDensity, number> = {
+  compact: 19,
+  normal: 25,
+  comfortable: 43,
+};
+
+/** Toggles `<html data-reduce-motion>`; `tokens.css` zeroes transitions/animations when present. */
+export function applyReduceMotion(on: boolean): void {
+  document.documentElement.toggleAttribute('data-reduce-motion', on);
+}
+
+/** Concrete font stacks for each allowlisted UI-font key (`--font-sans`). */
+export const FONT_FAMILY_STACK: Record<FontFamily, string> = {
+  system: 'ui-sans-serif, system-ui, sans-serif',
+  inter: "'Inter', ui-sans-serif, system-ui, sans-serif",
+  serif: "ui-serif, Georgia, Cambria, 'Times New Roman', serif",
+};
+
+/** Concrete monospace stacks for each allowlisted editor-font key (used by `--font-mono` + Monaco). */
+export const MONO_FONT_FAMILY_STACK: Record<MonoFontFamily, string> = {
+  'jetbrains-mono': "'JetBrains Mono', ui-monospace, monospace",
+  'system-mono': 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  'fira-code': "'Fira Code', ui-monospace, monospace",
+};
+
+/** Sets the UI font stack inline on `<html>` (`--font-sans`); `undefined` clears to the theme default. */
+export function applyFontFamily(family: FontFamily | undefined): void {
+  const root = document.documentElement;
+  if (family) root.style.setProperty('--font-sans', FONT_FAMILY_STACK[family]);
+  else root.style.removeProperty('--font-sans');
+}
+
+/**
+ * Sets the monospace font stack inline on `<html>` (`--font-mono`) for non-editor mono text. The Monaco
+ * editor itself reads `fontFamily` as an editor option (it snapshots computed styles), so its font is
+ * threaded separately via {@link MONO_FONT_FAMILY_STACK}.
+ */
+export function applyMonoFontFamily(family: MonoFontFamily | undefined): void {
+  const root = document.documentElement;
+  if (family) root.style.setProperty('--font-mono', MONO_FONT_FAMILY_STACK[family]);
+  else root.style.removeProperty('--font-mono');
+}
+
+const RADIUS_SCALE_VALUES: Record<RadiusScale, { sm: string; md: string; lg: string }> = {
+  compact: { sm: '0px', md: '2px', lg: '4px' },
+  normal: { sm: '2px', md: '4px', lg: '8px' },
+  roomy: { sm: '4px', md: '8px', lg: '14px' },
+};
+
+/** Sets the `--radius-*` token trio inline on `<html>`; `undefined` clears to the theme default. */
+export function applyRadiusScale(scale: RadiusScale | undefined): void {
+  const root = document.documentElement;
+  if (!scale) {
+    root.style.removeProperty('--radius-sm');
+    root.style.removeProperty('--radius-md');
+    root.style.removeProperty('--radius-lg');
+    return;
+  }
+  const v = RADIUS_SCALE_VALUES[scale];
+  root.style.setProperty('--radius-sm', v.sm);
+  root.style.setProperty('--radius-md', v.md);
+  root.style.setProperty('--radius-lg', v.lg);
+}
+
+const DATA_COLOR_VAR: Record<DataColorKey, string> = {
+  number: '--color-data-number',
+  string: '--color-data-string',
+  decimal: '--color-data-decimal',
+  boolean: '--color-data-boolean',
+  temporal: '--color-data-temporal',
+  null: '--color-data-null',
+};
+
+/**
+ * Applies data-cell tint overrides as inline `--color-data-*` vars on `<html>` (same path as the
+ * palette). A missing key clears its override so the token falls back to the active mode's value.
+ */
+export function applyDataColors(colors: Partial<Record<DataColorKey, string>> | undefined): void {
+  const root = document.documentElement;
+  for (const key of DATA_COLOR_KEYS) {
+    const value = colors?.[key];
+    const cssVar = DATA_COLOR_VAR[key];
+    if (value) root.style.setProperty(cssVar, value);
+    else root.style.removeProperty(cssVar);
+  }
 }
 
 const PALETTE_TOKEN_VAR: Record<PaletteTokenKey, string> = {

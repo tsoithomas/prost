@@ -18,8 +18,10 @@ import {
   Badge,
   Button,
   Switch,
+  GRID_DENSITY_ROW_HEIGHT,
   IconButton,
   Input,
+  MONO_FONT_FAMILY_STACK,
   PROST_DARK_THEME,
   PROST_LIGHT_THEME,
   Toast,
@@ -52,6 +54,7 @@ import { QueryPlanView } from './QueryPlanView';
 import { ResultChartPanel } from './ResultChartPanel';
 import { ExportDialog } from './ExportDialog';
 import { statementAtOffset } from './statementRanges';
+import { isLikelyWrite } from './writeClassifier';
 import { useMonacoCompletions } from './useMonacoCompletions';
 import { FixWithAiButton } from '../ai/FixWithAiButton';
 import { SchemaSuggestionList } from '../ddl/SchemaSuggestionList';
@@ -59,6 +62,9 @@ import { useSchemaSuggestions } from '../ddl/useSchemaSuggestions';
 
 /** AG Grid infinite-model block size for editor query results (matches the server page size). */
 const PAGE_SIZE = 100;
+
+/** Editor font-size preset → px. */
+const EDITOR_FONT_PX = { sm: 12, md: 13, lg: 15 } as const;
 
 /** `sourceTable` is `schema.table` (see `editability.ts`) — split it back for the Phase 2 mutation hooks. */
 function splitSourceTable(sourceTable: string | undefined): { schema: string; table: string } | null {
@@ -84,6 +90,13 @@ export function SqlEditorView() {
   // re-theme effect must also watch them (a palette snapshot is what Monaco reads via getComputedStyle).
   const activePaletteName = useThemeStore((state) => state.activePaletteName);
   const customPalettes = useThemeStore((state) => state.customPalettes);
+  const monoFontFamily = useThemeStore((state) => state.monoFontFamily);
+  const gridDensity = useThemeStore((state) => state.gridDensity);
+  const gridRowHeight = GRID_DENSITY_ROW_HEIGHT[gridDensity];
+  const editorPrefs = useThemeStore((state) => state.editor);
+  const gridPrefs = useThemeStore((state) => state.grid);
+  const pageSize = gridPrefs.pageSize ?? PAGE_SIZE;
+  const confirmWrites = useThemeStore((state) => state.behavior.confirmWrites ?? false);
   const pendingQuerySql = useWorkspaceStore((state) => state.pendingQuerySql);
   const clearPendingQuerySql = useWorkspaceStore((state) => state.clearPendingQuerySql);
   const setCursorPosition = useWorkspaceStore((state) => state.setCursorPosition);
@@ -93,7 +106,6 @@ export function SqlEditorView() {
   const setTabResult = useWorkspaceStore((state) => state.setTabResult);
   const setTabTransactional = useWorkspaceStore((state) => state.setTabTransactional);
   const transactionalDefault = useWorkspaceStore((state) => state.transactionalDefault);
-  const setTransactionalDefault = useWorkspaceStore((state) => state.setTransactionalDefault);
   const queryClient = useQueryClient();
   const monacoTheme = resolveColorMode(colorMode) === 'dark' ? PROST_DARK_THEME : PROST_LIGHT_THEME;
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
@@ -172,9 +184,9 @@ export function SqlEditorView() {
   const columnDefs = useMemo(
     () =>
       editableResult
-        ? buildColumnDefs(editableResult.columns, editable, { renderOverrides, onHeaderContextMenu: setRenderMenu })
+        ? buildColumnDefs(editableResult.columns, editable, { renderOverrides, onHeaderContextMenu: setRenderMenu, display: gridPrefs })
         : [],
-    [editableResult, editable, renderOverrides],
+    [editableResult, editable, renderOverrides, gridPrefs],
   );
 
   const handleSelectRenderMode = useCallback(
@@ -250,6 +262,20 @@ export function SqlEditorView() {
     setMonacoThemeName(name);
   }, [monacoInstance, colorMode, accentColor, activePaletteName, customPalettes]);
 
+  // Apply editor font family/size imperatively. Relying on @monaco-editor/react's `options` prop is
+  // unreliable for fonts — Monaco caches glyph metrics, so the change doesn't repaint until fonts are
+  // re-measured. Setting the options on the instance and then calling `remeasureFonts()` in one ordered
+  // step guarantees the new font takes effect immediately.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !monacoInstance) return;
+    editor.updateOptions({
+      fontFamily: monoFontFamily ? MONO_FONT_FAMILY_STACK[monoFontFamily] : 'JetBrains Mono, monospace',
+      fontSize: EDITOR_FONT_PX[editorPrefs.fontSize ?? 'md'],
+    });
+    monacoInstance.editor.remeasureFonts();
+  }, [monacoInstance, monoFontFamily, editorPrefs.fontSize]);
+
   // Switching tabs swaps the editor buffer + results to that tab's stored state and
   // clears any in-progress edit/selection UI from the previous tab.
   useEffect(() => {
@@ -280,9 +306,30 @@ export function SqlEditorView() {
   }, [pendingQuerySql, clearPendingQuerySql, activeTabId, setTabSql]);
 
   const runSql = useCallback(
-    (sqlToRun: string) => {
-      const trimmed = sqlToRun.trim();
+    async (sqlToRun: string) => {
+      let trimmed = sqlToRun.trim();
       if (!connectionId || !trimmed || executeQuery.isPending) return;
+
+      // "Format on run": tidy the statement before executing (and recording in history). Best-effort —
+      // fall back to the original text if the formatter can't parse it.
+      if (editorPrefs.formatOnRun) {
+        try {
+          trimmed = format(trimmed, { language: formatterDialectRef.current }).trim();
+        } catch {
+          /* keep the original text */
+        }
+      }
+
+      // "Confirm writes": ask before running a statement that looks like it modifies data or schema.
+      if (confirmWrites && isLikelyWrite(trimmed)) {
+        const ok = await confirm({
+          title: 'Run this statement?',
+          description: 'This looks like it modifies data or schema.',
+          confirmLabel: 'Run',
+          danger: true,
+        });
+        if (!ok) return;
+      }
 
       setPendingInsert(null);
       setSelectedRows([]);
@@ -305,7 +352,7 @@ export function SqlEditorView() {
         },
       );
     },
-    [connectionId, executeQuery, transactional, queryClient, activeTabId, setTabResult],
+    [connectionId, executeQuery, transactional, queryClient, activeTabId, setTabResult, editorPrefs, confirmWrites, confirm],
   );
 
   // The selected text if any, otherwise the statement under the cursor, otherwise the whole buffer.
@@ -536,9 +583,13 @@ export function SqlEditorView() {
             });
           }}
           options={{
-            fontSize: 13,
-            fontFamily: 'JetBrains Mono, monospace',
-            minimap: { enabled: false },
+            fontSize: EDITOR_FONT_PX[editorPrefs.fontSize ?? 'md'],
+            fontFamily: monoFontFamily ? MONO_FONT_FAMILY_STACK[monoFontFamily] : 'JetBrains Mono, monospace',
+            tabSize: editorPrefs.tabSize ?? 2,
+            insertSpaces: editorPrefs.insertSpaces ?? true,
+            wordWrap: editorPrefs.wordWrap ? 'on' : 'off',
+            lineNumbers: editorPrefs.lineNumbers ?? 'on',
+            minimap: { enabled: editorPrefs.minimap ?? false },
             padding: { top: 8 },
           }}
         />
@@ -586,10 +637,9 @@ export function SqlEditorView() {
           >
             <Switch
               checked={transactional}
-              onChange={(e) => {
-                setTabTransactional(activeTabId, e.target.checked);
-                setTransactionalDefault(e.target.checked); // remember across reloads + new tabs
-              }}
+              // Per-tab override only. The global default comes from Settings › Behavior
+              // ("Run in a transaction by default"); toggling one tab must not silently rewrite it.
+              onChange={(e) => setTabTransactional(activeTabId, e.target.checked)}
               aria-label="Run as transaction"
             />
             Transaction
@@ -769,10 +819,12 @@ export function SqlEditorView() {
                 <AgGridReact
                   key={`${activeTabId}.${resultEpoch}`}
                   theme={prostGridTheme}
+                  rowHeight={gridRowHeight}
+                  headerHeight={gridRowHeight}
                   columnDefs={columnDefs}
                   rowModelType="infinite"
                   datasource={datasource}
-                  cacheBlockSize={PAGE_SIZE}
+                  cacheBlockSize={pageSize}
                   maxBlocksInCache={10}
                   maxConcurrentDatasourceRequests={1}
                   getRowId={getRowId}

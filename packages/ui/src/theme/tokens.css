@@ -164,3 +164,47 @@ body {
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/*
+ * AG Grid single-line cell centering. A plain `.ag-cell` is `display: inline-block; height: 100%`
+ * with `line-height: normal`, so at tight densities the text's line box sits at the top of the taller
+ * cell — leaving more room below than above. Tie the cell's line-height to the row height so the single
+ * line fills and centers the cell at every density. Prefer `--ag-line-height` (set by AG Grid from the
+ * explicit `rowHeight` grid option — see `GRID_DENSITY_ROW_HEIGHT`), falling back to the theme's auto
+ * row-height var. Kept inline-block (not flexed) so `.ag-cell-value` ellipsis truncation is unaffected;
+ * wrap-text and auto-height cells are excluded so multi-line content keeps normal leading. Higher
+ * specificity than AG Grid's own rule so it wins regardless of the runtime theme-CSS injection order.
+ */
+.ag-root-wrapper .ag-cell:not(.ag-cell-wrap-text):not(.ag-cell-auto-height) {
+  line-height: var(--ag-line-height, var(--ag-row-height, calc(var(--grid-spacing) * 6 + 1px)));
+}
+
+/*
+ * The floating multiline editor (agLargeTextCellEditor) used for text/longtext/JSON columns: make the
+ * textarea user-resizable and give it comfortable defaults so long values are easy to edit.
+ */
+.ag-large-text-input {
+  resize: both;
+  min-width: 20rem;
+  min-height: 8rem;
+  max-width: 90vw;
+  max-height: 70vh;
+}
+.ag-large-text-input textarea {
+  resize: both;
+  min-height: 8rem;
+}
+
+/*
+ * Reduce motion — set via `applyReduceMotion` (a user preference, independent of the OS setting).
+ * Neutralizes transitions and animations app-wide (`!important` so token-driven transitions on
+ * components can't re-enable them).
+ */
+[data-reduce-motion] *,
+[data-reduce-motion] *::before,
+[data-reduce-motion] *::after {
+  transition-duration: 0.01ms !important;
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+}

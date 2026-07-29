@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useConnections } from '../api/connections';
 import { usePreferences } from '../api/preferences';
 import { ConnectionModal } from '../connection/ConnectionModal';
 import { DdlSuggestionHost } from '../ddl/DdlSuggestionHost';
@@ -10,9 +11,11 @@ import { CommandPalette } from '../search/CommandPalette';
 import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useThemeStore } from '../stores/themeStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import { TopBar } from './TopBar';
 import { Sidebar } from './Sidebar';
 import { RightSidebar } from './RightSidebar';
+import { SettingsModal } from './SettingsModal';
 import { StatusBar } from './StatusBar';
 
 export interface AppLayoutProps {
@@ -28,6 +31,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   // Global command-palette shortcut (remappable; defaults to ⌘K / Ctrl+K), both shells.
   const togglePalette = useCommandPaletteStore((s) => s.toggle);
   const keybindings = useThemeStore((s) => s.keybindings);
+  const aiEnabled = useThemeStore((s) => s.aiEnabled);
   useEffect(() => {
     const chord = resolveBinding('command-palette', keybindings);
     function handleKeyDown(e: KeyboardEvent) {
@@ -58,7 +62,36 @@ export function AppLayout({ children }: AppLayoutProps) {
     store.setKeybindings(preferences.keybindings ?? {});
     store.setConnectionOverrides(preferences.connectionOverrides ?? {});
     store.setColumnRenderOverrides(preferences.columnRenderOverrides ?? {});
+    if (preferences.fontFamily !== store.fontFamily) store.setFontFamily(preferences.fontFamily);
+    if (preferences.monoFontFamily !== store.monoFontFamily) store.setMonoFontFamily(preferences.monoFontFamily);
+    if (preferences.radiusScale && preferences.radiusScale !== store.radiusScale) {
+      store.setRadiusScale(preferences.radiusScale);
+    }
+    store.setDataColors(preferences.dataColors ?? {});
+    store.setEditorPrefs(preferences.editor ?? {});
+    store.setGridPrefs(preferences.grid ?? {});
+    store.setBehaviorPrefs(preferences.behavior ?? {});
+    store.setReduceMotion(preferences.reduceMotion ?? false);
+    store.setAiEnabled(preferences.aiEnabled ?? true);
+    // The workspace's "transactional by default" is a preference; seed the runtime flag from it.
+    if (preferences.behavior?.transactionByDefault !== undefined) {
+      useWorkspaceStore.getState().setTransactionalDefault(preferences.behavior.transactionByDefault);
+    }
   }, [preferences]);
+
+  // Startup connection: once preferences + connections have loaded, apply the user's choice exactly
+  // once — 'last'/unset keeps the persisted connection, 'none' clears it, an id selects that connection.
+  const { data: connections } = useConnections();
+  const startupAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!preferences || !connections || startupAppliedRef.current) return;
+    startupAppliedRef.current = true;
+    const startup = preferences.behavior?.startupConnection;
+    if (!startup || startup === 'last') return;
+    const connStore = useConnectionStore.getState();
+    if (startup === 'none') connStore.setActive(null);
+    else if (connections.some((c) => c.id === startup)) connStore.setActive(startup);
+  }, [preferences, connections]);
 
   // Apply the active connection's theme override (or revert to the global theme) on switch,
   // and re-resolve once overrides arrive from the server.
@@ -76,6 +109,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         {connectionModal}
         <CommandPalette />
         <DdlSuggestionHost />
+        <SettingsModal />
       </>
     );
   }
@@ -86,12 +120,13 @@ export function AppLayout({ children }: AppLayoutProps) {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar onNewConnection={openConnectionModal} />
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden">{children}</main>
-        <RightSidebar />
+        {aiEnabled ? <RightSidebar /> : null}
       </div>
       <StatusBar />
       {connectionModal}
       <CommandPalette />
       <DdlSuggestionHost />
+      <SettingsModal />
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import clsx from 'clsx';
 import { AgGridReact } from 'ag-grid-react';
 import type { StatementResult } from '@prost/shared-types';
-import { Badge, Surface, prostGridTheme } from '@prost/ui';
+import { Badge, GRID_DENSITY_ROW_HEIGHT, Surface, prostGridTheme } from '@prost/ui';
 import { buildColumnDefs } from '../grid/columnDefs';
+import { useThemeStore } from '../stores/themeStore';
 import { FixWithAiButton } from '../ai/FixWithAiButton';
 
 export interface PlanPanelProps {
@@ -31,6 +32,8 @@ export interface StatementResultPanelProps {
 }
 
 export function StatementResultPanel({ index, total, statement }: StatementResultPanelProps) {
+  const rowHeight = GRID_DENSITY_ROW_HEIGHT[useThemeStore((state) => state.gridDensity)];
+  const gridPrefs = useThemeStore((state) => state.grid);
   return (
     <Surface bordered data-testid={`statement-panel-${index}`} className="flex flex-col gap-xs p-sm">
       <div className="flex flex-wrap items-center gap-xs text-xs text-text-faint">
@@ -60,7 +63,13 @@ export function StatementResultPanel({ index, total, statement }: StatementResul
       </div>
       {statement.kind === 'rows' ? (
         <div className="h-96">
-          <AgGridReact theme={prostGridTheme} rowData={statement.rows} columnDefs={buildColumnDefs(statement.columns, false)} />
+          <AgGridReact
+            theme={prostGridTheme}
+            rowHeight={rowHeight}
+            headerHeight={rowHeight}
+            rowData={statement.rows}
+            columnDefs={buildColumnDefs(statement.columns, false, { display: gridPrefs })}
+          />
         </div>
       ) : null}
       {statement.kind === 'command' ? (

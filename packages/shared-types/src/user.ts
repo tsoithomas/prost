@@ -50,6 +50,101 @@ export const GRID_DENSITIES: GridDensity[] = ['compact', 'normal', 'comfortable'
 export const PALETTE_TOKEN_KEYS = ['accent', 'bg', 'surface', 'text', 'border'] as const;
 export type PaletteTokenKey = (typeof PALETTE_TOKEN_KEYS)[number];
 
+/**
+ * Curated font-family choices for the UI and (separately) the code editor. Allowlisted — a preference
+ * carries a key, never a raw CSS `font-family` string, so nothing arbitrary reaches `<html>`/Monaco.
+ * `applyFontFamily` maps each key to a concrete stack.
+ */
+export const FONT_FAMILIES = ['system', 'inter', 'serif'] as const;
+export type FontFamily = (typeof FONT_FAMILIES)[number];
+
+export const MONO_FONT_FAMILIES = ['jetbrains-mono', 'system-mono', 'fira-code'] as const;
+export type MonoFontFamily = (typeof MONO_FONT_FAMILIES)[number];
+
+/** Border-radius scale — maps to the `--radius-*` token trio; 'normal' is the shipped default. */
+export const RADIUS_SCALES = ['compact', 'normal', 'roomy'] as const;
+export type RadiusScale = (typeof RADIUS_SCALES)[number];
+
+/**
+ * Data-cell tint keys a user may override — mirror the `--color-data-*` tokens in `tokens.css`.
+ * Allowlisted like `PALETTE_TOKEN_KEYS`; values are validated hex colors.
+ */
+export const DATA_COLOR_KEYS = ['number', 'string', 'decimal', 'boolean', 'temporal', 'null'] as const;
+export type DataColorKey = (typeof DATA_COLOR_KEYS)[number];
+
+// ---- Editor (Monaco) preferences ---------------------------------------------------------------
+
+/** Editor font-size preset (→ px in `applyTheme`); distinct from the UI `fontSize`. */
+export const EDITOR_FONT_SIZES = ['sm', 'md', 'lg'] as const;
+export type EditorFontSize = (typeof EDITOR_FONT_SIZES)[number];
+
+export const TAB_SIZES = [2, 4, 8] as const;
+export type TabSize = (typeof TAB_SIZES)[number];
+
+export const LINE_NUMBER_MODES = ['on', 'off', 'relative'] as const;
+export type LineNumberMode = (typeof LINE_NUMBER_MODES)[number];
+
+/** SQL-editor behaviour. Each field maps to a Monaco editor option (or the run handler for `formatOnRun`). */
+export interface EditorPreferences {
+  fontSize?: EditorFontSize;
+  tabSize?: TabSize;
+  insertSpaces?: boolean;
+  wordWrap?: boolean;
+  minimap?: boolean;
+  lineNumbers?: LineNumberMode;
+  /** Format the statement before it runs. */
+  formatOnRun?: boolean;
+}
+
+// ---- Grid display preferences ------------------------------------------------------------------
+
+/** How a NULL cell renders in the grid. */
+export const NULL_DISPLAYS = ['null', 'parens', 'blank', 'upper', 'symbol'] as const;
+export type NullDisplay = (typeof NULL_DISPLAYS)[number];
+
+/** How a boolean cell renders (when no per-column render override applies). */
+export const BOOLEAN_DISPLAYS = ['truefalse', 'check', 'onezero'] as const;
+export type BooleanDisplay = (typeof BOOLEAN_DISPLAYS)[number];
+
+export const PAGE_SIZES = [50, 100, 200, 500] as const;
+export type PageSize = (typeof PAGE_SIZES)[number];
+
+/**
+ * Default temporal formatting (extends the per-column `date` render mode):
+ * - `iso` — ISO 8601 with the selected zone's offset (`2026-07-29T15:24:00-04:00`)
+ * - `friendly` — readable `YYYY-MM-DD HH:MM:SS TZ` in the selected zone
+ * - `relative` — human "… ago"
+ * Both `iso` and `friendly` honor the `timeZone` preference.
+ */
+export const DATE_FORMATS = ['iso', 'friendly', 'relative'] as const;
+export type DateFormat = (typeof DATE_FORMATS)[number];
+
+export interface GridDisplayPreferences {
+  nullDisplay?: NullDisplay;
+  booleanDisplay?: BooleanDisplay;
+  rowNumbers?: boolean;
+  pageSize?: PageSize;
+  dateFormat?: DateFormat;
+  /**
+   * IANA time-zone name used when rendering temporal values and int-timestamp `date` columns
+   * (`'local'` or unset = the browser's zone; e.g. `'UTC'`, `'America/New_York'`).
+   */
+  timeZone?: string;
+}
+
+// ---- Query/workspace behaviour preferences -----------------------------------------------------
+
+export interface BehaviorPreferences {
+  /** Seed new query tabs to run inside a transaction. */
+  transactionByDefault?: boolean;
+  /** Require an explicit confirmation before executing a write/DDL statement. */
+  confirmWrites?: boolean;
+  /** Reopen the previous session's query tabs on load. */
+  restoreTabs?: boolean;
+  /** Auto-select a connection on startup: `'last'`, a specific connectionId, or unset for none. */
+  startupConnection?: string;
+}
+
 /** Hex color (#rgb or #rrggbb), the one format accepted everywhere theming touches `<html>`. */
 export const HEX_COLOR_PATTERN = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 
@@ -117,4 +212,22 @@ export interface UserPreferenceDto {
   connectionOverrides: Record<string, ConnectionThemeOverride>;
   /** Per-column "render as" display overrides (see `ColumnRenderOverrides`). */
   columnRenderOverrides: ColumnRenderOverrides;
+  /** UI font family (allowlisted key, not a raw stack); omitted = the shipped default. */
+  fontFamily?: FontFamily;
+  /** Code-editor (monospace) font family; omitted = the shipped default. */
+  monoFontFamily?: MonoFontFamily;
+  /** Border-radius scale; omitted = 'normal'. */
+  radiusScale?: RadiusScale;
+  /** Overrides for the grid data-cell tints (`--color-data-*`); validated hex per key. */
+  dataColors?: Partial<Record<DataColorKey, string>>;
+  /** SQL-editor (Monaco) preferences. */
+  editor?: EditorPreferences;
+  /** Grid display preferences. */
+  grid?: GridDisplayPreferences;
+  /** Query/workspace behaviour preferences. */
+  behavior?: BehaviorPreferences;
+  /** Disable UI transitions/animations. */
+  reduceMotion?: boolean;
+  /** Whether the AI assistant is available; omitted/true = enabled. */
+  aiEnabled?: boolean;
 }

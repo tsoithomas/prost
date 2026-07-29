@@ -12,6 +12,7 @@ vi.mock('../mobile/MobileShell', () => ({ MobileShell: () => <div data-testid="m
 vi.mock('../connection/ConnectionModal', () => ({ ConnectionModal: () => null }));
 vi.mock('../search/CommandPalette', () => ({ CommandPalette: () => null }));
 vi.mock('../ddl/DdlSuggestionHost', () => ({ DdlSuggestionHost: () => null }));
+vi.mock('./SettingsModal', () => ({ SettingsModal: () => null }));
 
 // Controlled mocks for hooks that drive the logic under test.
 vi.mock('../hooks/useMediaQuery', () => ({
@@ -25,6 +26,7 @@ vi.mock('../api/preferences', () => ({
 
 vi.mock('../api/connections', () => ({
   useActiveConnection: vi.fn(() => undefined),
+  useConnections: vi.fn(() => ({ data: [] })),
 }));
 
 import { useIsMobile } from '../hooks/useMediaQuery';

@@ -1,13 +1,13 @@
-import { Activity, LogOut, Plug, ScrollText } from 'lucide-react';
+import { Activity, LogOut, Plug, ScrollText, SlidersHorizontal } from 'lucide-react';
 import { Button, Surface } from '@prost/ui';
 import { useConnections } from '../api/connections';
 import { useEngineDescriptor } from '../api/databaseEngines';
 import { connectionEndpoint } from '../connection/connectionDisplay';
 import { QueryHistoryList } from '../explorer/QueryHistoryList';
 import { SnippetList } from '../explorer/SnippetList';
-import { ThemeSettings } from '../layout/ThemeSettings';
 import { useAuthStore } from '../stores/authStore';
 import { useConnectionStore } from '../stores/connectionStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 
 export interface MobileSettingsViewProps {
@@ -26,6 +26,7 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, 
   const loadQuery = useWorkspaceStore((state) => state.loadQuery);
   const openSessions = useWorkspaceStore((state) => state.openSessions);
   const openAudit = useWorkspaceStore((state) => state.openAudit);
+  const openSettings = useSettingsStore((state) => state.openSettings);
   const sessionMonitoringSupported =
     useEngineDescriptor(activeConnectionId)?.supportsSessionMonitoring ?? false;
   const clearAuth = useAuthStore((state) => state.clear);
@@ -40,9 +41,10 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, 
       <div className="flex flex-col gap-lg">
         <section>
           <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">Appearance</h2>
-          <Surface level="raised" bordered className="rounded-md p-md">
-            <ThemeSettings />
-          </Surface>
+          <Button variant="secondary" size="sm" className="w-full justify-center" onClick={() => openSettings('appearance')}>
+            <SlidersHorizontal size={14} />
+            Open appearance settings
+          </Button>
         </section>
 
         <section>

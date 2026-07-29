@@ -9,13 +9,21 @@ import {
   availableRenderModes,
   buildColumnDefs,
   classifyDataType,
-  formatRenderBoolean,
+  DateCell,
   formatUnixTimestamp,
+  isLongTextType,
+  splitDateParts,
 } from './columnDefs';
+import type { CustomCellRendererProps } from 'ag-grid-react';
 
 /** Invokes a ColDef's valueFormatter with a bare `{ value }` (the only field these formatters read). */
 function fmt(def: { valueFormatter?: unknown }, value: unknown): string {
   return (def.valueFormatter as (p: ValueFormatterParams) => string)({ value } as ValueFormatterParams);
+}
+
+/** Invokes a ColDef's cellStyle function with a bare `{ value }` and returns the resolved style. */
+function sty(def: { cellStyle?: unknown }, value: unknown): Record<string, unknown> {
+  return (def.cellStyle as (p: { value: unknown }) => Record<string, unknown>)({ value });
 }
 
 function col(name: string, dataType: string, isPrimaryKey = false): ColumnMetadata {
@@ -65,9 +73,29 @@ describe('buildColumnDefs editor selection', () => {
     expect(byField.active!.cellEditor).toBe('agSelectCellEditor');
     expect(byField.active!.cellEditorParams).toEqual({ values: [true, false, null] });
     expect(byField.born!.cellEditor).toBe('agDateStringCellEditor');
-    // timestamps and text keep the default (text) editor.
+    // timestamps and bounded varchar keep the default (single-line text) editor.
     expect(byField.created!.cellEditor).toBeUndefined();
     expect(byField.email!.cellEditor).toBeUndefined();
+  });
+
+  it('detects long/unbounded text-ish types', () => {
+    for (const t of ['text', 'longtext', 'mediumtext', 'TINYTEXT', 'citext', 'jsonb', 'xml']) {
+      expect(isLongTextType(t)).toBe(true);
+    }
+    for (const t of ['varchar(80)', 'character varying', 'integer', 'timestamp', 'boolean']) {
+      expect(isLongTextType(t)).toBe(false);
+    }
+  });
+
+  it('uses the floating multiline editor for text/longtext/json columns', () => {
+    const defs = buildColumnDefs([col('bio', 'text'), col('doc', 'jsonb'), col('name', 'varchar(80)')], true);
+    const byField = Object.fromEntries(defs.map((d) => [d.field, d]));
+
+    expect(byField.bio!.cellEditor).toBe('agLargeTextCellEditor');
+    expect(byField.bio!.cellEditorPopup).toBe(true);
+    expect(byField.doc!.cellEditor).toBe('agLargeTextCellEditor');
+    // A short, bounded varchar stays on the default single-line editor.
+    expect(byField.name!.cellEditor).toBeUndefined();
   });
 
   it('assigns no editors and marks cells non-editable when the result is read-only', () => {
@@ -86,20 +114,40 @@ describe('buildColumnDefs editor selection', () => {
 });
 
 describe('render-as formatting', () => {
-  it('formats a Unix epoch (seconds or milliseconds) as a UTC string', () => {
-    expect(formatUnixTimestamp(1700000000)).toBe('2023-11-14 22:13:20 UTC');
-    expect(formatUnixTimestamp(1700000000000)).toBe('2023-11-14 22:13:20 UTC');
+  it('renders ISO 8601 with the selected zone offset', () => {
+    expect(formatUnixTimestamp(1700000000, 'iso', 'UTC')).toBe('2023-11-14T22:13:20+00:00');
+    expect(formatUnixTimestamp(1700000000000, 'iso', 'UTC')).toBe('2023-11-14T22:13:20+00:00');
+    // Tokyo is UTC+9 → later wall-clock time and a +09:00 offset.
+    expect(formatUnixTimestamp(1700000000, 'iso', 'Asia/Tokyo')).toBe('2023-11-15T07:13:20+09:00');
+  });
+
+  it('renders FRIENDLY as a readable string in the configured zone', () => {
+    expect(formatUnixTimestamp(1700000000, 'friendly', 'UTC')).toBe('2023-11-14 22:13:20 UTC');
+    // Abbrev varies by ICU (JST/GMT+9); assert the wall-clock part in the +9 zone.
+    expect(formatUnixTimestamp(1700000000, 'friendly', 'Asia/Tokyo')).toMatch(/^2023-11-15 07:13:20 \S+/);
+  });
+
+  it('honors the date format when rendering an int timestamp as a date', () => {
+    // 'relative' for a 2023 timestamp reads as "... years ago".
+    expect(formatUnixTimestamp(1700000000, 'relative', 'UTC')).toMatch(/ago|year/);
   });
 
   it('returns non-numeric input unchanged rather than a bogus date', () => {
     expect(formatUnixTimestamp('not-a-number')).toBe('not-a-number');
   });
 
-  it('formats numbers and booleans as True/False', () => {
-    expect(formatRenderBoolean(1)).toBe('True');
-    expect(formatRenderBoolean(0)).toBe('False');
-    expect(formatRenderBoolean(true)).toBe('True');
-    expect(formatRenderBoolean(false)).toBe('False');
+  it('renders int/boolean as boolean, defaulting to true/false (nonzero = true)', () => {
+    expect(applyRenderMode(1, 'boolean')).toBe('true');
+    expect(applyRenderMode(0, 'boolean')).toBe('false');
+    expect(applyRenderMode(2, 'boolean')).toBe('true');
+    expect(applyRenderMode(true, 'boolean')).toBe('true');
+  });
+
+  it('render-as-boolean observes the booleanDisplay option', () => {
+    expect(applyRenderMode(1, 'boolean', { booleanDisplay: 'check' })).toBe('✓');
+    expect(applyRenderMode(0, 'boolean', { booleanDisplay: 'check' })).toBe('✗');
+    expect(applyRenderMode(1, 'boolean', { booleanDisplay: 'onezero' })).toBe('1');
+    expect(applyRenderMode(0, 'boolean', { booleanDisplay: 'onezero' })).toBe('0');
   });
 
   it('applyRenderMode leaves json values as their raw string (the popup prettifies)', () => {
@@ -114,16 +162,29 @@ describe('render-as formatting', () => {
 });
 
 describe('buildColumnDefs render overrides', () => {
-  const overridden = buildColumnDefs(COLUMNS, true, { renderOverrides: { id: 'date', active: 'boolean' } });
+  const overridden = buildColumnDefs(COLUMNS, true, {
+    renderOverrides: { id: 'date', active: 'boolean' },
+    display: { booleanDisplay: 'check', timeZone: 'UTC' },
+  });
   const byField = Object.fromEntries(overridden.map((d) => [d.field, d]));
 
-  it('applies the override transform through the column valueFormatter', () => {
-    expect(fmt(byField.id!, 1700000000)).toBe('2023-11-14 22:13:20 UTC');
-    expect(fmt(byField.active!, 0)).toBe('False');
+  it('applies the override transform through the column valueFormatter (observing display options)', () => {
+    // Default date format is ISO 8601 with the selected zone's offset (UTC here).
+    expect(fmt(byField.id!, 1700000000)).toBe('2023-11-14T22:13:20+00:00');
+    // The boolean override honors the grid's booleanDisplay ('check').
+    expect(fmt(byField.active!, 0)).toBe('✗');
+    expect(fmt(byField.active!, 1)).toBe('✓');
   });
 
   it('still renders null as "null" regardless of override', () => {
     expect(fmt(byField.id!, null)).toBe('null');
+  });
+
+  it('colors an int-rendered-as-boolean cell green for true / red for false', () => {
+    expect(sty(byField.active!, 1).color).toBe('var(--color-success)');
+    expect(sty(byField.active!, 0).color).toBe('var(--color-danger)');
+    // A column overridden to date is not boolean-colored.
+    expect(sty(byField.id!, 1700000000).color).not.toBe('var(--color-success)');
   });
 
   it('disables editing (and the editor) for an overridden column even when editable', () => {
@@ -132,6 +193,81 @@ describe('buildColumnDefs render overrides', () => {
     // A non-overridden column keeps its editor.
     expect(byField.price!.editable).toBe(true);
     expect(byField.price!.cellEditor).toBe('agNumberCellEditor');
+  });
+});
+
+describe('date part coloring', () => {
+  it('splits an ISO string into date/time/offset', () => {
+    expect(splitDateParts('2023-11-14T22:13:20+00:00')).toEqual({
+      date: '2023-11-14',
+      time: '22:13:20',
+      tz: '+00:00',
+      iso: true,
+    });
+    expect(splitDateParts('2026-07-29T15:24:00-04:00')?.tz).toBe('-04:00');
+  });
+
+  it('splits a friendly string into date/time/zone', () => {
+    expect(splitDateParts('2023-11-14 22:13:20 UTC')).toEqual({
+      date: '2023-11-14',
+      time: '22:13:20',
+      tz: 'UTC',
+      iso: false,
+    });
+    expect(splitDateParts('2023-11-15 07:13:20 GMT+9')?.tz).toBe('GMT+9');
+  });
+
+  it('returns null for non-date text', () => {
+    expect(splitDateParts('2 years ago')).toBeNull();
+    expect(splitDateParts('not a date')).toBeNull();
+  });
+
+  it('DateCell color-codes an ISO value (date + T + time + offset)', () => {
+    const { container } = render(
+      <DateCell {...({ valueFormatted: '2023-11-14T22:13:20+00:00' } as CustomCellRendererProps)} />,
+    );
+    expect(container.textContent).toBe('2023-11-14T22:13:20+00:00');
+    expect(container.querySelectorAll('span[style]').length).toBe(4);
+  });
+
+  it('DateCell color-codes a friendly value (date + time + zone)', () => {
+    const { container } = render(
+      <DateCell {...({ valueFormatted: '2023-11-14 22:13:20 UTC' } as CustomCellRendererProps)} />,
+    );
+    expect(container.textContent).toBe('2023-11-14 22:13:20 UTC');
+    // date, time, zone → 3 color-coded spans (the separators are plain spaces).
+    expect(container.querySelectorAll('span[style]').length).toBe(3);
+  });
+
+  it('DateCell renders plain text for a non-date value', () => {
+    const { container } = render(
+      <DateCell {...({ valueFormatted: '2 years ago' } as CustomCellRendererProps)} />,
+    );
+    expect(container.textContent).toBe('2 years ago');
+    expect(container.querySelectorAll('span[style]').length).toBe(0);
+  });
+
+  it('a date-rendering column wires the DateCell renderer', () => {
+    const defs = buildColumnDefs(COLUMNS, false, { renderOverrides: { id: 'date' } });
+    const byField = Object.fromEntries(defs.map((d) => [d.field, d]));
+    expect(byField.id!.cellRenderer).toBe(DateCell);
+    expect(byField.created!.cellRenderer).toBe(DateCell); // native timestamptz
+    expect(byField.email!.cellRenderer).toBeUndefined();
+  });
+});
+
+describe('buildColumnDefs boolean coloring', () => {
+  const defs = buildColumnDefs(COLUMNS, false);
+  const byField = Object.fromEntries(defs.map((d) => [d.field, d]));
+
+  it('colors a native boolean column by truthiness', () => {
+    expect(sty(byField.active!, true).color).toBe('var(--color-success)');
+    expect(sty(byField.active!, 'f').color).toBe('var(--color-danger)');
+    expect(sty(byField.active!, null).color).toBe('var(--color-data-null)');
+  });
+
+  it('leaves non-boolean columns on their data-type color', () => {
+    expect(sty(byField.email!, 'x').color).not.toBe('var(--color-success)');
   });
 });
 

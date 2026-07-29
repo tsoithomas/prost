@@ -1,8 +1,16 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { ArrowDown, ArrowUp, Calendar, Hash, KeyRound, ToggleLeft, Type } from 'lucide-react';
 import type { ColDef, ValueFormatterParams } from 'ag-grid-community';
-import type { CustomHeaderProps } from 'ag-grid-react';
-import type { ColumnMetadata, ColumnRenderMode } from '@prost/shared-types';
+import type { CustomCellRendererProps, CustomHeaderProps } from 'ag-grid-react';
+import type {
+  BooleanDisplay,
+  ColumnMetadata,
+  ColumnRenderMode,
+  DateFormat,
+  GridDisplayPreferences,
+  NullDisplay,
+} from '@prost/shared-types';
 
 export type DataTypeCategory = 'integer' | 'decimal' | 'boolean' | 'temporal' | 'string';
 
@@ -66,13 +74,24 @@ const CATEGORY_COLOR_VAR: Record<DataTypeCategory, string> = {
   string: 'var(--color-data-string)',
 };
 
+// Long / unbounded text-ish types that benefit from a multiline editor rather than a one-line input.
+const LONG_TEXT_TYPES = new Set([
+  'text', 'tinytext', 'mediumtext', 'longtext', 'citext', 'ntext', 'clob', 'json', 'jsonb', 'xml',
+]);
+
+/** True for long/unbounded text (or JSON/XML) types that warrant a multiline editor. */
+export function isLongTextType(dataType: string): boolean {
+  const t = normalizeType(dataType);
+  return LONG_TEXT_TYPES.has(t) || t.includes('text');
+}
+
 /**
  * Picks an AG Grid Community cell editor from the column's data type. The server still
  * validates/coerces every value on write (architecture principle #4) — the editor is only a
  * convenience. Returns the editor name plus any params; `undefined` falls back to the default
  * text editor.
  */
-function editorForType(dataType: string): Pick<ColDef, 'cellEditor' | 'cellEditorParams'> {
+function editorForType(dataType: string): Pick<ColDef, 'cellEditor' | 'cellEditorParams' | 'cellEditorPopup'> {
   const category = classifyDataType(dataType);
   if (category === 'boolean') {
     // Tri-state: a nullable boolean can be true / false / null.
@@ -83,6 +102,15 @@ function editorForType(dataType: string): Pick<ColDef, 'cellEditor' | 'cellEdito
   }
   if (normalizeType(dataType) === 'date') {
     return { cellEditor: 'agDateStringCellEditor' };
+  }
+  if (isLongTextType(dataType)) {
+    // A floating, resizable multiline textarea (see the `.ag-large-text-input` rule in tokens.css)
+    // so long text / JSON is far easier to edit than a single-line input.
+    return {
+      cellEditor: 'agLargeTextCellEditor',
+      cellEditorPopup: true,
+      cellEditorParams: { maxLength: 100_000, rows: 12, cols: 60 },
+    };
   }
   // timestamp/timestamptz/time keep the text editor — their string form round-trips losslessly,
   // unlike agDateCellEditor which is date-only. Enums lack value metadata today, so also text.
@@ -100,33 +128,201 @@ export function availableRenderModes(category: DataTypeCategory): ColumnRenderMo
   return [];
 }
 
+/** Resolves a stored time-zone preference to an Intl `timeZone` (undefined = the browser's local zone). */
+export function resolveTimeZone(tz: string | undefined): string | undefined {
+  return !tz || tz === 'local' ? undefined : tz;
+}
+
+/** Extracts the y/m/d h:m:s parts of a `Date` in `timeZone`, plus a chosen `timeZoneName` rendering. */
+function zonedParts(
+  date: Date,
+  timeZone: string | undefined,
+  tzNameStyle: 'short' | 'longOffset',
+): { date: string; time: string; tz: string } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+    timeZone,
+    timeZoneName: tzNameStyle,
+  }).formatToParts(date);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+  return {
+    date: `${get('year')}-${get('month')}-${get('day')}`,
+    time: `${get('hour')}:${get('minute')}:${get('second')}`,
+    tz: get('timeZoneName'),
+  };
+}
+
 /**
- * Renders a numeric Unix timestamp as a readable UTC string. Distinguishes seconds from milliseconds
- * by magnitude (values ≥ 1e12 are already ms — that threshold is ~2001 in ms / year 33658 in seconds).
+ * Formats a `Date` as `YYYY-MM-DD HH:MM:SS <TZ>` in the given IANA zone (undefined = the browser's
+ * local zone), ending with the zone's abbreviation (e.g. `UTC`, `EST`).
+ */
+function formatFriendly(date: Date, timeZone: string | undefined): string {
+  const { date: d, time, tz } = zonedParts(date, timeZone, 'short');
+  return `${d} ${time}${tz ? ` ${tz}` : ''}`;
+}
+
+/**
+ * Formats a `Date` as ISO 8601 with the zone's numeric offset (`2026-07-29T15:24:00-04:00`) in the
+ * given IANA zone. `Intl`'s `longOffset` yields `GMT-04:00` (or `GMT`/empty for UTC); normalize to a
+ * bare `±HH:MM` offset.
+ */
+function formatIso8601(date: Date, timeZone: string | undefined): string {
+  const { date: d, time, tz } = zonedParts(date, timeZone, 'longOffset');
+  const raw = tz.replace('GMT', '');
+  const offset = /^[+-]\d{2}:\d{2}$/.test(raw) ? raw : '+00:00';
+  return `${d}T${time}${offset}`;
+}
+
+// ISO 8601 (`2026-07-29T15:24:00-04:00`) and friendly (`2026-07-29 15:24:00 EDT`) date shapes.
+const ISO_PARTS = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})([+-]\d{2}:\d{2}|Z)$/;
+const FRIENDLY_PARTS = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(?: (\S+))?$/;
+
+export interface DateParts {
+  date: string;
+  time: string;
+  /** ISO offset (`+00:00`) or friendly zone abbreviation (`UTC`); may be empty. */
+  tz: string;
+  /** `T`-separated ISO form vs. space-separated friendly form. */
+  iso: boolean;
+}
+
+/** Splits a formatted date string (ISO 8601 or friendly) into its parts, or null if it isn't one. */
+export function splitDateParts(text: string): DateParts | null {
+  const isoMatch = ISO_PARTS.exec(text);
+  if (isoMatch) return { date: isoMatch[1]!, time: isoMatch[2]!, tz: isoMatch[3]!, iso: true };
+  const friendlyMatch = FRIENDLY_PARTS.exec(text);
+  if (friendlyMatch) return { date: friendlyMatch[1]!, time: friendlyMatch[2]!, tz: friendlyMatch[3] ?? '', iso: false };
+  return null;
+}
+
+const DATE_COLOR = 'var(--color-data-number)';
+const TIME_COLOR = 'var(--color-data-boolean)';
+const TZ_COLOR = 'var(--color-data-decimal)';
+
+/**
+ * Cell renderer that color-codes a formatted date — the date, time, and zone each get a distinct
+ * semantic data-color (theme-aware). Handles both ISO 8601 (`T`-separated, muted `T`) and the friendly
+ * `YYYY-MM-DD HH:MM:SS TZ` shape. Anything else (e.g. relative "… ago") renders plain.
+ */
+export function DateCell(params: CustomCellRendererProps): ReactNode {
+  const text = (params.valueFormatted ?? params.value ?? '') as string;
+  const parts = typeof text === 'string' ? splitDateParts(text) : null;
+  if (!parts) return text;
+  return (
+    <span>
+      <span style={{ color: DATE_COLOR }}>{parts.date}</span>
+      {parts.iso ? <span style={{ color: 'var(--color-text-faint)' }}>T</span> : ' '}
+      <span style={{ color: TIME_COLOR }}>{parts.time}</span>
+      {parts.tz ? (
+        <>
+          {parts.iso ? null : ' '}
+          <span style={{ color: TZ_COLOR }}>{parts.tz}</span>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
+/** Human "2 hours ago"-style formatting for a `Date` (used by the `relative` date format). */
+function formatRelative(date: Date): string {
+  const diffMs = date.getTime() - Date.now();
+  const abs = Math.abs(diffMs);
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
+  const units: [Intl.RelativeTimeFormatUnit, number][] = [
+    ['year', 31536e6],
+    ['day', 864e5],
+    ['hour', 36e5],
+    ['minute', 6e4],
+    ['second', 1e3],
+  ];
+  for (const [unit, ms] of units) {
+    if (abs >= ms || unit === 'second') return rtf.format(Math.round(diffMs / ms), unit);
+  }
+  return rtf.format(0, 'second');
+}
+
+/**
+ * Formats a resolved `Date` per the `grid.dateFormat` preference, all in the configured time zone:
+ * `iso` → ISO 8601 with the zone's offset; `friendly` → readable `YYYY-MM-DD HH:MM:SS <TZ>`;
+ * `relative` → human "… ago".
+ */
+export function formatDateValue(date: Date, format: DateFormat, timeZone?: string): string {
+  const tz = resolveTimeZone(timeZone);
+  if (format === 'iso') return formatIso8601(date, tz);
+  if (format === 'relative') return formatRelative(date);
+  return formatFriendly(date, tz);
+}
+
+/**
+ * Renders a numeric Unix timestamp as a readable string, honoring the `grid.dateFormat` and time-zone
+ * preferences. Distinguishes seconds from milliseconds by magnitude (values ≥ 1e12 are already ms).
  * Non-numeric input is returned unchanged so a mistaken override never hides the raw value.
  */
-export function formatUnixTimestamp(value: unknown): string {
+export function formatUnixTimestamp(value: unknown, format: DateFormat = 'iso', timeZone?: string): string {
   const n = typeof value === 'number' ? value : Number(value);
   if (!Number.isFinite(n)) return String(value);
   const ms = Math.abs(n) >= 1e12 ? n : n * 1000;
   const date = new Date(ms);
   if (Number.isNaN(date.getTime())) return String(value);
-  return `${date.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
+  return formatDateValue(date, format, timeZone);
 }
 
-/** Renders a numeric/boolean as `True`/`False` (0 and `false` are False; everything else True). */
-export function formatRenderBoolean(value: unknown): string {
-  if (typeof value === 'boolean') return value ? 'True' : 'False';
+/**
+ * Applies a render-mode display transform to a non-null cell value (JSON stays inline; the popup
+ * prettifies). `date` (int-timestamp → date) observes `dateFormat`/`timeZone`; `boolean`
+ * (int/text → boolean) observes `booleanDisplay`.
+ */
+export function applyRenderMode(value: unknown, mode: ColumnRenderMode, display: GridDisplayPreferences = {}): string {
+  if (mode === 'date') return formatUnixTimestamp(value, display.dateFormat, display.timeZone);
+  if (mode === 'boolean') return formatBooleanDisplay(value, display.booleanDisplay ?? 'truefalse');
+  return String(value);
+}
+
+const NULL_TOKENS: Record<NullDisplay, string> = {
+  null: 'null',
+  parens: '(null)',
+  blank: '',
+  upper: 'NULL',
+  symbol: '␀',
+};
+
+/** How a NULL renders per the `grid.nullDisplay` preference (defaults to the literal `null`). */
+export function formatNull(display: NullDisplay | undefined): string {
+  return NULL_TOKENS[display ?? 'null'];
+}
+
+/**
+ * Truthiness for a boolean-ish cell value: real booleans pass through; any finite number is true
+ * unless it's 0 (so an int column rendered as boolean treats 0 = false, nonzero = true); otherwise the
+ * strings `t`/`true` are true and everything else (`f`/`false`/…) is false.
+ */
+export function isBooleanTruthy(value: unknown): boolean {
   const n = Number(value);
-  if (Number.isFinite(n)) return n !== 0 ? 'True' : 'False';
-  return String(value);
+  return typeof value === 'boolean' ? value : Number.isFinite(n) ? n !== 0 : value === 't' || value === 'true';
 }
 
-/** Applies a render-mode display transform to a non-null cell value (JSON stays inline; the popup prettifies). */
-export function applyRenderMode(value: unknown, mode: ColumnRenderMode): string {
-  if (mode === 'date') return formatUnixTimestamp(value);
-  if (mode === 'boolean') return formatRenderBoolean(value);
-  return String(value);
+/** Formats a boolean-ish value per `grid.booleanDisplay` (see {@link isBooleanTruthy} for truthiness). */
+export function formatBooleanDisplay(value: unknown, display: BooleanDisplay): string {
+  const truthy = isBooleanTruthy(value);
+  if (display === 'check') return truthy ? '✓' : '✗';
+  if (display === 'onezero') return truthy ? '1' : '0';
+  return truthy ? 'true' : 'false';
+}
+
+/**
+ * Formats a native temporal column value per `grid.dateFormat` in the configured time zone. Parses the
+ * stored string and reformats it; an unparseable value is returned untouched.
+ */
+export function formatDateDisplay(value: unknown, display: DateFormat, timeZone?: string): string {
+  const date = new Date(value as string);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return formatDateValue(date, display, timeZone);
 }
 
 /**
@@ -232,6 +428,23 @@ export interface BuildColumnDefsOptions {
   renderOverrides?: RenderModeMap;
   /** Called when a header is right-clicked, so the host grid can open the render-as menu. */
   onHeaderContextMenu?: (args: HeaderContextMenuArgs) => void;
+  /** Global grid display preferences (null token, boolean/date formatting, wrap, row numbers). */
+  display?: GridDisplayPreferences;
+}
+
+/** A leading, read-only row-number column (`grid.rowNumbers`). */
+function rowNumberColDef(): ColDef {
+  return {
+    headerName: '#',
+    colId: '__rowNumber',
+    valueGetter: (p) => (p.node?.rowIndex ?? 0) + 1,
+    width: 56,
+    pinned: 'left',
+    sortable: false,
+    resizable: false,
+    editable: false,
+    cellStyle: { color: 'var(--color-text-faint)' },
+  };
 }
 
 export function buildColumnDefs(
@@ -239,9 +452,16 @@ export function buildColumnDefs(
   editable = false,
   options: BuildColumnDefsOptions = {},
 ): ColDef[] {
-  const { renderOverrides, onHeaderContextMenu } = options;
-  return columns.map((column) => {
+  const { renderOverrides, onHeaderContextMenu, display = {} } = options;
+  const defs = columns.map((column): ColDef => {
     const mode = renderOverrides?.[column.name];
+    const category = classifyDataType(column.dataType);
+    // A cell renders as boolean when a boolean override is set, or (with no override) the column is a
+    // native boolean type. Such cells are colored by truthiness (true = success, false = danger).
+    const rendersBoolean = mode ? mode === 'boolean' : category === 'boolean';
+    // A cell renders as a date (int→date override, or a native temporal column). Its formatted value
+    // gets ISO part-coloring via IsoDateCell (a no-op for non-ISO formats).
+    const rendersDate = mode ? mode === 'date' : category === 'temporal';
     return {
       field: column.name,
       headerComponent: ColumnHeader,
@@ -249,17 +469,31 @@ export function buildColumnDefs(
         dataType: column.dataType,
         isPrimaryKey: column.isPrimaryKey,
         field: column.name,
-        category: classifyDataType(column.dataType),
+        category,
         onHeaderContextMenu,
       } satisfies ColumnHeaderParams,
-      cellStyle: (params) =>
-        params.value === null || params.value === undefined
-          ? { color: 'var(--color-data-null)', fontStyle: 'italic' }
-          : { color: dataTypeColorVar(column.dataType), fontStyle: 'normal' },
-      valueFormatter: (params: ValueFormatterParams) => {
-        if (params.value === null || params.value === undefined) return 'null';
-        return mode ? applyRenderMode(params.value, mode) : String(params.value);
+      cellStyle: (params) => {
+        if (params.value === null || params.value === undefined) {
+          return { color: 'var(--color-data-null)', fontStyle: 'italic' };
+        }
+        if (rendersBoolean) {
+          return {
+            color: isBooleanTruthy(params.value) ? 'var(--color-success)' : 'var(--color-danger)',
+            fontStyle: 'normal',
+          };
+        }
+        return { color: dataTypeColorVar(column.dataType), fontStyle: 'normal' };
       },
+      valueFormatter: (params: ValueFormatterParams) => {
+        if (params.value === null || params.value === undefined) return formatNull(display.nullDisplay);
+        if (mode) return applyRenderMode(params.value, mode, display);
+        // Global type-keyed formatting (only when the user has opted into a display).
+        if (category === 'boolean' && display.booleanDisplay) return formatBooleanDisplay(params.value, display.booleanDisplay);
+        if (category === 'temporal' && display.dateFormat) return formatDateDisplay(params.value, display.dateFormat, display.timeZone);
+        return String(params.value);
+      },
+      // Color-code the date/time/zone parts; renders the plain value for non-date-shaped output.
+      ...(rendersDate ? { cellRenderer: DateCell } : {}),
       resizable: true,
       sortable: true,
       // Two-state cycle: a click sorts ascending, the next flips to descending (no tri-state "none").
@@ -272,4 +506,5 @@ export function buildColumnDefs(
       ...(editable && !mode ? editorForType(column.dataType) : {}),
     };
   });
+  return display.rowNumbers ? [rowNumberColDef(), ...defs] : defs;
 }

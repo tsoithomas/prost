@@ -179,15 +179,33 @@ model UserPreference {
   fontSize    String @default("md")
   gridDensity String @default("normal")
 
+  // Fine-tune styling (see @prost/shared-types): FontFamily / MonoFontFamily are allowlisted keys
+  // (nullable = the shipped default); RadiusScale ('compact' | 'normal' | 'roomy').
+  fontFamily     String?
+  monoFontFamily String?
+  radiusScale    String @default("normal")
+
+  // Flat preference flags.
+  reduceMotion Boolean @default(false)
+  aiEnabled    Boolean @default(true)
+
   // SQLite has no JSON type — these hold JSON-stringified structures (see @prost/shared-types):
   //   keybindings           -> KeybindingMap                          (actionId -> chord, overrides only)
   //   customPalettes        -> CustomPalette[]
   //   connectionOverrides   -> Record<connectionId, ConnectionThemeOverride>
   //   columnRenderOverrides -> ColumnRenderOverrides                  (connectionId -> "schema.table" -> column -> mode)
+  //   dataColors            -> Partial<Record<DataColorKey, string>>  (data-cell tint overrides, hex)
+  //   editor                -> EditorPreferences                      (Monaco options)
+  //   grid                  -> GridDisplayPreferences                 (grid rendering)
+  //   behavior              -> BehaviorPreferences                    (query/workspace behaviour)
   keybindings           String @default("{}")
   customPalettes        String @default("[]")
   connectionOverrides   String @default("{}")
   columnRenderOverrides String @default("{}")
+  dataColors            String @default("{}")
+  editor                String @default("{}")
+  grid                  String @default("{}")
+  behavior              String @default("{}")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 

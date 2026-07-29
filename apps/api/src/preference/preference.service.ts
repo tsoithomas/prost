@@ -1,18 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import type { UserPreference } from '@prisma/client';
 import type {
+  BehaviorPreferences,
   ColumnRenderOverrides,
   ConnectionThemeOverride,
   CustomPalette,
+  EditorPreferences,
+  GridDisplayPreferences,
   KeybindingMap,
   UserPreferenceDto,
 } from '@prost/shared-types';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdatePreferenceDto } from './dto/update-preference.dto';
 import {
+  validateBehaviorPrefs,
   validateColumnRenderOverrides,
   validateConnectionOverrides,
   validateCustomPalettes,
+  validateDataColors,
+  validateEditorPrefs,
+  validateGridPrefs,
   validateKeybindings,
 } from './preference-validation';
 
@@ -25,6 +32,13 @@ const DEFAULTS: UserPreferenceDto = {
   customPalettes: [],
   connectionOverrides: {},
   columnRenderOverrides: {},
+  radiusScale: 'normal',
+  dataColors: {},
+  editor: {},
+  grid: {},
+  behavior: {},
+  reduceMotion: false,
+  aiEnabled: true,
 };
 
 @Injectable()
@@ -47,6 +61,7 @@ export class PreferenceService {
         accentColor: dto.accentColor ?? DEFAULTS.accentColor,
         fontSize: dto.fontSize ?? DEFAULTS.fontSize,
         gridDensity: dto.gridDensity ?? DEFAULTS.gridDensity,
+        radiusScale: dto.radiusScale ?? DEFAULTS.radiusScale,
         ...data,
       },
       update: data,
@@ -55,7 +70,7 @@ export class PreferenceService {
   }
 }
 
-// All persisted columns are TEXT, so a plain string record is valid for both `create` and `update`.
+// Persisted columns: mostly TEXT (scalars + JSON-stringified structures) plus a couple of Boolean flags.
 type PreferenceRowData = Partial<
   Record<
     | 'colorMode'
@@ -65,10 +80,17 @@ type PreferenceRowData = Partial<
     | 'keybindings'
     | 'customPalettes'
     | 'connectionOverrides'
-    | 'columnRenderOverrides',
+    | 'columnRenderOverrides'
+    | 'fontFamily'
+    | 'monoFontFamily'
+    | 'radiusScale'
+    | 'dataColors'
+    | 'editor'
+    | 'grid'
+    | 'behavior',
     string
   >
->;
+> & { reduceMotion?: boolean; aiEnabled?: boolean };
 
 /** Maps a partial update DTO to the Prisma row shape, JSON-stringifying (and validating) the
  *  structured fields. Only keys present on the DTO are included, preserving PATCH semantics. */
@@ -88,6 +110,15 @@ function toRowData(dto: UpdatePreferenceDto): PreferenceRowData {
   if (dto.columnRenderOverrides !== undefined) {
     data.columnRenderOverrides = JSON.stringify(validateColumnRenderOverrides(dto.columnRenderOverrides));
   }
+  if (dto.fontFamily !== undefined) data.fontFamily = dto.fontFamily;
+  if (dto.monoFontFamily !== undefined) data.monoFontFamily = dto.monoFontFamily;
+  if (dto.radiusScale !== undefined) data.radiusScale = dto.radiusScale;
+  if (dto.dataColors !== undefined) data.dataColors = JSON.stringify(validateDataColors(dto.dataColors));
+  if (dto.editor !== undefined) data.editor = JSON.stringify(validateEditorPrefs(dto.editor));
+  if (dto.grid !== undefined) data.grid = JSON.stringify(validateGridPrefs(dto.grid));
+  if (dto.behavior !== undefined) data.behavior = JSON.stringify(validateBehaviorPrefs(dto.behavior));
+  if (dto.reduceMotion !== undefined) data.reduceMotion = dto.reduceMotion;
+  if (dto.aiEnabled !== undefined) data.aiEnabled = dto.aiEnabled;
   return data;
 }
 
@@ -109,5 +140,14 @@ export function toUserPreferenceDto(row: UserPreference): UserPreferenceDto {
     customPalettes: parseJson<CustomPalette[]>(row.customPalettes, []),
     connectionOverrides: parseJson<Record<string, ConnectionThemeOverride>>(row.connectionOverrides, {}),
     columnRenderOverrides: parseJson<ColumnRenderOverrides>(row.columnRenderOverrides, {}),
+    fontFamily: (row.fontFamily as UserPreferenceDto['fontFamily']) ?? undefined,
+    monoFontFamily: (row.monoFontFamily as UserPreferenceDto['monoFontFamily']) ?? undefined,
+    radiusScale: row.radiusScale as UserPreferenceDto['radiusScale'],
+    dataColors: parseJson<NonNullable<UserPreferenceDto['dataColors']>>(row.dataColors, {}),
+    editor: parseJson<EditorPreferences>(row.editor, {}),
+    grid: parseJson<GridDisplayPreferences>(row.grid, {}),
+    behavior: parseJson<BehaviorPreferences>(row.behavior, {}),
+    reduceMotion: row.reduceMotion,
+    aiEnabled: row.aiEnabled,
   };
 }

@@ -1,24 +1,38 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type {
+  BehaviorPreferences,
   ColorMode,
   ColumnRenderMode,
   ColumnRenderOverrides,
   ConnectionThemeOverride,
   CustomPalette,
+  DataColorKey,
+  EditorPreferences,
+  FontFamily,
   FontSize,
   GridDensity,
+  GridDisplayPreferences,
   KeybindingMap,
+  MonoFontFamily,
+  RadiusScale,
 } from '@prost/shared-types';
 import {
   applyAccentColor,
   applyColorMode,
   applyCustomPalette,
+  applyDataColors,
+  applyFontFamily,
   applyFontSize,
   applyGridDensity,
+  applyMonoFontFamily,
+  applyRadiusScale,
+  applyReduceMotion,
   contrastingTextColor,
   defaultAccentPreset,
 } from '@prost/ui';
+
+type DataColors = Partial<Record<DataColorKey, string>>;
 
 interface ThemeState {
   colorMode: ColorMode;
@@ -38,11 +52,38 @@ interface ThemeState {
   activeOverrideConnectionId: string | null;
   /** Per-column "render as" overrides, keyed connectionId → "schema.table" → column (server-backed). */
   columnRenderOverrides: ColumnRenderOverrides;
+  /** UI font family (allowlisted key); undefined = the shipped default. */
+  fontFamily: FontFamily | undefined;
+  /** Code-editor (monospace) font family; undefined = the shipped default. */
+  monoFontFamily: MonoFontFamily | undefined;
+  /** Border-radius scale. */
+  radiusScale: RadiusScale;
+  /** Grid data-cell tint overrides (`--color-data-*`). */
+  dataColors: DataColors;
+  /** SQL-editor (Monaco) preferences. */
+  editor: EditorPreferences;
+  /** Grid display preferences. */
+  grid: GridDisplayPreferences;
+  /** Query/workspace behaviour preferences. */
+  behavior: BehaviorPreferences;
+  /** Disable UI transitions/animations. */
+  reduceMotion: boolean;
+  /** Whether the AI assistant is available. */
+  aiEnabled: boolean;
 
   setColorMode: (mode: ColorMode) => void;
   setAccentColor: (color: string, fg?: string) => void;
   setFontSize: (size: FontSize) => void;
   setGridDensity: (density: GridDensity) => void;
+  setFontFamily: (family: FontFamily | undefined) => void;
+  setMonoFontFamily: (family: MonoFontFamily | undefined) => void;
+  setRadiusScale: (scale: RadiusScale) => void;
+  setDataColors: (colors: DataColors) => void;
+  setEditorPrefs: (prefs: EditorPreferences) => void;
+  setGridPrefs: (prefs: GridDisplayPreferences) => void;
+  setBehaviorPrefs: (prefs: BehaviorPreferences) => void;
+  setReduceMotion: (on: boolean) => void;
+  setAiEnabled: (on: boolean) => void;
   setCustomPalettes: (palettes: CustomPalette[]) => void;
   applyPalette: (name: string | null) => void;
   setKeybindings: (keybindings: KeybindingMap) => void;
@@ -110,6 +151,15 @@ export const useThemeStore = create<ThemeState>()(
       connectionOverrides: {},
       activeOverrideConnectionId: null,
       columnRenderOverrides: {},
+      fontFamily: undefined,
+      monoFontFamily: undefined,
+      radiusScale: 'normal',
+      dataColors: {},
+      editor: {},
+      grid: {},
+      behavior: {},
+      reduceMotion: false,
+      aiEnabled: true,
 
       setColorMode: (mode) => {
         set({ colorMode: mode });
@@ -135,6 +185,39 @@ export const useThemeStore = create<ThemeState>()(
         applyGridDensity(density);
         set({ gridDensity: density });
       },
+
+      setFontFamily: (family) => {
+        applyFontFamily(family);
+        set({ fontFamily: family });
+      },
+
+      setMonoFontFamily: (family) => {
+        // Non-editor mono text follows `--font-mono`; the Monaco editor reads `monoFontFamily` from
+        // this store directly (it takes fontFamily as an editor option, not a CSS var).
+        applyMonoFontFamily(family);
+        set({ monoFontFamily: family });
+      },
+
+      setRadiusScale: (scale) => {
+        applyRadiusScale(scale);
+        set({ radiusScale: scale });
+      },
+
+      setDataColors: (colors) => {
+        applyDataColors(colors);
+        set({ dataColors: colors });
+      },
+
+      setEditorPrefs: (prefs) => set({ editor: prefs }),
+      setGridPrefs: (prefs) => set({ grid: prefs }),
+      setBehaviorPrefs: (prefs) => set({ behavior: prefs }),
+
+      setReduceMotion: (on) => {
+        applyReduceMotion(on);
+        set({ reduceMotion: on });
+      },
+
+      setAiEnabled: (on) => set({ aiEnabled: on }),
 
       setCustomPalettes: (palettes) => {
         set({ customPalettes: palettes });
@@ -196,12 +279,26 @@ export const useThemeStore = create<ThemeState>()(
         keybindings: state.keybindings,
         connectionOverrides: state.connectionOverrides,
         columnRenderOverrides: state.columnRenderOverrides,
+        fontFamily: state.fontFamily,
+        monoFontFamily: state.monoFontFamily,
+        radiusScale: state.radiusScale,
+        dataColors: state.dataColors,
+        editor: state.editor,
+        grid: state.grid,
+        behavior: state.behavior,
+        reduceMotion: state.reduceMotion,
+        aiEnabled: state.aiEnabled,
       }),
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         applyBaseTheme(state);
         applyFontSize(state.fontSize);
         applyGridDensity(state.gridDensity);
+        applyFontFamily(state.fontFamily);
+        applyMonoFontFamily(state.monoFontFamily);
+        applyRadiusScale(state.radiusScale);
+        applyDataColors(state.dataColors);
+        applyReduceMotion(state.reduceMotion);
       },
     },
   ),

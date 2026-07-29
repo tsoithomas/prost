@@ -30,3 +30,10 @@ export function useMe() {
     retry: false,
   });
 }
+
+export function useChangePassword() {
+  return useMutation({
+    mutationFn: (body: { currentPassword: string; newPassword: string }) =>
+      apiFetch<void>('/auth/password', { method: 'PATCH', body }),
+  });
+}

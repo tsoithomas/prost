@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Patch, Post } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { UserDto } from '@prost/shared-types';
 import { AuthService } from './auth.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { Public } from './public.decorator';
 import { CurrentUser, type AuthenticatedUser } from './current-user.decorator';
@@ -20,5 +21,11 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: AuthenticatedUser): Promise<UserDto> {
     return this.authService.getUser(user.userId);
+  }
+
+  @Patch('password')
+  @HttpCode(204)
+  changePassword(@CurrentUser() user: AuthenticatedUser, @Body() dto: ChangePasswordDto): Promise<void> {
+    return this.authService.changePassword(user.userId, dto.currentPassword, dto.newPassword);
   }
 }

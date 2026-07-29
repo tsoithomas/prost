@@ -15,7 +15,7 @@ import type {
 import { CopyPlus, Download, Filter, Plus, Redo2, Save, Search, Trash2, Undo2, Upload, X } from 'lucide-react';
 import type { BulkRowEdit, ColumnMetadata, ColumnRenderMode, FilterOperator, GridResponse, RowConcurrency, RowFilter } from '@prost/shared-types';
 import { ROW_VERSION_KEY } from '@prost/shared-types';
-import { Badge, Button, IconButton, Input, prostGridTheme, Toast } from '@prost/ui';
+import { Badge, Button, GRID_DENSITY_ROW_HEIGHT, IconButton, Input, prostGridTheme, Toast } from '@prost/ui';
 import { FilterPanel, operatorsForColumn } from './FilterPanel';
 import { ExportDialog } from './ExportDialog';
 import { ImportModal } from '../import/ImportModal';
@@ -108,6 +108,12 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const sourceTable = `${schema}.${table}`;
   const renderOverrides = useThemeStore((state) => state.columnRenderOverrides[connectionId]?.[sourceTable]);
   const setColumnRenderOverride = useThemeStore((state) => state.setColumnRenderOverride);
+  // Explicit density-driven heights so a density change applies live (AG Grid caches the theme's
+  // auto row height until reload) and centers cell text via the derived `--ag-line-height`.
+  const gridDensity = useThemeStore((state) => state.gridDensity);
+  const rowHeight = GRID_DENSITY_ROW_HEIGHT[gridDensity];
+  const gridPrefs = useThemeStore((state) => state.grid);
+  const pageSize = gridPrefs.pageSize ?? PAGE_SIZE;
   const updatePreferences = useUpdatePreferences();
 
   const filterKey = activeFilter?.conditions.length ? JSON.stringify(activeFilter) : null;
@@ -190,9 +196,9 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const columnDefs = useMemo(
     () =>
       columnsQuery.data
-        ? buildColumnDefs(columnsQuery.data.columns, editable, { renderOverrides, onHeaderContextMenu: setRenderMenu })
+        ? buildColumnDefs(columnsQuery.data.columns, editable, { renderOverrides, onHeaderContextMenu: setRenderMenu, display: gridPrefs })
         : [],
-    [columnsQuery.data, editable, renderOverrides],
+    [columnsQuery.data, editable, renderOverrides, gridPrefs],
   );
 
   const handleSelectRenderMode = useCallback(
@@ -713,10 +719,12 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
             <AgGridReact
               key={`${connectionId}.${schema}.${table}`}
               theme={prostGridTheme}
+              rowHeight={rowHeight}
+              headerHeight={rowHeight}
               columnDefs={columnDefs}
               rowModelType="infinite"
               datasource={datasource}
-              cacheBlockSize={PAGE_SIZE}
+              cacheBlockSize={pageSize}
               maxBlocksInCache={10}
               getRowId={getRowId}
               pinnedTopRowData={pinnedTopRowData}

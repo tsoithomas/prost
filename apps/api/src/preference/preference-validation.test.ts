@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  validateBehaviorPrefs,
   validateColumnRenderOverrides,
   validateConnectionOverrides,
   validateCustomPalettes,
+  validateDataColors,
+  validateEditorPrefs,
+  validateGridPrefs,
   validateKeybindings,
 } from './preference-validation';
 
@@ -65,6 +69,63 @@ describe('validateConnectionOverrides', () => {
     expect(() => validateConnectionOverrides({ 'conn-1': { colorMode: 'neon' } })).toThrow(
       /Invalid override colorMode/,
     );
+  });
+});
+
+describe('validateDataColors', () => {
+  it('accepts known keys with valid hex colors', () => {
+    const colors = { number: '#0969da', string: '#1a7f37' };
+    expect(validateDataColors(colors)).toEqual(colors);
+  });
+
+  it('accepts an empty map', () => {
+    expect(validateDataColors({})).toEqual({});
+  });
+
+  it('rejects an unknown data color key', () => {
+    expect(() => validateDataColors({ rainbow: '#000000' })).toThrow(/Unknown data color key/);
+  });
+
+  it('rejects an invalid hex color', () => {
+    expect(() => validateDataColors({ number: 'blue' })).toThrow(/Invalid color/);
+  });
+});
+
+describe('validateEditorPrefs', () => {
+  it('accepts valid editor prefs', () => {
+    const prefs = { fontSize: 'lg', tabSize: 4, minimap: true, lineNumbers: 'relative', formatOnRun: true };
+    expect(validateEditorPrefs(prefs)).toEqual(prefs);
+  });
+  it('rejects an invalid enum value', () => {
+    expect(() => validateEditorPrefs({ tabSize: 3 })).toThrow(/Invalid tabSize/);
+    expect(() => validateEditorPrefs({ lineNumbers: 'sometimes' })).toThrow(/Invalid lineNumbers/);
+  });
+  it('rejects a non-boolean flag', () => {
+    expect(() => validateEditorPrefs({ minimap: 'yes' })).toThrow(/minimap must be a boolean/);
+  });
+});
+
+describe('validateGridPrefs', () => {
+  it('accepts valid grid prefs', () => {
+    const prefs = { nullDisplay: 'symbol', booleanDisplay: 'check', pageSize: 200, dateFormat: 'relative', rowNumbers: true, timeZone: 'UTC' };
+    expect(validateGridPrefs(prefs)).toEqual(prefs);
+  });
+  it('rejects an invalid page size / null display', () => {
+    expect(() => validateGridPrefs({ pageSize: 123 })).toThrow(/Invalid pageSize/);
+    expect(() => validateGridPrefs({ nullDisplay: 'nada' })).toThrow(/Invalid nullDisplay/);
+  });
+  it('rejects a non-string time zone', () => {
+    expect(() => validateGridPrefs({ timeZone: 5 })).toThrow(/timeZone must be a string/);
+  });
+});
+
+describe('validateBehaviorPrefs', () => {
+  it('accepts valid behavior prefs', () => {
+    const prefs = { transactionByDefault: true, confirmWrites: false, startupConnection: 'conn-1' };
+    expect(validateBehaviorPrefs(prefs)).toEqual(prefs);
+  });
+  it('rejects a non-string startupConnection', () => {
+    expect(() => validateBehaviorPrefs({ startupConnection: 5 })).toThrow(/startupConnection must be a string/);
   });
 });
 
