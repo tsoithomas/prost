@@ -64,7 +64,7 @@ describe('PoolManager — SSH tunnel lifecycle (Phase 32)', () => {
   });
 
   it('does not open a tunnel for a non-SSH connection', async () => {
-    const nonSsh = { ...sshConnectionRow(), sshEnabled: false, sshHost: null };
+    const nonSsh = { ...sshConnectionRow(), sshEnabled: false as const, sshHost: null };
     const { pool, open, createPool } = setup(nonSsh);
     await pool.run('conn-1', { sql: 'SELECT 1', params: [] }).catch(() => undefined);
     expect(open).not.toHaveBeenCalled();
