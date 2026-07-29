@@ -38,7 +38,7 @@ export function AccountSection() {
           setCurrentPassword('');
           setNewPassword('');
         },
-        onError: (err) => setError(apiErrorMessage(err)),
+        onError: (err) => setError(apiErrorMessage(err, 'Could not change password.')),
       },
     );
   }
