@@ -19,13 +19,18 @@ export function MobileBottomNav({ active, onChange }: MobileBottomNavProps) {
   const aiEnabled = useThemeStore((s) => s.aiEnabled);
   const visibleTabs = aiEnabled ? tabs : tabs.filter((t) => t.key !== 'ai');
   return (
-    <nav className="flex min-h-14 shrink-0 items-center justify-around border-t border-border bg-surface-sunken px-sm pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]">
+    <nav
+      aria-label="Primary"
+      className="flex min-h-14 shrink-0 items-center justify-around border-t border-border bg-surface-sunken px-sm pt-2 pb-[calc(env(safe-area-inset-bottom)+0.5rem)]"
+    >
       {visibleTabs.map(({ key, label, icon: Icon }) => {
         const isActive = key === active;
         return (
           <button
             key={key}
             type="button"
+            aria-current={isActive ? 'page' : undefined}
+            aria-label={label}
             onClick={() => onChange(key)}
             className="flex h-full flex-1 flex-col items-center justify-center gap-0.5 text-xs"
           >

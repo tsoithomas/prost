@@ -120,3 +120,39 @@ describe('SchemaTree object groups', () => {
     expect(screen.queryByText(/^Functions/)).not.toBeInTheDocument();
   });
 });
+
+describe('SchemaTree accessibility', () => {
+  it('exposes a tree with treeitems and aria-expanded on schema rows', () => {
+    renderTree();
+    expect(screen.getByRole('tree', { name: 'Database schema' })).toBeInTheDocument();
+    const schemaRow = screen.getByRole('treeitem', { name: /public/ });
+    expect(schemaRow).toHaveAttribute('aria-expanded', 'true');
+    // Tables are treeitems at level 2.
+    const usersRow = screen.getByRole('treeitem', { name: 'users' });
+    expect(usersRow).toHaveAttribute('aria-level', '2');
+  });
+
+  it('marks the selected table with aria-selected', () => {
+    renderTree({ selectedTable: 'public.orders' });
+    expect(screen.getByRole('treeitem', { name: 'orders' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('treeitem', { name: 'users' })).toHaveAttribute('aria-selected', 'false');
+  });
+
+  it('ArrowDown moves focus to the next visible treeitem', async () => {
+    renderTree();
+    const schemaRow = screen.getByRole('treeitem', { name: /public/ });
+    schemaRow.focus();
+    await userEvent.keyboard('{ArrowDown}');
+    // The next visible row is the first table under public.
+    expect(document.activeElement).toBe(screen.getByRole('treeitem', { name: 'users' }));
+  });
+
+  it('ArrowLeft on an expanded schema collapses it', async () => {
+    renderTree();
+    const schemaRow = screen.getByRole('treeitem', { name: /public/ });
+    schemaRow.focus();
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(screen.getByRole('treeitem', { name: /public/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('users')).not.toBeInTheDocument();
+  });
+});

@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import type { ConnectionDto, ConnectionEnvironment, DbEngine, DbEngineDescriptor, SshAuthMethod } from '@prost/shared-types';
 import { CONNECTION_ENVIRONMENTS, isSystemConnectionId } from '@prost/shared-types';
 import { parseConnectionString } from '@prost/utils';
-import { Badge, Button, IconButton, Input, Surface, Switch } from '@prost/ui';
+import { Badge, Button, IconButton, Input, Modal, Surface, Switch } from '@prost/ui';
 import {
   useConnections,
   useCreateConnection,
@@ -192,15 +192,6 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
     setImportValue('');
     testConnection.reset();
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -415,12 +406,14 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-md max-md:p-0">
-      <Surface
-        level="overlay"
-        bordered
-        className="relative flex w-full max-w-3xl flex-col overflow-hidden rounded-lg shadow-2xl md:max-h-[90vh] md:flex-row max-md:h-full max-md:max-w-none max-md:rounded-none"
-      >
+    <>
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Connection"
+      hideTitle
+      className="relative w-full max-w-3xl overflow-hidden md:max-h-[90vh] md:flex-row max-md:h-full max-md:max-w-none max-md:rounded-none"
+    >
         <IconButton aria-label="Close" title="Close" onClick={onClose} className="absolute right-3 top-6 z-10 -translate-y-1/2">
           <X size={16} />
         </IconButton>
@@ -835,8 +828,8 @@ export function ConnectionModal({ open, onClose }: ConnectionModalProps) {
             </div>
           </Surface>
         </div>
-      </Surface>
-      {confirmDialog}
-    </div>
+    </Modal>
+    {confirmDialog}
+    </>
   );
 }

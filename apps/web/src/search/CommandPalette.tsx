@@ -135,6 +135,11 @@ export function CommandPalette() {
           onKeyDown={handleKeyDown}
           placeholder="Search tables, columns, snippets, history…"
           aria-label="Search"
+          role="combobox"
+          aria-expanded={flat.length > 0}
+          aria-controls="command-palette-list"
+          aria-autocomplete="list"
+          aria-activedescendant={flat.length > 0 ? `command-option-${activeIndex}` : undefined}
           className="h-11 flex-1 border-0 bg-transparent focus:border-0"
           autoFocus
         />
@@ -145,7 +150,13 @@ export function CommandPalette() {
         ) : null}
       </div>
 
-      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto p-xs">
+      <div
+        ref={listRef}
+        id="command-palette-list"
+        role="listbox"
+        aria-label="Search results"
+        className="min-h-0 flex-1 overflow-y-auto p-xs"
+      >
         {isEmptyQuery ? (
           <p className="px-md py-6 text-center text-xs italic text-text-faint">
             Type to search tables, columns, snippets, and query history.
@@ -157,7 +168,7 @@ export function CommandPalette() {
             const items = groups[key];
             if (items.length === 0) return null;
             return (
-              <div key={key} className="mb-xs">
+              <div key={key} role="group" aria-label={title} className="mb-xs">
                 <h3 className="px-md pb-1 pt-2 text-xs font-medium uppercase tracking-wider text-text-faint">
                   {title}
                 </h3>
@@ -224,6 +235,9 @@ function ResultRow({ item, icon, active, index, onMouseEnter, onSelect }: Result
   return (
     <button
       type="button"
+      role="option"
+      id={`command-option-${index}`}
+      aria-selected={active}
       data-index={index}
       onMouseEnter={onMouseEnter}
       onClick={onSelect}

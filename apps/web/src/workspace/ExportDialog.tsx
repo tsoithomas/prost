@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import type { ExportFormat, ExportRequest, RowFilter } from '@prost/shared-types';
-import { Button, IconButton, Input, Surface, Switch } from '@prost/ui';
+import { Button, IconButton, Input, Modal, Surface, Switch } from '@prost/ui';
 import { useExport } from '../api/export';
 import { apiErrorDetail } from '../lib/apiClient';
 
@@ -43,15 +43,6 @@ export function ExportDialog({ open, onClose, connectionId, target }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
   if (!open) return null;
 
   function handleExport() {
@@ -88,8 +79,7 @@ export function ExportDialog({ open, onClose, connectionId, target }: Props) {
     'h-9 w-full rounded-sm border border-border bg-surface px-sm text-xs text-text focus:border-accent focus:outline-none';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-md md:items-center">
-      <Surface level="overlay" bordered className="flex w-full max-w-[28rem] flex-col overflow-hidden rounded-lg shadow-2xl">
+    <Modal open={open} onClose={onClose} title="Export" hideTitle className="w-full max-w-[28rem] overflow-hidden">
         <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-lg">
           <span className="text-sm font-semibold text-text">
             Export {target.scope === 'table' ? `${target.schema}.${target.table}` : 'query result'}
@@ -149,7 +139,6 @@ export function ExportDialog({ open, onClose, connectionId, target }: Props) {
             {exportMutation.isPending ? 'Exporting…' : 'Export'}
           </Button>
         </Surface>
-      </Surface>
-    </div>
+    </Modal>
   );
 }

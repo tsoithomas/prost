@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import {
   Box, ChevronDown, ChevronRight, Eye, FunctionSquare, Layers, LayoutGrid, List, ListOrdered,
   Pin, PinOff, Plus, Rows3, Search, SquareCode, StretchHorizontal, Table2, X, Zap,
@@ -17,6 +18,106 @@ const OBJECT_KINDS: { kind: SchemaObjectKind; label: string; Icon: typeof Eye }[
   { kind: 'trigger', label: 'Triggers', Icon: Zap },
   { kind: 'enum', label: 'Enums', Icon: List },
 ];
+
+/**
+ * A `role="tree"` container with roving-tabindex keyboard navigation over its `[role="treeitem"]`
+ * descendants (DOM order = visual order). Up/Down move between visible items, Home/End jump to
+ * ends, Right expands a collapsed item (or steps into its first child), Left collapses an expanded
+ * item (or steps to its parent via `aria-level`), and Enter/Space activate the focused item.
+ * Secondary inline controls (pin, overview, …) are not treeitems and stay reachable via Tab.
+ */
+function TreeContainer({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Keep exactly one treeitem tabbable (roving): the selected one, else the first.
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const items = Array.from(root.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+    if (items.length === 0) return;
+    if (items.some((i) => i.tabIndex === 0)) return;
+    const selected = root.querySelector<HTMLElement>('[role="treeitem"][aria-selected="true"]') ?? items[0]!;
+    items.forEach((i) => (i.tabIndex = -1));
+    selected.tabIndex = 0;
+  });
+
+  function onKeyDown(e: ReactKeyboardEvent<HTMLDivElement>) {
+    const root = ref.current;
+    if (!root) return;
+    const items = Array.from(root.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+    const current = document.activeElement as HTMLElement | null;
+    const idx = current ? items.indexOf(current) : -1;
+    if (idx === -1) return;
+
+    const focus = (el: HTMLElement | undefined) => {
+      if (!el) return;
+      items.forEach((i) => (i.tabIndex = -1));
+      el.tabIndex = 0;
+      el.focus();
+    };
+
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        focus(items[Math.min(idx + 1, items.length - 1)]);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        focus(items[Math.max(idx - 1, 0)]);
+        break;
+      case 'Home':
+        e.preventDefault();
+        focus(items[0]);
+        break;
+      case 'End':
+        e.preventDefault();
+        focus(items[items.length - 1]);
+        break;
+      case 'ArrowRight': {
+        const expanded = items[idx]!.getAttribute('aria-expanded');
+        if (expanded === 'false') items[idx]!.click(); // expand
+        else if (expanded === 'true') focus(items[idx + 1]); // into first child
+        e.preventDefault();
+        break;
+      }
+      case 'ArrowLeft': {
+        const el = items[idx]!;
+        if (el.getAttribute('aria-expanded') === 'true') {
+          el.click(); // collapse
+        } else {
+          const level = Number(el.getAttribute('aria-level') ?? '1');
+          for (let i = idx - 1; i >= 0; i--) {
+            if (Number(items[i]!.getAttribute('aria-level') ?? '1') < level) {
+              focus(items[i]);
+              break;
+            }
+          }
+        }
+        e.preventDefault();
+        break;
+      }
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        items[idx]!.click();
+        break;
+    }
+  }
+
+  return (
+    <div ref={ref} role="tree" aria-label={label} onKeyDown={onKeyDown} className={className}>
+      {children}
+    </div>
+  );
+}
 
 export interface SchemaTreeProps {
   schemas: SchemaMetadata[];
@@ -105,10 +206,14 @@ export function SchemaTree({
     });
   }
 
-  const renderTableButton = (table: TableSummary, className?: string) => (
+  const renderTableButton = (table: TableSummary, level: number, className?: string) => (
     <button
       key={`${table.schema}.${table.name}`}
       type="button"
+      role="treeitem"
+      aria-level={level}
+      aria-selected={selectedTable === `${table.schema}.${table.name}`}
+      tabIndex={-1}
       onClick={() => onSelectTable(table)}
       onContextMenu={(e) => {
         e.preventDefault();
@@ -130,11 +235,11 @@ export function SchemaTree({
 
   // A table button plus a right-aligned pin/unpin toggle: shown on hover for unpinned
   // tables, always visible (accent) for pinned ones.
-  const renderTableRow = (table: TableSummary) => {
+  const renderTableRow = (table: TableSummary, level = 2) => {
     const pinned = isPinned(table);
     return (
       <div key={`row:${tableKey(table)}`} className="group/row relative flex items-center">
-        {renderTableButton(table, 'min-w-0 flex-1 pr-7')}
+        {renderTableButton(table, level, 'min-w-0 flex-1 pr-7')}
         {pinningEnabled ? (
           <button
             type="button"
@@ -159,7 +264,7 @@ export function SchemaTree({
     );
   };
 
-  const renderObjectButton = (object: SchemaObjectSummary, Icon: typeof Eye) => {
+  const renderObjectButton = (object: SchemaObjectSummary, Icon: typeof Eye, level: number) => {
     const key = `${object.schema ?? ''}.${object.name}`;
     // Views/matviews open as table tabs, so `selectedTable` reflects their selection; other kinds use `selectedObject`.
     const active = selectedObject === key || selectedTable === key;
@@ -167,6 +272,10 @@ export function SchemaTree({
       <button
         key={`${object.kind}:${key}`}
         type="button"
+        role="treeitem"
+        aria-level={level}
+        aria-selected={active}
+        tabIndex={-1}
         onClick={() => onSelectObject(object)}
         title={object.comment ?? object.name}
         className={clsx(
@@ -181,7 +290,7 @@ export function SchemaTree({
   };
 
   // Collapsible per-kind groups under a schema, one per object kind that has ≥1 (filter-matching) object.
-  const renderObjectGroups = (schemaName: string, objects: SchemaObjectSummary[]) =>
+  const renderObjectGroups = (schemaName: string, objects: SchemaObjectSummary[], level = 2) =>
     OBJECT_KINDS.map(({ kind, label, Icon }) => {
       const items = objects.filter((object) => object.kind === kind && matchesObject(object));
       if (items.length === 0) return null;
@@ -191,6 +300,10 @@ export function SchemaTree({
         <div key={kind}>
           <button
             type="button"
+            role="treeitem"
+            aria-level={level}
+            aria-expanded={!groupCollapsed}
+            tabIndex={-1}
             onClick={() => toggleSchema(groupKey)}
             className="flex w-full items-center gap-1 rounded-sm px-1 py-1 text-left text-[11px] font-medium uppercase tracking-wider text-text-faint transition-colors hover:bg-surface-hover"
           >
@@ -198,8 +311,8 @@ export function SchemaTree({
             <span>{label} ({items.length})</span>
           </button>
           {groupCollapsed ? null : (
-            <div className="ml-2 flex flex-col gap-0.5 border-l border-border pl-3">
-              {items.map((object) => renderObjectButton(object, Icon))}
+            <div role="group" className="ml-2 flex flex-col gap-0.5 border-l border-border pl-3">
+              {items.map((object) => renderObjectButton(object, Icon, level + 1))}
             </div>
           )}
         </div>
@@ -232,9 +345,11 @@ export function SchemaTree({
         ) : tables.length === 0 ? (
           <p className="px-sm py-1 text-xs italic text-text-faint">No tables match "{filter.trim()}"</p>
         ) : (
-          <div className="flex flex-col gap-0.5">{tables.map(renderTableRow)}</div>
+          <TreeContainer label="Tables" className="flex flex-col gap-0.5">
+            {tables.map((t) => renderTableRow(t, 1))}
+            {renderObjectGroups(flatSchema, allObjects, 1)}
+          </TreeContainer>
         )}
-        <div className="mt-1 flex flex-col gap-0.5">{renderObjectGroups(flatSchema, allObjects)}</div>
         {renderContextMenu()}
       </div>
     );
@@ -258,54 +373,60 @@ export function SchemaTree({
       {query !== '' && visibleSchemas.length === 0 ? (
         <p className="px-sm py-1 text-xs italic text-text-faint">No tables match "{filter.trim()}"</p>
       ) : null}
-      {visibleSchemas.map((schema) => {
-        // While filtering, matching schemas are force-expanded regardless of the collapsed set.
-        const isCollapsed = query === '' && collapsed.has(schema.name);
-        return (
-          <div key={schema.name} className="group/schema">
-            <div className="flex items-center">
-              <button
-                type="button"
-                onClick={() => toggleSchema(schema.name)}
-                className="flex min-w-0 flex-1 items-center gap-1 rounded-sm px-1 py-1 text-xs text-text transition-colors hover:bg-surface-hover max-md:py-2 max-md:text-sm"
-              >
-                {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                <Box size={14} className="shrink-0 text-accent" />
-                <span className="truncate">{schema.name}</span>
-              </button>
-              <button
-                type="button"
-                aria-label={`Overview of ${schema.name}`}
-                title={`Overview of ${schema.name}`}
-                onClick={(e) => { e.stopPropagation(); onOpenOverview(schema.name); }}
-                className={clsx(
-                  'flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:bg-surface-hover hover:text-text group-hover/schema:opacity-100',
-                  !writable && 'mr-1',
-                )}
-              >
-                <LayoutGrid size={12} />
-              </button>
-              {writable ? (
+      <TreeContainer label="Database schema">
+        {visibleSchemas.map((schema) => {
+          // While filtering, matching schemas are force-expanded regardless of the collapsed set.
+          const isCollapsed = query === '' && collapsed.has(schema.name);
+          return (
+            <div key={schema.name} className="group/schema">
+              <div className="flex items-center">
                 <button
                   type="button"
-                  aria-label={`New table in ${schema.name}`}
-                  title={`New table in ${schema.name}`}
-                  onClick={(e) => { e.stopPropagation(); onNewTable(schema.name); }}
-                  className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:bg-surface-hover hover:text-text group-hover/schema:opacity-100"
+                  role="treeitem"
+                  aria-level={1}
+                  aria-expanded={!isCollapsed}
+                  tabIndex={-1}
+                  onClick={() => toggleSchema(schema.name)}
+                  className="flex min-w-0 flex-1 items-center gap-1 rounded-sm px-1 py-1 text-xs text-text transition-colors hover:bg-surface-hover max-md:py-2 max-md:text-sm"
                 >
-                  <Plus size={12} />
+                  {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                  <Box size={14} className="shrink-0 text-accent" />
+                  <span className="truncate">{schema.name}</span>
                 </button>
-              ) : null}
-            </div>
-            {isCollapsed ? null : (
-              <div className="ml-2 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-3">
-                {schema.tables.map(renderTableRow)}
-                {renderObjectGroups(schema.name, schema.objects)}
+                <button
+                  type="button"
+                  aria-label={`Overview of ${schema.name}`}
+                  title={`Overview of ${schema.name}`}
+                  onClick={(e) => { e.stopPropagation(); onOpenOverview(schema.name); }}
+                  className={clsx(
+                    'flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:bg-surface-hover hover:text-text group-hover/schema:opacity-100',
+                    !writable && 'mr-1',
+                  )}
+                >
+                  <LayoutGrid size={12} />
+                </button>
+                {writable ? (
+                  <button
+                    type="button"
+                    aria-label={`New table in ${schema.name}`}
+                    title={`New table in ${schema.name}`}
+                    onClick={(e) => { e.stopPropagation(); onNewTable(schema.name); }}
+                    className="mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:bg-surface-hover hover:text-text group-hover/schema:opacity-100"
+                  >
+                    <Plus size={12} />
+                  </button>
+                ) : null}
               </div>
-            )}
-          </div>
-        );
-      })}
+              {isCollapsed ? null : (
+                <div role="group" className="ml-2 mt-0.5 flex flex-col gap-0.5 border-l border-border pl-3">
+                  {schema.tables.map((t) => renderTableRow(t, 2))}
+                  {renderObjectGroups(schema.name, schema.objects, 2)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </TreeContainer>
 
       {renderContextMenu()}
     </div>
@@ -405,9 +526,9 @@ export function SchemaTree({
           <Pin size={11} />
           <span>Pinned</span>
         </div>
-        <div className="flex max-h-44 flex-col gap-0.5 overflow-y-auto">
-          {pinnedTables.map(renderTableRow)}
-        </div>
+        <TreeContainer label="Pinned tables" className="flex max-h-44 flex-col gap-0.5 overflow-y-auto">
+          {pinnedTables.map((t) => renderTableRow(t, 1))}
+        </TreeContainer>
       </div>
     );
   }

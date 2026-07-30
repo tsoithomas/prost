@@ -12,7 +12,7 @@ import type {
   IGetRowsParams,
   SelectionChangedEvent,
 } from 'ag-grid-community';
-import { CopyPlus, Download, Filter, Plus, Redo2, Save, Search, Trash2, Undo2, Upload, X } from 'lucide-react';
+import { CopyPlus, Download, Filter, Plus, Redo2, RefreshCw, Save, Search, Trash2, Undo2, Upload, X } from 'lucide-react';
 import type { BulkRowEdit, ColumnMetadata, ColumnRenderMode, FilterOperator, GridResponse, RowConcurrency, RowFilter } from '@prost/shared-types';
 import { ROW_VERSION_KEY } from '@prost/shared-types';
 import { Badge, Button, GRID_DENSITY_ROW_HEIGHT, IconButton, Input, prostGridTheme, Toast } from '@prost/ui';
@@ -566,9 +566,20 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex h-8 max-md:h-11 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-surface px-sm [&>*]:shrink-0">
+      <div
+        role="toolbar"
+        aria-label="Table actions"
+        className="flex h-8 max-md:h-11 shrink-0 items-center gap-1 overflow-x-auto border-b border-border bg-surface px-sm [&>*]:shrink-0"
+      >
         {viewMode === 'rows' ? (
           <>
+            <IconButton
+              aria-label="Refresh rows"
+              onClick={() => gridApiRef.current?.refreshInfiniteCache()}
+              title="Refresh data"
+            >
+              <RefreshCw size={14} />
+            </IconButton>
             <IconButton
               aria-label="Filter rows"
               onClick={() => setFilterOpen((open) => !open)}
@@ -700,7 +711,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
           onChange={setActiveFilter}
         />
       ) : null}
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1" role="region" aria-label={`${schema}.${table} data`}>
         {viewMode === 'structure' ? (
           <TableStructurePanel connectionId={connectionId} schema={schema} table={table} writable={writable} />
         ) : columnsQuery.isLoading ? (

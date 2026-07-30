@@ -59,6 +59,8 @@
   --color-accent-hover: color-mix(in srgb, var(--color-accent) 85%, var(--color-text));
   --color-accent-muted: color-mix(in srgb, var(--color-accent) 16%, var(--color-surface));
   --color-accent-fg: #00285b;
+  /* Keyboard focus ring — tracks the (runtime-set) accent so it stays visible on any theme. */
+  --color-focus-ring: var(--color-accent);
 
   /* Status */
   --color-success: #1a7f37;
@@ -129,6 +131,32 @@ body {
   summary {
     cursor: pointer;
   }
+}
+
+/*
+ * Visible keyboard-focus ring on every interactive element (accessibility). `:focus-visible` only,
+ * so mouse clicks don't show it; the token tracks the accent and stays legible in light/dark. Uses
+ * `outline` (not box-shadow) so it never shifts layout, with an offset so it reads on any surface.
+ *
+ * Defined as plain (unlayered) CSS — like `.no-scrollbar` below — so it overrides component
+ * `focus:outline-none` utilities (which live in `@layer utilities`): on a mouse `:focus` those still
+ * suppress the UA outline, but a keyboard `:focus-visible` restores this ring.
+ */
+a:focus-visible,
+button:focus-visible,
+[role='button']:focus-visible,
+[role='tab']:focus-visible,
+[role='option']:focus-visible,
+[role='menuitem']:focus-visible,
+[role='treeitem']:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+[tabindex]:not([tabindex='-1']):focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
 /* Themed scrollbars — colors come from the active theme's tokens (light + .dark). */

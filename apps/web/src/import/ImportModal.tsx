@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Papa from 'papaparse';
 import { X } from 'lucide-react';
 import type { ColumnMetadata } from '@prost/shared-types';
-import { Button, IconButton, Surface, Switch } from '@prost/ui';
+import { Button, IconButton, Modal, Surface, Switch } from '@prost/ui';
 import { useImportPreview } from '../api/import';
 import { useCsvImport } from './useCsvImport';
 import { useConfirm } from '../hooks/useConfirm';
@@ -62,14 +62,10 @@ export function ImportModal({ open, onClose, connectionId, schema, table, column
     }
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape' && step !== 'importing') onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose, step]);
+  // Block dismissal (Esc / backdrop) while an import is in flight.
+  const guardedClose = () => {
+    if (step !== 'importing') onClose();
+  };
 
   const mapped = useMemo(() => mappings.filter((m) => m.target !== SKIP), [mappings]);
   const targetColumns = mapped.map((m) => m.target);
@@ -151,8 +147,8 @@ export function ImportModal({ open, onClose, connectionId, schema, table, column
     'h-8 w-full rounded-sm border border-border bg-surface px-sm text-xs text-text focus:border-accent focus:outline-none';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-md md:items-center">
-      <Surface level="overlay" bordered className="flex max-h-[85vh] w-full max-w-[40rem] flex-col overflow-hidden rounded-lg shadow-2xl">
+    <>
+    <Modal open={open} onClose={guardedClose} title={`Import CSV — ${schema}.${table}`} hideTitle className="max-h-[85vh] w-full max-w-[40rem] overflow-hidden">
         <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-lg">
           <span className="text-sm font-semibold text-text">Import CSV — {schema}.{table}</span>
           <IconButton aria-label="Close" onClick={onClose} disabled={step === 'importing'}>
@@ -278,8 +274,8 @@ export function ImportModal({ open, onClose, connectionId, schema, table, column
             </Button>
           ) : null}
         </Surface>
-      </Surface>
-      {confirmDialog}
-    </div>
+    </Modal>
+    {confirmDialog}
+    </>
   );
 }

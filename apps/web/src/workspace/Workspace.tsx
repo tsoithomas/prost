@@ -84,6 +84,12 @@ export function Workspace() {
         onCloseToRight={closeTabsToRight}
         onCloseAllTables={closeAllTableTabs}
       />
+      <div
+        id="workspace-tabpanel"
+        role="tabpanel"
+        aria-labelledby={activeTabId ? `workspace-tab-${activeTabId}` : undefined}
+        className="flex min-h-0 flex-1 flex-col"
+      >
       {activeTab?.kind === 'table' && activeTab.schema && activeTab.table && activeTab.connectionId ? (
         <TableView
           connectionId={activeTab.connectionId}
@@ -112,6 +118,7 @@ export function Workspace() {
       {!activeTab ? (
         <div className="flex flex-1 items-center justify-center text-sm text-text-faint">No tabs open</div>
       ) : null}
+      </div>
     </>
   );
 }

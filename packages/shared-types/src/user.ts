@@ -175,6 +175,10 @@ export const KEYBINDING_ACTIONS: KeybindingAction[] = [
   { id: 'run-statement', label: 'Run statement', defaultChord: 'mod+enter' },
   { id: 'run-all', label: 'Run all', defaultChord: 'mod+shift+enter' },
   { id: 'format-sql', label: 'Format SQL', defaultChord: 'shift+alt+f' },
+  // `alt+…` chords (not `mod+t`/`mod+w`, which browsers reserve for their own tabs).
+  { id: 'new-query-tab', label: 'New query tab', defaultChord: 'alt+t' },
+  { id: 'close-tab', label: 'Close current tab', defaultChord: 'alt+w' },
+  { id: 'show-shortcuts', label: 'Show keyboard shortcuts', defaultChord: 'shift+alt+h' },
 ];
 
 /** actionId → chord. Holds **overrides only**; consumers merge over `KEYBINDING_ACTIONS` defaults. */

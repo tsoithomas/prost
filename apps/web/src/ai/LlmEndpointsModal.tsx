@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, Bot, ExternalLink, Plus, RefreshCw, Save, Sparkles, Trash2, X } from 'lucide-react';
 import clsx from 'clsx';
 import type { LlmEndpointDto } from '@prost/shared-types';
-import { Badge, Button, IconButton, Input, Surface } from '@prost/ui';
+import { Badge, Button, IconButton, Input, Modal, Surface } from '@prost/ui';
 import {
   useCreateLlmEndpoint,
   useDeleteLlmEndpoint,
@@ -86,15 +86,6 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
     createEndpoint.reset();
     updateEndpoint.reset();
   }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -231,12 +222,8 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
   const showGrid = !selectedId && !presetChosen;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-md">
-      <Surface
-        level="overlay"
-        bordered
-        className="flex h-[min(560px,90vh)] w-full max-w-3xl flex-col overflow-hidden rounded-lg shadow-2xl md:flex-row"
-      >
+    <>
+    <Modal open={open} onClose={onClose} title="AI endpoints" hideTitle className="h-[min(560px,90vh)] w-full max-w-3xl overflow-hidden md:flex-row">
         {/* List pane */}
         <div className="flex h-1/3 shrink-0 flex-col border-b border-border md:h-full md:w-1/3 md:border-b-0 md:border-r">
           <Surface level="raised" className="flex h-12 shrink-0 items-center border-b border-border px-lg">
@@ -445,8 +432,8 @@ export function LlmEndpointsModal({ open, onClose }: LlmEndpointsModalProps) {
             )}
           </Surface>
         </div>
-      </Surface>
-      {confirmDialog}
-    </div>
+    </Modal>
+    {confirmDialog}
+    </>
   );
 }

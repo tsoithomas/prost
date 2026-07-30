@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
-import { Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
+import { Button, Checkbox, IconButton, Input, Modal, Surface } from '@prost/ui';
 import { useEngineDescriptor } from '../api/databaseEngines';
 import { useCreateTable } from '../api/ddl';
 import { useDdlPreview } from '../api/ddlPreview';
@@ -98,16 +98,6 @@ export function CreateTableModal({
     if (open) setSchema(initialSchema);
   }, [initialSchema, open]);
 
-  useEffect(() => {
-    if (!open) return;
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [open, onClose]);
-
-  if (!open) return null;
 
   function updateColumn(id: string, patch: Partial<ColumnRow>) {
     setColumns((prev) =>
@@ -172,12 +162,7 @@ export function CreateTableModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-md md:items-center">
-      <Surface
-        level="overlay"
-        bordered
-        className="flex h-[min(680px,90vh)] w-full max-w-2xl flex-col overflow-hidden rounded-lg shadow-2xl"
-      >
+    <Modal open={open} onClose={onClose} title="New Table" hideTitle className="h-[min(680px,90vh)] w-full max-w-2xl overflow-hidden">
         {/* Header */}
         <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-lg">
           <span className="text-sm font-semibold text-text">New Table</span>
@@ -357,7 +342,6 @@ export function CreateTableModal({
             {createTable.isPending ? 'Creating…' : 'Create Table'}
           </Button>
         </Surface>
-      </Surface>
-    </div>
+    </Modal>
   );
 }

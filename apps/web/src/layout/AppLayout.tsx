@@ -10,12 +10,14 @@ import { MobileShell } from '../mobile/MobileShell';
 import { CommandPalette } from '../search/CommandPalette';
 import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { useConnectionStore } from '../stores/connectionStore';
+import { useShortcutsStore } from '../stores/shortcutsStore';
 import { useThemeStore } from '../stores/themeStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { TopBar } from './TopBar';
 import { Sidebar } from './Sidebar';
 import { RightSidebar } from './RightSidebar';
 import { SettingsModal } from './SettingsModal';
+import { ShortcutsHelp } from './ShortcutsHelp';
 import { StatusBar } from './StatusBar';
 
 export interface AppLayoutProps {
@@ -28,21 +30,34 @@ export function AppLayout({ children }: AppLayoutProps) {
   const openConnectionModal = () => setConnectionModalOpen(true);
   const connectionModal = <ConnectionModal open={connectionModalOpen} onClose={() => setConnectionModalOpen(false)} />;
 
-  // Global command-palette shortcut (remappable; defaults to ⌘K / Ctrl+K), both shells.
+  // Global keyboard shortcuts (remappable; both shells). Palette/shortcuts toggle; new/close tab act
+  // on the workspace store. Reads store state lazily in the handler to avoid stale closures.
   const togglePalette = useCommandPaletteStore((s) => s.toggle);
+  const toggleShortcuts = useShortcutsStore((s) => s.toggleShortcuts);
   const keybindings = useThemeStore((s) => s.keybindings);
   const aiEnabled = useThemeStore((s) => s.aiEnabled);
   useEffect(() => {
-    const chord = resolveBinding('command-palette', keybindings);
+    const bindings: [string, () => void][] = [
+      ['command-palette', () => togglePalette()],
+      ['show-shortcuts', () => toggleShortcuts()],
+      ['new-query-tab', () => useWorkspaceStore.getState().newQueryTab()],
+      ['close-tab', () => {
+        const ws = useWorkspaceStore.getState();
+        if (ws.activeTabId) ws.closeTab(ws.activeTabId);
+      }],
+    ];
     function handleKeyDown(e: KeyboardEvent) {
-      if (matchesChord(e, chord)) {
-        e.preventDefault();
-        togglePalette();
+      for (const [action, run] of bindings) {
+        if (matchesChord(e, resolveBinding(action, keybindings))) {
+          e.preventDefault();
+          run();
+          return;
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [togglePalette, keybindings]);
+  }, [togglePalette, toggleShortcuts, keybindings]);
 
   // Server preferences win over localStorage once authenticated — reconciles the device
   // with a saved choice exactly once per session, without clobbering later user edits.
@@ -110,6 +125,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         <CommandPalette />
         <DdlSuggestionHost />
         <SettingsModal />
+        <ShortcutsHelp />
       </>
     );
   }
@@ -127,6 +143,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <CommandPalette />
       <DdlSuggestionHost />
       <SettingsModal />
+      <ShortcutsHelp />
     </div>
   );
 }

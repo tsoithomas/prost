@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { quoteIdent } from '@prost/utils';
 import type { AlterTableOperation, ColumnMetadata } from '@prost/shared-types';
-import { Button, Checkbox, IconButton, Input, Surface } from '@prost/ui';
+import { Button, Checkbox, IconButton, Input, Modal, Surface } from '@prost/ui';
 import { useEngineDescriptor } from '../api/databaseEngines';
 import { useAlterTable } from '../api/ddl';
 import { useDdlPreview } from '../api/ddlPreview';
@@ -84,14 +84,7 @@ export function EditColumnModal({ open, onClose, col, connectionId, schema, tabl
   const sectionClass = (kind: EditColumnSeed['kind']) =>
     `flex flex-col gap-sm p-lg${suggested === kind ? ' bg-accent-muted' : ''}`;
 
-  useEffect(() => {
-    if (!open) return;
-    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose(); }
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
-
-  if (!open || !col) return null;
+  if (!col) return null;
   const c = col;
 
   const q = (s: string) => quoteIdent(s);
@@ -178,12 +171,7 @@ export function EditColumnModal({ open, onClose, col, connectionId, schema, tabl
   return (
     <>
       {dialog}
-      <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-md md:items-center">
-        <Surface
-          level="overlay"
-          bordered
-          className="flex w-full max-w-[32rem] flex-col overflow-hidden rounded-lg shadow-2xl"
-        >
+      <Modal open={open} onClose={onClose} title={`Edit column ${c.name}`} hideTitle className="w-full max-w-[32rem] overflow-hidden">
           <div className="flex h-12 shrink-0 items-center justify-between border-b border-border px-lg">
             <span className="text-sm font-semibold text-text">Edit column <span className="font-mono">{c.name}</span></span>
             <IconButton aria-label="Close" onClick={onClose}><X size={16} /></IconButton>
@@ -285,8 +273,7 @@ export function EditColumnModal({ open, onClose, col, connectionId, schema, tabl
           <Surface level="raised" className="flex h-12 shrink-0 items-center justify-end border-t border-border px-lg">
             <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
           </Surface>
-        </Surface>
-      </div>
+      </Modal>
     </>
   );
 }

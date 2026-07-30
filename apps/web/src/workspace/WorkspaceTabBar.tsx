@@ -163,6 +163,32 @@ export function WorkspaceTabBar({
     <div className="flex h-8 max-md:h-11 shrink-0 items-end border-b border-border bg-surface-sunken px-sm pt-1">
       <div
         ref={scrollRef}
+        role="tablist"
+        aria-label="Open tabs"
+        onKeyDown={(e) => {
+          const idx = tabs.findIndex((t) => t.id === activeTabId);
+          if (idx === -1) return;
+          // Delete/Backspace closes the focused tab (APG closable-tabs pattern); the close "×" is
+          // pointer-only so a tab never nests a second focusable control.
+          if (e.key === 'Delete' || e.key === 'Backspace') {
+            const tab = tabs[idx]!;
+            if (tab.kind !== 'query' || queryTabCount > 1) {
+              e.preventDefault();
+              onClose(tab.id);
+            }
+            return;
+          }
+          if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+          e.preventDefault();
+          const next = e.key === 'ArrowRight' ? Math.min(idx + 1, tabs.length - 1) : Math.max(idx - 1, 0);
+          if (next === idx) return;
+          const nextId = tabs[next]!.id;
+          onSelect(nextId);
+          // Move focus to follow selection (roving tabindex); the tab becomes tabbable on re-render.
+          requestAnimationFrame(() => {
+            scrollRef.current?.querySelector<HTMLElement>(`#workspace-tab-${CSS.escape(nextId)}`)?.focus();
+          });
+        }}
         className="no-scrollbar flex flex-1 items-end gap-1 overflow-x-auto"
       >
         {tabs.map((tab) => {
@@ -179,8 +205,21 @@ export function WorkspaceTabBar({
           return (
             <div
               key={tab.id}
+              role="tab"
+              id={`workspace-tab-${tab.id}`}
+              aria-label={tab.label}
+              aria-selected={isActive}
+              aria-controls="workspace-tabpanel"
+              tabIndex={isActive ? 0 : -1}
               data-tab-id={tab.id}
               draggable
+              onClick={() => onSelect(tab.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelect(tab.id);
+                }
+              }}
               onDragStart={(e) => {
                 setDraggedId(tab.id);
                 e.dataTransfer.effectAllowed = 'move';
@@ -208,7 +247,7 @@ export function WorkspaceTabBar({
                 setMenu({ x: e.clientX, y: e.clientY, tabId: tab.id });
               }}
               className={clsx(
-                'flex h-7 max-md:h-9 shrink-0 items-center gap-sm whitespace-nowrap rounded-t-sm border border-b-0 px-sm text-xs transition-colors max-md:text-sm',
+                'flex h-7 max-md:h-9 shrink-0 cursor-pointer items-center gap-sm whitespace-nowrap rounded-t-sm border border-b-0 px-sm text-xs transition-colors max-md:text-sm',
                 isActive
                   ? 'border-border border-b-2 border-b-accent bg-bg text-text'
                   : 'border-transparent text-text-muted hover:bg-surface-hover hover:text-text',
@@ -216,19 +255,23 @@ export function WorkspaceTabBar({
                 draggedId === tab.id && 'opacity-50',
               )}
             >
-              <button type="button" onClick={() => onSelect(tab.id)} className="flex items-center gap-1 self-stretch whitespace-nowrap">
-                <Icon size={14} className="shrink-0" />
-                {tab.label}
-              </button>
+              <Icon size={14} className="shrink-0" />
+              <span className="whitespace-nowrap">{tab.label}</span>
               {canClose ? (
-                <button
-                  type="button"
-                  aria-label={`Close ${tab.label}`}
-                  onClick={() => onClose(tab.id)}
-                  className="shrink-0 rounded-sm text-text-faint transition-colors hover:text-text max-md:-mr-1 max-md:p-1"
+                // A pointer-only affordance (a plain span, not a nested interactive control — ARIA
+                // forbids nesting a button inside a tab). Keyboard/AT users close the focused tab with
+                // Delete/Backspace (handled on the tablist) or the right-click menu.
+                <span
+                  aria-hidden="true"
+                  title={`Close ${tab.label}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClose(tab.id);
+                  }}
+                  className="flex shrink-0 cursor-pointer items-center rounded-sm text-text-faint transition-colors hover:text-text max-md:-mr-1 max-md:p-1"
                 >
                   <X size={12} />
-                </button>
+                </span>
               ) : null}
             </div>
           );

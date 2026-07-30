@@ -10,6 +10,15 @@ if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
 
+// jsdom lacks ResizeObserver — the workspace tab bar observes its strip for overflow.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 // matchMedia polyfill — useIsMobile() / useMediaQuery() calls window.matchMedia
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
