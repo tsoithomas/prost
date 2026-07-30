@@ -1,11 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import type {
   ColumnMetadata,
+  ColumnTopValues,
   ForeignKeyMetadata,
   IndexMetadata,
   ReferencingKeyMetadata,
   SchemaForeignKey,
   SchemaMetadata,
+  TableProfile,
   SchemaObjectDetail,
   SchemaObjectKind,
   SchemaObjectSummary,
@@ -14,7 +16,23 @@ import type {
   TableOverview,
   TableStructure,
 } from '@prost/shared-types';
+import type { DbDriver } from '../database/db-driver.interface';
+import {
+  profileAlias,
+  PROFILE_MAX_COLUMNS,
+  PROFILE_TOP_VALUES_LIMIT,
+} from '../database/drivers/profile-sql';
+import type { ProfileColumnSpec } from '../database/types';
 import { PoolManager } from '../database/pool-manager.service';
+import { typeFamily } from '../grid/filter';
+
+/**
+ * Whether the engine can compare values of this type at all. `other` (json/xml/array/binary) has no
+ * engine-wide equality or ordering, so `COUNT(DISTINCT)`, `MIN`/`MAX` and `GROUP BY` are all unsafe.
+ */
+function isComparable(dataType: string): boolean {
+  return typeFamily(dataType) !== 'other';
+}
 
 /** A number the source may leave null; coerce to a non-negative integer, preserving null. */
 function toCountOrNull(value: unknown): number | null {
@@ -116,6 +134,12 @@ interface ObjectDefinitionRow {
   definition: string | null;
   /** JSON object (real object on PG `json`, JSON string on MySQL/SQLite), or null. */
   extra: Record<string, unknown> | string | null;
+}
+
+interface TopValueRow {
+  value: unknown;
+  occurrences: number | string | null;
+  scanned_rows: number | string | null;
 }
 
 interface TableStatsRow {
@@ -306,6 +330,117 @@ export class MetadataService {
       this.getTableForeignKeys(connectionId, schema, table),
     ]);
     return { columns, indexes, foreignKeys };
+  }
+
+  /**
+   * On-demand data profile of a table (Phase 37): one bounded pass computing null/distinct/min/max
+   * per column. The driver decides how the scan is bounded (`planProfileSample`); the service just
+   * reports which plan was used, so the UI can label sampled numbers honestly.
+   */
+  async getTableProfile(connectionId: string, schema: string, table: string, exact: boolean): Promise<TableProfile> {
+    const driver = await this.pool.driverFor(connectionId);
+    const ref = { namespace: schema, name: table };
+    const allColumns = await this.getTableColumns(connectionId, schema, table);
+    const columns = allColumns.slice(0, PROFILE_MAX_COLUMNS);
+    const specs: ProfileColumnSpec[] = columns.map((column) => ({
+      name: column.name,
+      orderable: isComparable(column.dataType),
+    }));
+
+    const totalRows = await this.countRows(connectionId, driver, ref, exact);
+    const plan = driver.planProfileSample(totalRows ?? 0, exact);
+    const { rows } = await this.pool.run(connectionId, driver.buildColumnProfile(ref, specs, plan));
+    const row = (rows[0] ?? {}) as Record<string, unknown>;
+    const scannedRows = toCountOrNull(row.scanned_rows) ?? 0;
+
+    return {
+      schema,
+      table,
+      scannedRows,
+      totalRows,
+      sample: plan.kind,
+      exact,
+      columnsOmitted: allColumns.length - columns.length,
+      columns: columns.map((column, i) => {
+        const nullCount = toCountOrNull(row[profileAlias(i, 'nulls')]) ?? 0;
+        return {
+          column: column.name,
+          dataType: column.dataType,
+          nullCount,
+          nullFraction: scannedRows > 0 ? nullCount / scannedRows : 0,
+          distinctCount: toCountOrNull(row[profileAlias(i, 'distinct')]),
+          min: toStringOrNull(row[profileAlias(i, 'min')]),
+          max: toStringOrNull(row[profileAlias(i, 'max')]),
+          comparable: specs[i]!.orderable,
+        };
+      }),
+    };
+  }
+
+  /** The most common values of one column, fetched lazily when its profile row is expanded. */
+  async getColumnTopValues(
+    connectionId: string,
+    schema: string,
+    table: string,
+    column: string,
+    exact: boolean,
+  ): Promise<ColumnTopValues> {
+    const columns = await this.getTableColumns(connectionId, schema, table);
+    const target = columns.find((candidate) => candidate.name === column);
+    if (!target) {
+      throw new BadRequestException(`Unknown column "${column}"`);
+    }
+    if (!isComparable(target.dataType)) {
+      throw new BadRequestException(
+        `Column "${column}" has type "${target.dataType}", which the engine cannot group or compare`,
+      );
+    }
+
+    const driver = await this.pool.driverFor(connectionId);
+    const ref = { namespace: schema, name: table };
+    // Planning always uses the cheap estimate; `exact` only means "don't sample".
+    const plan = driver.planProfileSample(await this.estimateRows(connectionId, driver, ref), exact);
+    const { rows } = (await this.pool.run(
+      connectionId,
+      driver.buildColumnTopValues(ref, column, plan, PROFILE_TOP_VALUES_LIMIT),
+    )) as unknown as { rows: TopValueRow[] };
+
+    const scannedRows = toCountOrNull(rows[0]?.scanned_rows) ?? 0;
+    return {
+      column,
+      scannedRows,
+      values: rows.map((row) => {
+        const count = toCountOrNull(row.occurrences) ?? 0;
+        return {
+          value: toStringOrNull(row.value),
+          count,
+          fraction: scannedRows > 0 ? count / scannedRows : 0,
+        };
+      }),
+    };
+  }
+
+  /** Whole-table size: an exact `COUNT(*)` on request, else the engine's cheap catalog estimate. */
+  private async countRows(
+    connectionId: string,
+    driver: DbDriver,
+    ref: { namespace: string; name: string },
+    exact: boolean,
+  ): Promise<number | null> {
+    if (!exact) return this.estimateRows(connectionId, driver, ref);
+    const { rows } = await this.pool.run(connectionId, driver.buildFilteredRowCount(ref, '', []));
+    return toCountOrNull((rows[0] as { count?: unknown } | undefined)?.count);
+  }
+
+  private async estimateRows(
+    connectionId: string,
+    driver: DbDriver,
+    ref: { namespace: string; name: string },
+  ): Promise<number> {
+    const { rows } = await this.pool.run(connectionId, driver.buildRowCountEstimate(ref));
+    // PG reports -1 for a never-analyzed relation (and a view has no real count); `toCountOrNull`
+    // clamps that to 0, which keeps those off the sampling path.
+    return toCountOrNull((rows[0] as { reltuples?: unknown } | undefined)?.reltuples) ?? 0;
   }
 
   async getSchemaOverview(connectionId: string, schema: string): Promise<SchemaOverview> {

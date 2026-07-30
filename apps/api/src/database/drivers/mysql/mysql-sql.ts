@@ -8,8 +8,16 @@ import type {
   NewColumn,
   SchemaObjectKind,
 } from '@prost/shared-types';
-import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
+import type {
+  ProfileColumnSpec,
+  ProfileSamplePlan,
+  RowUpdateGuard,
+  SelectRowsOptions,
+  SqlFragment,
+  TableRef,
+} from '../../types';
 import { buildAddForeignKeyClause, normalizeAddForeignKey, normalizeDropForeignKey } from '../fk-ddl';
+import { buildProfileSql, buildTopValuesSql, planLimitSample, type ProfileDialect } from '../profile-sql';
 import { formatLiteral, mysqlQuoteString } from '../literal';
 
 const ALLOWED_TYPES = new Set([
@@ -530,6 +538,42 @@ export function mysqlBuildRowCountEstimate(ref: TableRef): SqlFragment {
          WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
     params: [ref.namespace, ref.name],
   };
+}
+
+/** MySQL has no random-sampling clause, so a large table profiles its first N rows. */
+export const mysqlPlanProfileSample = planLimitSample;
+
+const mysqlProfileDialect: ProfileDialect = {
+  quoteIdent: mysqlQuoteIdent,
+  qualify,
+  placeholder: mysqlPlaceholder,
+  castText: (expression) => `CAST(${expression} AS CHAR)`,
+  from: (ref, plan, projection, firstParamIndex) => {
+    if (plan.kind === 'firstRows') {
+      return {
+        sql: `FROM (SELECT ${projection} FROM ${qualify(ref)} LIMIT ${mysqlPlaceholder(firstParamIndex)}) AS profile_sample`,
+        params: [plan.limit],
+      };
+    }
+    return { sql: `FROM ${qualify(ref)}`, params: [] };
+  },
+};
+
+export function mysqlBuildColumnProfile(
+  ref: TableRef,
+  columns: ProfileColumnSpec[],
+  plan: ProfileSamplePlan,
+): SqlFragment {
+  return buildProfileSql(mysqlProfileDialect, ref, columns, plan);
+}
+
+export function mysqlBuildColumnTopValues(
+  ref: TableRef,
+  column: string,
+  plan: ProfileSamplePlan,
+  limit: number,
+): SqlFragment {
+  return buildTopValuesSql(mysqlProfileDialect, ref, column, plan, limit);
 }
 
 export function mysqlBuildSchemaTableStats(namespace: string): SqlFragment {

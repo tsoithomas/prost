@@ -16,6 +16,8 @@ import type {
   DriverQueryFn,
   DriverResult,
   NativePool,
+  ProfileColumnSpec,
+  ProfileSamplePlan,
   RowUpdateGuard,
   SelectRowsOptions,
   SqlFragment,
@@ -108,6 +110,26 @@ export interface DbDriver {
    * `namespace` is bound (schema for PG, database for MySQL, ignored/`'main'` for SQLite).
    */
   buildSchemaTableStats(namespace: string): SqlFragment;
+
+  // --- profiling builders (Phase 37) ---
+  /**
+   * How to bound a profiling scan for a table of roughly `rowEstimate` rows. Pure and per-engine:
+   * PG can sample randomly (`TABLESAMPLE`), others take the first N rows. `exact` forces a full
+   * scan. Small tables are never sampled — which is also why a PG *view* (no usable `reltuples`)
+   * never reaches the `TABLESAMPLE` path, where it would be invalid.
+   */
+  planProfileSample(rowEstimate: number, exact: boolean): ProfileSamplePlan;
+  /**
+   * One-pass data profile of `columns`. Returns a **single row** aliased `scanned_rows` plus, per
+   * column index i, `c{i}_nulls`, `c{i}_distinct`, `c{i}_min`, `c{i}_max`. Columns whose spec is not
+   * `orderable` emit `NULL` for distinct/min/max — the engine has no equality or ordering for them.
+   */
+  buildColumnProfile(ref: TableRef, columns: ProfileColumnSpec[], plan: ProfileSamplePlan): SqlFragment;
+  /**
+   * The most common values of one column, aliased `value, occurrences`, ordered by frequency.
+   * Only valid for comparable columns (`GROUP BY` needs equality); the caller enforces that.
+   */
+  buildColumnTopValues(ref: TableRef, column: string, plan: ProfileSamplePlan, limit: number): SqlFragment;
 
   // --- grid builders ---
   buildSelectRows(ref: TableRef, opts: SelectRowsOptions): SqlFragment;

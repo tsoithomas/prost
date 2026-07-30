@@ -14,7 +14,7 @@ import type {
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
-  ConnectionParams, DbCapabilities, DriverCursor, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
+  ConnectionParams, DbCapabilities, DriverCursor, DriverQueryFn, DriverResult, NativePool, ProfileColumnSpec, ProfileSamplePlan, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
 } from '../../types';
 import { sqliteBuildExplain, sqliteParseExplain } from '../explain-plan';
 import * as sql from './sqlite-sql';
@@ -235,6 +235,11 @@ export class SqliteDriver implements DbDriver {
   buildListAllSchemaObjects = () => sql.sqliteBuildListAllSchemaObjects();
   buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.sqliteBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.sqliteBuildSchemaTableStats(namespace);
+  planProfileSample = (rowEstimate: number, exact: boolean) => sql.sqlitePlanProfileSample(rowEstimate, exact);
+  buildColumnProfile = (ref: TableRef, columns: ProfileColumnSpec[], plan: ProfileSamplePlan) =>
+    sql.sqliteBuildColumnProfile(ref, columns, plan);
+  buildColumnTopValues = (ref: TableRef, column: string, plan: ProfileSamplePlan, limit: number) =>
+    sql.sqliteBuildColumnTopValues(ref, column, plan, limit);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.sqliteBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) => sql.sqliteBuildFilteredRowCount(ref, w, p);
   buildRowCountEstimate = (ref: TableRef) => sql.sqliteBuildRowCountEstimate(ref);

@@ -1,5 +1,5 @@
 import type { QueryResultRow } from 'pg';
-import type { RowConcurrency, TestConnectionResult } from '@prost/shared-types';
+import type { ProfileSampleKind, RowConcurrency, TestConnectionResult } from '@prost/shared-types';
 
 /** Neutral table reference. PG maps `namespace` → schema. */
 export interface TableRef {
@@ -113,6 +113,26 @@ export interface SelectRowsOptions {
 export type RowUpdateGuard =
   | { kind: 'version'; value: string }
   | { kind: 'preimage'; columns: string[]; values: unknown[] };
+
+/**
+ * How a driver decided to bound a profiling scan (Phase 37) — produced by `planProfileSample` and
+ * consumed by the profile builders, so the sampling policy stays in the driver and the service just
+ * reports which one was used.
+ */
+export type ProfileSamplePlan =
+  | { kind: 'full' }
+  /** Engine-native random sampling: PG `TABLESAMPLE SYSTEM (percent)`. */
+  | { kind: 'random'; percent: number }
+  /** A bounded `LIMIT` subquery — the first N rows in physical order. */
+  | { kind: 'firstRows'; limit: number };
+
+/** One column a profile should aggregate. `orderable` gates MIN/MAX (json/binary have no ordering). */
+export interface ProfileColumnSpec {
+  name: string;
+  orderable: boolean;
+}
+
+export type { ProfileSampleKind };
 
 /** Opaque to callers; only the owning driver knows the concrete type. */
 export type NativePool = unknown;

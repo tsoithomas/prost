@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
 import { describe, expect, it, vi } from 'vitest';
 import { PgDriver } from '../database/drivers/pg/pg-driver';
@@ -406,6 +407,170 @@ describe('MetadataService.getSchemaForeignKeys', () => {
       onDelete: undefined,
       onUpdate: undefined,
     });
+  });
+});
+
+describe('MetadataService.getTableProfile', () => {
+  const columnRows = [
+    { column_name: 'id', data_type: 'integer', is_nullable: 'NO', is_primary_key: true, default_value: null, is_auto_increment: false },
+    { column_name: 'email', data_type: 'text', is_nullable: 'YES', is_primary_key: false, default_value: null, is_auto_increment: false },
+    { column_name: 'payload', data_type: 'json', is_nullable: 'YES', is_primary_key: false, default_value: null, is_auto_increment: false },
+  ];
+
+  /** columns → row-count estimate → the one profile query. */
+  function profileRun(profileRow: Record<string, unknown>, estimate: unknown = 120) {
+    return vi.fn()
+      .mockResolvedValueOnce(result(columnRows))
+      .mockResolvedValueOnce(result([{ reltuples: estimate }]))
+      .mockResolvedValueOnce(result([profileRow]));
+  }
+
+  const fullProfileRow = {
+    scanned_rows: 100,
+    c0_nulls: 0, c0_distinct: 100, c0_min: '1', c0_max: '100',
+    c1_nulls: 25, c1_distinct: 70, c1_min: 'a@x.com', c1_max: 'z@x.com',
+    c2_nulls: 5, c2_distinct: null, c2_min: null, c2_max: null,
+  };
+
+  it('profiles every column in one query and derives null fractions from scanned rows', async () => {
+    const run = profileRun(fullProfileRow);
+    const { service } = createService(run);
+
+    const profile = await service.getTableProfile('conn-1', 'public', 'users', false);
+
+    expect(run).toHaveBeenCalledTimes(3);
+    expect(profile.scannedRows).toBe(100);
+    expect(profile.totalRows).toBe(120);
+    expect(profile.columns).toHaveLength(3);
+    expect(profile.columns[1]).toEqual({
+      column: 'email',
+      dataType: 'text',
+      nullCount: 25,
+      nullFraction: 0.25,
+      distinctCount: 70,
+      min: 'a@x.com',
+      max: 'z@x.com',
+      comparable: true,
+    });
+  });
+
+  it('marks an uncomparable column as such, with null distinct/min/max', async () => {
+    const { service } = createService(profileRun(fullProfileRow));
+    const profile = await service.getTableProfile('conn-1', 'public', 'users', false);
+
+    expect(profile.columns[2]).toMatchObject({
+      column: 'payload', comparable: false, distinctCount: null, min: null, max: null,
+    });
+    // Nulls are still countable for those types.
+    expect(profile.columns[2]!.nullCount).toBe(5);
+  });
+
+  it('never asks the engine for an aggregate it would reject on an uncomparable column', async () => {
+    const run = profileRun(fullProfileRow);
+    const { service } = createService(run);
+
+    await service.getTableProfile('conn-1', 'public', 'users', false);
+
+    const [, frag] = run.mock.calls[2] as [string, { sql: string }];
+    expect(frag.sql).toContain('COUNT(DISTINCT "email")');
+    expect(frag.sql).not.toContain('COUNT(DISTINCT "payload")');
+    expect(frag.sql).not.toContain('MIN("payload")');
+    // Only the null count, which every type supports.
+    expect(frag.sql).toContain('COUNT(*) - COUNT("payload") AS c2_nulls');
+  });
+
+  it('does not sample a small table', async () => {
+    const run = profileRun(fullProfileRow, 120);
+    const { service } = createService(run);
+
+    const profile = await service.getTableProfile('conn-1', 'public', 'users', false);
+    expect(profile.sample).toBe('full');
+    const [, frag] = run.mock.calls[2] as [string, { sql: string }];
+    expect(frag.sql).not.toContain('TABLESAMPLE');
+  });
+
+  it('samples a large table and reports the sampling kind', async () => {
+    const run = profileRun({ ...fullProfileRow, scanned_rows: 50_000 }, 5_000_000);
+    const { service } = createService(run);
+
+    const profile = await service.getTableProfile('conn-1', 'public', 'users', false);
+    expect(profile.sample).toBe('random');
+    expect(profile.scannedRows).toBe(50_000);
+    const [, frag] = run.mock.calls[2] as [string, { sql: string }];
+    expect(frag.sql).toContain('TABLESAMPLE SYSTEM (1.0000)');
+  });
+
+  it('exact mode runs a real COUNT(*) and never samples', async () => {
+    const run = vi.fn()
+      .mockResolvedValueOnce(result(columnRows))
+      .mockResolvedValueOnce(result([{ count: 5_000_000 }]))
+      .mockResolvedValueOnce(result([fullProfileRow]));
+    const { service } = createService(run);
+
+    const profile = await service.getTableProfile('conn-1', 'public', 'users', true);
+
+    expect(profile.exact).toBe(true);
+    expect(profile.totalRows).toBe(5_000_000);
+    expect(profile.sample).toBe('full');
+    const [, countFrag] = run.mock.calls[1] as [string, { sql: string }];
+    expect(countFrag.sql).toContain('COUNT(*)');
+    const [, profileFrag] = run.mock.calls[2] as [string, { sql: string }];
+    expect(profileFrag.sql).not.toContain('TABLESAMPLE');
+  });
+
+  it('reports zero fractions rather than dividing by zero on an empty table', async () => {
+    const run = profileRun({ scanned_rows: 0, c0_nulls: 0, c1_nulls: 0, c2_nulls: 0 }, 0);
+    const { service } = createService(run);
+
+    const profile = await service.getTableProfile('conn-1', 'public', 'users', false);
+    expect(profile.scannedRows).toBe(0);
+    expect(profile.columns[0]!.nullFraction).toBe(0);
+    expect(profile.columnsOmitted).toBe(0);
+  });
+});
+
+describe('MetadataService.getColumnTopValues', () => {
+  const columnRows = [
+    { column_name: 'email', data_type: 'text', is_nullable: 'YES', is_primary_key: false, default_value: null, is_auto_increment: false },
+    { column_name: 'payload', data_type: 'json', is_nullable: 'YES', is_primary_key: false, default_value: null, is_auto_increment: false },
+  ];
+
+  it('maps buckets to shares of the scanned rows', async () => {
+    const run = vi.fn()
+      .mockResolvedValueOnce(result(columnRows))
+      .mockResolvedValueOnce(result([{ reltuples: 100 }]))
+      .mockResolvedValueOnce(result([
+        { value: 'a@x.com', occurrences: 60, scanned_rows: 100 },
+        { value: null, occurrences: 40, scanned_rows: 100 },
+      ]));
+    const { service } = createService(run);
+
+    const top = await service.getColumnTopValues('conn-1', 'public', 'users', 'email', false);
+
+    expect(top.scannedRows).toBe(100);
+    expect(top.values).toEqual([
+      { value: 'a@x.com', count: 60, fraction: 0.6 },
+      { value: null, count: 40, fraction: 0.4 },
+    ]);
+  });
+
+  it('rejects an unknown column before touching the target', async () => {
+    const run = vi.fn().mockResolvedValueOnce(result(columnRows));
+    const { service } = createService(run);
+
+    await expect(service.getColumnTopValues('conn-1', 'public', 'users', 'nope', false)).rejects.toThrow(
+      BadRequestException,
+    );
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a column whose type cannot be grouped', async () => {
+    const run = vi.fn().mockResolvedValueOnce(result(columnRows));
+    const { service } = createService(run);
+
+    await expect(service.getColumnTopValues('conn-1', 'public', 'users', 'payload', false)).rejects.toThrow(
+      /cannot group or compare/,
+    );
   });
 });
 

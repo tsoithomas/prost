@@ -64,6 +64,22 @@ describe('workspaceStore — loadQuery', () => {
 });
 
 
+describe('workspaceStore — table view modes', () => {
+  it('opens a table straight into the profile view when asked', () => {
+    useWorkspaceStore.getState().openTable(C, 'public', 'users', 'profile');
+    expect(useWorkspaceStore.getState().tabs[1]).toMatchObject({ kind: 'table', viewMode: 'profile' });
+  });
+
+  it('switches an open tab between rows, structure and profile', () => {
+    useWorkspaceStore.getState().openTable(C, 'public', 'users');
+    const id = `table:${C}:public.users`;
+    for (const mode of ['structure', 'profile', 'rows'] as const) {
+      useWorkspaceStore.getState().setTabViewMode(id, mode);
+      expect(useWorkspaceStore.getState().tabs.find((t) => t.id === id)?.viewMode).toBe(mode);
+    }
+  });
+});
+
 describe('workspaceStore — openErDiagram', () => {
   it('opens an ER diagram tab keyed by connection + schema and makes it active', () => {
     useWorkspaceStore.getState().openErDiagram(C, 'public');

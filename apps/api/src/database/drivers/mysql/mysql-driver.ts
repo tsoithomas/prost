@@ -36,6 +36,8 @@ import type {
   DriverQueryFn,
   DriverResult,
   NativePool,
+  ProfileColumnSpec,
+  ProfileSamplePlan,
   RowUpdateGuard,
   SelectRowsOptions,
   SqlFragment,
@@ -425,6 +427,11 @@ export class MysqlDriver implements DbDriver {
   buildListAllSchemaObjects = () => sql.mysqlBuildListAllSchemaObjects();
   buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.mysqlBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.mysqlBuildSchemaTableStats(namespace);
+  planProfileSample = (rowEstimate: number, exact: boolean) => sql.mysqlPlanProfileSample(rowEstimate, exact);
+  buildColumnProfile = (ref: TableRef, columns: ProfileColumnSpec[], plan: ProfileSamplePlan) =>
+    sql.mysqlBuildColumnProfile(ref, columns, plan);
+  buildColumnTopValues = (ref: TableRef, column: string, plan: ProfileSamplePlan, limit: number) =>
+    sql.mysqlBuildColumnTopValues(ref, column, plan, limit);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.mysqlBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, whereClause: string, params: unknown[]) =>
     sql.mysqlBuildFilteredRowCount(ref, whereClause, params);

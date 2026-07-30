@@ -15,7 +15,7 @@ import type {
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
-  ConnectionParams, DbCapabilities, DriverCursor, DriverQueryFn, DriverResult, NativePool, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
+  ConnectionParams, DbCapabilities, DriverCursor, DriverQueryFn, DriverResult, NativePool, ProfileColumnSpec, ProfileSamplePlan, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
 } from '../../types';
 import { pgBuildExplain, pgParseExplain } from '../explain-plan';
 import * as sql from './pg-sql';
@@ -271,6 +271,11 @@ export class PgDriver implements DbDriver {
   buildListAllSchemaObjects = () => sql.pgBuildListAllSchemaObjects();
   buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.pgBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.pgBuildSchemaTableStats(namespace);
+  planProfileSample = (rowEstimate: number, exact: boolean) => sql.pgPlanProfileSample(rowEstimate, exact);
+  buildColumnProfile = (ref: TableRef, columns: ProfileColumnSpec[], plan: ProfileSamplePlan) =>
+    sql.pgBuildColumnProfile(ref, columns, plan);
+  buildColumnTopValues = (ref: TableRef, column: string, plan: ProfileSamplePlan, limit: number) =>
+    sql.pgBuildColumnTopValues(ref, column, plan, limit);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.pgBuildSelectRows(ref, opts);
   buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) => sql.pgBuildFilteredRowCount(ref, w, p);
   buildRowCountEstimate = (ref: TableRef) => sql.pgBuildRowCountEstimate(ref);

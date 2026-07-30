@@ -8,8 +8,16 @@ import type {
   NewColumn,
   SchemaObjectKind,
 } from '@prost/shared-types';
-import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
+import type {
+  ProfileColumnSpec,
+  ProfileSamplePlan,
+  RowUpdateGuard,
+  SelectRowsOptions,
+  SqlFragment,
+  TableRef,
+} from '../../types';
 import { formatLiteral, standardQuoteString } from '../literal';
+import { buildProfileSql, buildTopValuesSql, planLimitSample, type ProfileDialect } from '../profile-sql';
 
 const SAFE_DEFAULT_PATTERN = /^(\d+|true|false|null|now\(\)|current_timestamp|gen_random_uuid\(\))$/i;
 
@@ -355,6 +363,42 @@ export function sqliteBuildFilteredRowCount(ref: TableRef, whereClause: string, 
 /** SQLite has no cheap statistics estimate; alias an exact COUNT(*) as `reltuples` so the grid reads it unchanged. */
 export function sqliteBuildRowCountEstimate(ref: TableRef): SqlFragment {
   return { sql: `SELECT COUNT(*) AS reltuples FROM ${qualify(ref)}`, params: [] };
+}
+
+/** SQLite has no sampling clause, so a large table profiles its first N rows. */
+export const sqlitePlanProfileSample = planLimitSample;
+
+const sqliteProfileDialect: ProfileDialect = {
+  quoteIdent: sqliteQuoteIdent,
+  qualify,
+  placeholder: sqlitePlaceholder,
+  castText: (expression) => `CAST(${expression} AS TEXT)`,
+  from: (ref, plan, projection, firstParamIndex) => {
+    if (plan.kind === 'firstRows') {
+      return {
+        sql: `FROM (SELECT ${projection} FROM ${qualify(ref)} LIMIT ${sqlitePlaceholder(firstParamIndex)}) AS profile_sample`,
+        params: [plan.limit],
+      };
+    }
+    return { sql: `FROM ${qualify(ref)}`, params: [] };
+  },
+};
+
+export function sqliteBuildColumnProfile(
+  ref: TableRef,
+  columns: ProfileColumnSpec[],
+  plan: ProfileSamplePlan,
+): SqlFragment {
+  return buildProfileSql(sqliteProfileDialect, ref, columns, plan);
+}
+
+export function sqliteBuildColumnTopValues(
+  ref: TableRef,
+  column: string,
+  plan: ProfileSamplePlan,
+  limit: number,
+): SqlFragment {
+  return buildTopValuesSql(sqliteProfileDialect, ref, column, plan, limit);
 }
 
 /**

@@ -19,7 +19,7 @@ export interface WorkspaceTab {
   /** Non-table object identity (object tabs only). */
   objectKind?: SchemaObjectKind;
   objectName?: string;
-  viewMode?: 'rows' | 'structure';
+  viewMode?: 'rows' | 'structure' | 'profile';
   sql?: string;
   result?: ExecuteQueryResponse | null;
   /** "Run as transaction" toggle, per tab. Default `false`. */
@@ -68,7 +68,7 @@ interface WorkspaceState {
     connectionId: string,
     schema: string,
     table: string,
-    viewMode?: 'rows' | 'structure',
+    viewMode?: 'rows' | 'structure' | 'profile',
     opts?: { search?: string; filter?: RowFilter },
   ) => void;
   openOverview: (connectionId: string, schema: string) => void;
@@ -92,7 +92,7 @@ interface WorkspaceState {
   clearTabFilter: (id: string) => void;
   revealTableColumn: (connectionId: string, schema: string, table: string, column: string) => void;
   clearRevealColumn: () => void;
-  setTabViewMode: (id: string, viewMode: 'rows' | 'structure') => void;
+  setTabViewMode: (id: string, viewMode: 'rows' | 'structure' | 'profile') => void;
   selectTab: (id: string) => void;
   closeTab: (id: string) => void;
   closeOtherTabs: (id: string) => void;

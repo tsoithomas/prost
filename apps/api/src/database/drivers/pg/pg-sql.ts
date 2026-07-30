@@ -12,8 +12,21 @@ import type {
   NewColumn,
   SchemaObjectKind,
 } from '@prost/shared-types';
-import type { RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef } from '../../types';
+import type {
+  ProfileColumnSpec,
+  ProfileSamplePlan,
+  RowUpdateGuard,
+  SelectRowsOptions,
+  SqlFragment,
+  TableRef,
+} from '../../types';
 import { buildAddForeignKeyClause, normalizeAddForeignKey, normalizeDropForeignKey } from '../fk-ddl';
+import {
+  buildProfileSql,
+  buildTopValuesSql,
+  PROFILE_SAMPLE_TARGET_ROWS,
+  type ProfileDialect,
+} from '../profile-sql';
 import { formatLiteral, standardQuoteString } from '../literal';
 
 const ALLOWED_TYPES = new Set([
@@ -485,6 +498,51 @@ export function pgBuildRowCountEstimate(ref: TableRef): SqlFragment {
     sql: "SELECT reltuples FROM pg_class WHERE oid = to_regclass(format('%I.%I', $1::text, $2::text))",
     params: [ref.namespace, ref.name],
   };
+}
+
+/**
+ * Postgres samples randomly with `TABLESAMPLE SYSTEM`. A table at or below the target size is never
+ * sampled — which also keeps *views* off this path, where `TABLESAMPLE` is invalid, since a view's
+ * `reltuples` is never a real row count.
+ */
+export function pgPlanProfileSample(rowEstimate: number, exact: boolean): ProfileSamplePlan {
+  if (exact || rowEstimate <= PROFILE_SAMPLE_TARGET_ROWS) return { kind: 'full' };
+  const percent = Math.min(100, Math.max(0.01, (PROFILE_SAMPLE_TARGET_ROWS / rowEstimate) * 100));
+  return { kind: 'random', percent };
+}
+
+const pgProfileDialect: ProfileDialect = {
+  quoteIdent: pgQuoteIdent,
+  qualify,
+  placeholder: pgPlaceholder,
+  castText: (expression) => `(${expression})::text`,
+  from: (ref, plan, projection, firstParamIndex) => {
+    if (plan.kind === 'random') {
+      // `TABLESAMPLE`'s argument is evaluated at query start and can't be bound as a parameter, so
+      // this percentage is inlined. It is server-computed and clamped, never user input.
+      return { sql: `FROM ${qualify(ref)} TABLESAMPLE SYSTEM (${plan.percent.toFixed(4)})`, params: [] };
+    }
+    if (plan.kind === 'firstRows') {
+      return {
+        sql: `FROM (SELECT ${projection} FROM ${qualify(ref)} LIMIT ${pgPlaceholder(firstParamIndex)}) AS profile_sample`,
+        params: [plan.limit],
+      };
+    }
+    return { sql: `FROM ${qualify(ref)}`, params: [] };
+  },
+};
+
+export function pgBuildColumnProfile(ref: TableRef, columns: ProfileColumnSpec[], plan: ProfileSamplePlan): SqlFragment {
+  return buildProfileSql(pgProfileDialect, ref, columns, plan);
+}
+
+export function pgBuildColumnTopValues(
+  ref: TableRef,
+  column: string,
+  plan: ProfileSamplePlan,
+  limit: number,
+): SqlFragment {
+  return buildTopValuesSql(pgProfileDialect, ref, column, plan, limit);
 }
 
 export function pgBuildSchemaTableStats(namespace: string): SqlFragment {

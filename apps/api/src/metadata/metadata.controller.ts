@@ -1,5 +1,14 @@
-import { BadRequestException, Controller, Get, Param } from '@nestjs/common';
-import type { SchemaForeignKey, SchemaMetadata, SchemaObjectDetail, SchemaObjectKind, SchemaOverview, TableStructure } from '@prost/shared-types';
+import { BadRequestException, Controller, Get, Param, Query } from '@nestjs/common';
+import type {
+  ColumnTopValues,
+  SchemaForeignKey,
+  SchemaMetadata,
+  SchemaObjectDetail,
+  SchemaObjectKind,
+  SchemaOverview,
+  TableProfile,
+  TableStructure,
+} from '@prost/shared-types';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import { ConnectionsService } from '../connections/connections.service';
 import { MetadataService } from './metadata.service';
@@ -53,6 +62,31 @@ export class MetadataController {
   ): Promise<TableStructure> {
     await this.connectionsService.assertOwnership(user.userId, id);
     return this.metadataService.getTableStructure(id, schema, table);
+  }
+
+  @Get(':id/tables/:schema/:table/profile')
+  async getTableProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('schema') schema: string,
+    @Param('table') table: string,
+    @Query('exact') exact?: string,
+  ): Promise<TableProfile> {
+    await this.connectionsService.assertOwnership(user.userId, id);
+    return this.metadataService.getTableProfile(id, schema, table, exact === 'true');
+  }
+
+  @Get(':id/tables/:schema/:table/profile/:column/values')
+  async getColumnTopValues(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('schema') schema: string,
+    @Param('table') table: string,
+    @Param('column') column: string,
+    @Query('exact') exact?: string,
+  ): Promise<ColumnTopValues> {
+    await this.connectionsService.assertOwnership(user.userId, id);
+    return this.metadataService.getColumnTopValues(id, schema, table, column, exact === 'true');
   }
 
   @Get(':id/schemas/:schema/objects/:kind/:name')

@@ -50,7 +50,7 @@ passes **and** it violates none of the architecture principles.
 | [34](./phase-34-settings-redesign.md) | Settings & preferences redesign (unified modal + fine-tune styling) | ✅ Complete |
 | [35](./phase-35-accessibility-hardening.md) | Accessibility & keyboard-navigation hardening | ✅ Complete |
 | [36](./phase-36-er-diagram.md) | ER diagram / relationship visualization | ✅ Complete |
-| [37](./phase-37-column-profiling.md) | Column profiling & table data statistics | 🔲 Planned |
+| [37](./phase-37-column-profiling.md) | Column profiling & table data statistics | ✅ Complete |
 | [38](./phase-38-object-comments.md) | Table & column documentation (native comments) | 🔲 Planned |
 | [39](./phase-39-data-masking.md) | Data masking / sensitive-column redaction | 🔲 Planned |
 | [40](./phase-40-perf-insights.md) | On-demand query-performance insights & index advisor | 🔲 Planned |
@@ -85,7 +85,11 @@ palette / bottom nav, an expanded keyboard-shortcut registry with a help overlay
 checks); and the read-only ER diagram (a schema-wide `buildListSchemaForeignKeys` driver read behind
 `GET :id/schemas/:schema/foreign-keys`, a dependency-free layered layout in `workspace/erLayout.ts`, and an
 `'erDiagram'` workspace tab rendering `ErDiagramView` — pan/zoom, node → open table, edge → constraint
-detail, no DDL and no persisted layout). **Phases 37–46 are planned**.
+detail, no DDL and no persisted layout); and on-demand column profiling (a `planProfileSample` /
+`buildColumnProfile` / `buildColumnTopValues` driver seam with shared SQL in `drivers/profile-sql.ts`,
+`GET …/profile` + `…/profile/:column/values`, and a third `Profile` table view mode showing per-column
+null share, distinct count, range and a lazily-loaded top-N distribution — bounded by engine-native
+sampling and labelled as such). **Phases 38–46 are planned**.
 
 ## Sequencing notes
 

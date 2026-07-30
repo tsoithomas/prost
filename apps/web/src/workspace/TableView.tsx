@@ -20,6 +20,7 @@ import { FilterPanel, operatorsForColumn } from './FilterPanel';
 import { ExportDialog } from './ExportDialog';
 import { ImportModal } from '../import/ImportModal';
 import { TableStructurePanel } from './TableStructurePanel';
+import { TableProfilePanel } from './TableProfilePanel';
 import { useConnection } from '../api/connections';
 import { useBulkUpdate, useDeleteRow, useInsertRow } from '../api/grid';
 import { useUpdatePreferences } from '../api/preferences';
@@ -70,8 +71,8 @@ export interface TableViewProps {
   connectionId: string;
   schema: string;
   table: string;
-  viewMode: 'rows' | 'structure';
-  onViewModeChange: (mode: 'rows' | 'structure') => void;
+  viewMode: 'rows' | 'structure' | 'profile';
+  onViewModeChange: (mode: 'rows' | 'structure' | 'profile') => void;
 }
 
 const PAGE_SIZE = 100;
@@ -701,6 +702,16 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
             >
               Structure
             </Button>
+            <div className="w-px bg-border" />
+            <Button
+              type="button"
+              variant={viewMode === 'profile' ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => onViewModeChange('profile')}
+              className="rounded-none border-0"
+            >
+              Profile
+            </Button>
           </div>
         </div>
       </div>
@@ -714,6 +725,8 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
       <div className="min-h-0 flex-1" role="region" aria-label={`${schema}.${table} data`}>
         {viewMode === 'structure' ? (
           <TableStructurePanel connectionId={connectionId} schema={schema} table={table} writable={writable} />
+        ) : viewMode === 'profile' ? (
+          <TableProfilePanel connectionId={connectionId} schema={schema} table={table} />
         ) : columnsQuery.isLoading ? (
           <div className="flex h-full items-center justify-center text-sm text-text-faint">Loading table…</div>
         ) : columnsQuery.isError ? (

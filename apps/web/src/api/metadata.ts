@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import type {
+  ColumnTopValues,
   SchemaForeignKey,
   SchemaMetadata,
+  TableProfile,
   SchemaObjectDetail,
   SchemaObjectKind,
   SchemaOverview,
@@ -46,6 +48,37 @@ export function useTableStructure(connectionId: string | null, schema: string, t
         `/connections/${connectionId}/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/structure`,
       ),
     enabled: connectionId !== null,
+  });
+}
+
+/** On-demand data profile of a table (Phase 37). `exact` opts out of sampling and estimates. */
+export function useTableProfile(connectionId: string | null, schema: string, table: string, exact: boolean) {
+  return useQuery({
+    queryKey: ['table-profile', connectionId, schema, table, exact],
+    queryFn: () =>
+      apiFetch<TableProfile>(
+        `/connections/${connectionId}/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}/profile?exact=${exact}`,
+      ),
+    enabled: connectionId !== null,
+  });
+}
+
+/** One column's top-N distribution, fetched only once its profile row is expanded. */
+export function useColumnTopValues(
+  connectionId: string | null,
+  schema: string,
+  table: string,
+  column: string | null,
+  exact: boolean,
+) {
+  return useQuery({
+    queryKey: ['column-top-values', connectionId, schema, table, column, exact],
+    queryFn: () =>
+      apiFetch<ColumnTopValues>(
+        `/connections/${connectionId}/tables/${encodeURIComponent(schema)}/${encodeURIComponent(table)}` +
+          `/profile/${encodeURIComponent(column!)}/values?exact=${exact}`,
+      ),
+    enabled: connectionId !== null && column !== null,
   });
 }
 

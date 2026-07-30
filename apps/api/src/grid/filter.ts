@@ -3,7 +3,7 @@ import { quoteIdent } from '@prost/utils';
 import type { ColumnFilter, ColumnMetadata, FilterOperator, RowFilter } from '@prost/shared-types';
 import type { WhereDialect } from '../database/types';
 
-type TypeFamily = 'text' | 'numeric' | 'datetime' | 'boolean' | 'other';
+export type TypeFamily = 'text' | 'numeric' | 'datetime' | 'boolean' | 'other';
 
 const TEXT_TYPES = new Set([
   'text', 'character varying', 'character', 'name', 'citext', 'varchar', 'char', 'bpchar',
@@ -25,7 +25,12 @@ const DATETIME_TYPES = new Set([
 ]);
 const BOOLEAN_TYPES = new Set(['boolean', 'bool']);
 
-function typeFamily(dataType: string): TypeFamily {
+/**
+ * The comparison family a column type belongs to. Drives which filter operators are valid and, for
+ * profiling (Phase 37), whether a column can be compared at all — `other` (json/xml/array/binary)
+ * has no engine-wide equality or ordering, so `COUNT(DISTINCT)`/`MIN`/`MAX`/`GROUP BY` are unsafe.
+ */
+export function typeFamily(dataType: string): TypeFamily {
   const t = dataType.toLowerCase();
   if (TEXT_TYPES.has(t)) return 'text';
   if (NUMERIC_TYPES.has(t)) return 'numeric';

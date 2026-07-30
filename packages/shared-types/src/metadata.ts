@@ -100,6 +100,67 @@ export interface TableStructure {
   foreignKeys: ForeignKeyMetadata[];
 }
 
+/**
+ * How a profile's aggregates were scoped (Phase 37). `full` scanned every row; `random` used the
+ * engine's random sampling (PG `TABLESAMPLE`); `firstRows` used a bounded `LIMIT` — biased by
+ * physical order, so the UI must say so.
+ */
+export type ProfileSampleKind = 'full' | 'random' | 'firstRows';
+
+/** One column's data shape over the scanned rows. */
+export interface ColumnProfile {
+  column: string;
+  dataType: string;
+  nullCount: number;
+  /** `nullCount / scannedRows`, 0..1; `0` when nothing was scanned. */
+  nullFraction: number;
+  /**
+   * `null` for types the engine can't compare (PG `json` has no equality operator, so neither
+   * `COUNT(DISTINCT)` nor `MIN`/`MAX` are valid) — the same types that get a null `min`/`max`.
+   */
+  distinctCount: number | null;
+  /** Rendered as text. `null` for types with no meaningful ordering (json/xml/array/binary). */
+  min: string | null;
+  max: string | null;
+  /** Whether this column supports the top-N distribution (it needs `GROUP BY`, i.e. equality). */
+  comparable: boolean;
+}
+
+/** Response for `GET :id/tables/:schema/:table/profile`. */
+export interface TableProfile {
+  schema: string;
+  table: string;
+  /** Rows the aggregates actually saw. */
+  scannedRows: number;
+  /** Whole-table size: a catalog estimate, or an exact count when `exact` was requested. */
+  totalRows: number | null;
+  sample: ProfileSampleKind;
+  /** Whether the caller opted into exact counting (no sampling, real `COUNT(*)`). */
+  exact: boolean;
+  /**
+   * Columns beyond the per-request cap that weren't profiled — engines limit how wide a result row
+   * can be, so a very wide table profiles a prefix rather than failing.
+   */
+  columnsOmitted: number;
+  columns: ColumnProfile[];
+}
+
+/** One value's share of a column, for the top-N distribution. */
+export interface ColumnValueShare {
+  /** `null` is a real bucket here — a column can be mostly null. */
+  value: string | null;
+  count: number;
+  /** `count / scannedRows`, 0..1. */
+  fraction: number;
+}
+
+/** Response for `GET :id/tables/:schema/:table/profile/:column/values` (fetched on expand). */
+export interface ColumnTopValues {
+  column: string;
+  scannedRows: number;
+  values: ColumnValueShare[];
+}
+
 /** One table's row in the per-schema overview page (phpMyAdmin-style). */
 export interface TableOverview {
   schema: string;

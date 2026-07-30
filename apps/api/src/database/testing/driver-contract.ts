@@ -367,6 +367,49 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       expect(asArray(row!.referenced_columns)).toEqual(['id']);
     });
 
+    // Profiling (Phase 37) reads whatever rows exist, so these seed their own and clean up —
+    // the surrounding write tests leave the table in no guaranteed state.
+    it('profiles columns in one pass, aliasing scanned_rows and per-column aggregates', async (ctx) => {
+      skipIfUnreachable(ctx);
+      const seeded = [[901, 'alpha'], [902, 'alpha'], [903, null]] as [number, string | null][];
+      for (const [id, name] of seeded) {
+        await driver.query(pool!, driver.buildInsertRow(ref, [['id', id], ['name', name]]));
+      }
+      try {
+        const plan = driver.planProfileSample(10, false);
+        expect(plan).toEqual({ kind: 'full' });
+
+        const specs = [{ name: 'id', orderable: true }, { name: 'name', orderable: true }];
+        const res = await driver.query(pool!, driver.buildColumnProfile(ref, specs, plan));
+        const row = res.rows[0] as Record<string, unknown>;
+        expect(row).toBeDefined();
+        expect(Number(row.scanned_rows)).toBeGreaterThanOrEqual(3);
+        // `id` is the primary key: never null, one distinct value per row.
+        expect(Number(row.c0_nulls)).toBe(0);
+        expect(Number(row.c0_distinct)).toBe(Number(row.scanned_rows));
+        expect(String(row.c0_min)).not.toBe('');
+        // `name` has at least the one null and the repeated 'alpha' we just seeded.
+        expect(Number(row.c1_nulls)).toBeGreaterThanOrEqual(1);
+
+        const top = await driver.query(pool!, driver.buildColumnTopValues(ref, 'name', plan, 5));
+        const alpha = top.rows.find((r) => (r as Record<string, unknown>).value === 'alpha') as
+          | Record<string, unknown>
+          | undefined;
+        expect(Number(alpha?.occurrences)).toBe(2);
+        const counts = top.rows.map((r) => Number((r as Record<string, unknown>).occurrences));
+        expect(counts).toEqual([...counts].sort((a, b) => b - a));
+
+        // A bounded plan keeps the same shape, just fewer scanned rows.
+        const bounded = await driver.query(
+          pool!,
+          driver.buildColumnProfile(ref, [{ name: 'id', orderable: true }], { kind: 'firstRows', limit: 2 }),
+        );
+        expect(Number((bounded.rows[0] as Record<string, unknown>).scanned_rows)).toBe(2);
+      } finally {
+        for (const [id] of seeded) await driver.query(pool!, driver.buildDeleteRow(ref, ['id'], [id]));
+      }
+    });
+
     it('lists every foreign key in the schema in one read, with the owning table', async (ctx) => {
       skipIfUnreachable(ctx);
       const asArray = (raw: unknown): string[] =>
