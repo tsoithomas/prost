@@ -20,7 +20,7 @@ const DEFAULT_INDEXES: IndexMetadata[] = [
 ];
 
 function mockStructure(columns = DEFAULT_COLUMNS, indexes = DEFAULT_INDEXES): TableStructure {
-  return { columns, indexes, foreignKeys: [] };
+  return { columns, indexes, foreignKeys: [], comment: null };
 }
 
 function createService(
