@@ -267,6 +267,7 @@ export class PgDriver implements DbDriver {
   buildListIndexes = (ref: TableRef) => sql.pgBuildListIndexes(ref);
   buildListForeignKeys = (ref: TableRef) => sql.pgBuildListForeignKeys(ref);
   buildListReferencingForeignKeys = (ref: TableRef) => sql.pgBuildListReferencingForeignKeys(ref);
+  buildListSchemaForeignKeys = (namespace: string) => sql.pgBuildListSchemaForeignKeys(namespace);
   buildListAllSchemaObjects = () => sql.pgBuildListAllSchemaObjects();
   buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.pgBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.pgBuildSchemaTableStats(namespace);

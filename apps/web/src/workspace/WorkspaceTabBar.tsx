@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, ChevronLeft, ChevronRight, Code, FileText, LayoutGrid, Plus, ScrollText, Table2, X } from 'lucide-react';
+import { Activity, ChevronLeft, ChevronRight, Code, FileText, LayoutGrid, Plus, ScrollText, Table2, Waypoints, X } from 'lucide-react';
 import clsx from 'clsx';
 
 export interface WorkspaceTab {
   id: string;
   label: string;
-  kind: 'table' | 'query' | 'overview' | 'object' | 'sessions' | 'audit';
+  kind: 'table' | 'query' | 'overview' | 'object' | 'erDiagram' | 'sessions' | 'audit';
 }
 
 export interface WorkspaceTabBarProps {
@@ -197,6 +197,7 @@ export function WorkspaceTabBar({
             tab.kind === 'overview' ? LayoutGrid
             : tab.kind === 'table' ? Table2
             : tab.kind === 'object' ? FileText
+            : tab.kind === 'erDiagram' ? Waypoints
             : tab.kind === 'sessions' ? Activity
             : tab.kind === 'audit' ? ScrollText
             : Code;

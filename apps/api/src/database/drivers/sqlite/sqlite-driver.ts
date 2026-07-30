@@ -230,6 +230,8 @@ export class SqliteDriver implements DbDriver {
   buildListIndexes = (ref: TableRef) => sql.sqliteBuildListIndexes(ref);
   buildListForeignKeys = (ref: TableRef) => sql.sqliteBuildListForeignKeys(ref);
   buildListReferencingForeignKeys = (ref: TableRef) => sql.sqliteBuildListReferencingForeignKeys(ref);
+  // SQLite has a single namespace, so the whole database *is* the schema graph.
+  buildListSchemaForeignKeys = (_namespace: string) => sql.sqliteBuildListSchemaForeignKeys();
   buildListAllSchemaObjects = () => sql.sqliteBuildListAllSchemaObjects();
   buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.sqliteBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.sqliteBuildSchemaTableStats(namespace);

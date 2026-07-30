@@ -5,6 +5,7 @@ import { TableView } from './TableView';
 import { SqlEditorView } from './SqlEditorView';
 import { DatabaseOverview } from './DatabaseOverview';
 import { DefinitionPanel } from './DefinitionPanel';
+import { ErDiagramView } from './ErDiagramView';
 import { SessionsPanel } from './SessionsPanel';
 import { AuditPanel } from './AuditPanel';
 import { useConnection } from '../api/connections';
@@ -43,7 +44,7 @@ export function Workspace() {
   const breadcrumbSegments =
     (activeTab?.kind === 'table' || activeTab?.kind === 'object') && activeTab.schema
       ? [connectionLabel, activeTab.schema, activeTab.label]
-      : activeTab?.kind === 'overview' && activeTab.schema
+      : (activeTab?.kind === 'overview' || activeTab?.kind === 'erDiagram') && activeTab.schema
         ? [connectionLabel, activeTab.schema]
         : [connectionLabel];
 
@@ -109,6 +110,9 @@ export function Workspace() {
           objectKind={activeTab.objectKind}
           objectName={activeTab.objectName}
         />
+      ) : null}
+      {activeTab?.kind === 'erDiagram' && activeTab.schema && activeTab.connectionId ? (
+        <ErDiagramView connectionId={activeTab.connectionId} schema={activeTab.schema} />
       ) : null}
       {activeTab?.kind === 'sessions' && activeTab.connectionId ? (
         <SessionsPanel connectionId={activeTab.connectionId} writable={writable} />

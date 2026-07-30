@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import {
   Box, ChevronDown, ChevronRight, Eye, FunctionSquare, Layers, LayoutGrid, List, ListOrdered,
-  Pin, PinOff, Plus, Rows3, Search, SquareCode, StretchHorizontal, Table2, X, Zap,
+  Pin, PinOff, Plus, Rows3, Search, SquareCode, StretchHorizontal, Table2, Waypoints, X, Zap,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { SchemaMetadata, SchemaObjectKind, SchemaObjectSummary, TableSummary } from '@prost/shared-types';
@@ -131,6 +131,8 @@ export interface SchemaTreeProps {
   onSelectObject: (object: SchemaObjectSummary) => void;
   onNewTable: (schema: string) => void;
   onOpenOverview: (schema: string) => void;
+  /** Open the schema's read-only ER diagram (Phase 36). When omitted, the affordance is hidden. */
+  onOpenDiagram?: (schema: string) => void;
   /** Engines without a schema layer (SQLite) render a flat table list instead of schema groups. */
   hasSchemas?: boolean;
   /** Read-only connections (the app DB) hide write affordances like "New table". */
@@ -156,6 +158,7 @@ export function SchemaTree({
   onSelectObject,
   onNewTable,
   onOpenOverview,
+  onOpenDiagram,
   hasSchemas = true,
   writable = true,
   pinnedKeys,
@@ -330,15 +333,28 @@ export function SchemaTree({
         {renderStickyTop()}
         <div className="mb-2 flex items-center justify-between pl-sm pr-1">
           <span className="text-xs font-medium uppercase tracking-wider text-text-faint">Tables</span>
-          <button
-            type="button"
-            aria-label="Database overview"
-            title="Database overview"
-            onClick={() => onOpenOverview(flatSchema)}
-            className="flex h-5 w-5 items-center justify-center rounded-sm text-text-faint transition-colors hover:bg-surface-hover hover:text-text"
-          >
-            <LayoutGrid size={13} />
-          </button>
+          <div className="flex items-center gap-0.5">
+            {onOpenDiagram ? (
+              <button
+                type="button"
+                aria-label="Relationship diagram"
+                title="Relationship diagram"
+                onClick={() => onOpenDiagram(flatSchema)}
+                className="flex h-5 w-5 items-center justify-center rounded-sm text-text-faint transition-colors hover:bg-surface-hover hover:text-text"
+              >
+                <Waypoints size={13} />
+              </button>
+            ) : null}
+            <button
+              type="button"
+              aria-label="Database overview"
+              title="Database overview"
+              onClick={() => onOpenOverview(flatSchema)}
+              className="flex h-5 w-5 items-center justify-center rounded-sm text-text-faint transition-colors hover:bg-surface-hover hover:text-text"
+            >
+              <LayoutGrid size={13} />
+            </button>
+          </div>
         </div>
         {allTables.length === 0 ? (
           <p className="px-sm py-1 text-xs italic text-text-faint">No tables</p>
@@ -393,6 +409,17 @@ export function SchemaTree({
                   <Box size={14} className="shrink-0 text-accent" />
                   <span className="truncate">{schema.name}</span>
                 </button>
+                {onOpenDiagram ? (
+                  <button
+                    type="button"
+                    aria-label={`Relationship diagram of ${schema.name}`}
+                    title={`Relationship diagram of ${schema.name}`}
+                    onClick={(e) => { e.stopPropagation(); onOpenDiagram(schema.name); }}
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-sm text-text-faint opacity-0 transition-opacity hover:bg-surface-hover hover:text-text group-hover/schema:opacity-100"
+                  >
+                    <Waypoints size={12} />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   aria-label={`Overview of ${schema.name}`}

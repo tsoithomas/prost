@@ -25,6 +25,7 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
   const openTable = useWorkspaceStore((state) => state.openTable);
   const openObject = useWorkspaceStore((state) => state.openObject);
   const openOverview = useWorkspaceStore((state) => state.openOverview);
+  const openErDiagram = useWorkspaceStore((state) => state.openErDiagram);
   const pinnedByConnection = usePinnedTablesStore((state) => state.pinned);
   const togglePinned = usePinnedTablesStore((state) => state.toggle);
   const pinnedKeys = new Set(activeConnectionId ? pinnedByConnection[activeConnectionId] ?? [] : []);
@@ -85,6 +86,10 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
             onNewTable={(schema) => setCreateTableState({ open: true, schema })}
             onOpenOverview={(schema) => {
               openOverview(activeConnectionId, schema);
+              onSelectTable?.();
+            }}
+            onOpenDiagram={(schema) => {
+              openErDiagram(activeConnectionId, schema);
               onSelectTable?.();
             }}
             hasSchemas={activeConnection?.capabilities.hasSchemas ?? true}

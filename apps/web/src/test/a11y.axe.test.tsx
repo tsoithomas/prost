@@ -4,8 +4,49 @@ import { axe } from 'vitest-axe';
 import * as axeMatchers from 'vitest-axe/matchers';
 import { Modal } from '@prost/ui';
 import { ShortcutsHelp } from '../layout/ShortcutsHelp';
+import { ErDiagramView } from '../workspace/ErDiagramView';
 import { WorkspaceTabBar, type WorkspaceTab } from '../workspace/WorkspaceTabBar';
 import { useShortcutsStore } from '../stores/shortcutsStore';
+
+vi.mock('../api/metadata', () => ({
+  useMetadata: () => ({
+    data: [
+      {
+        name: 'public',
+        objects: [],
+        tables: [
+          {
+            schema: 'public',
+            name: 'users',
+            columns: [{ name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null }],
+          },
+          {
+            schema: 'public',
+            name: 'orders',
+            columns: [{ name: 'user_id', dataType: 'integer', nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null }],
+          },
+        ],
+      },
+    ],
+    isLoading: false,
+    isError: false,
+  }),
+  useSchemaForeignKeys: () => ({
+    data: [
+      {
+        constraintName: 'orders_user_id_fkey',
+        table: 'orders',
+        schema: 'public',
+        columns: ['user_id'],
+        referencedSchema: 'public',
+        referencedTable: 'users',
+        referencedColumns: ['id'],
+      },
+    ],
+    isLoading: false,
+    isError: false,
+  }),
+}));
 
 beforeAll(() => {
   expect.extend(axeMatchers);
@@ -38,6 +79,11 @@ describe('axe: no accessibility violations', () => {
     useShortcutsStore.setState({ open: true });
     const { baseElement } = render(<ShortcutsHelp />);
     expect(await axe(baseElement)).toHaveNoViolations();
+  });
+
+  it('ErDiagramView', async () => {
+    const { container } = render(<ErDiagramView connectionId="c1" schema="public" />);
+    expect(await axe(container)).toHaveNoViolations();
   });
 
   it('WorkspaceTabBar', async () => {

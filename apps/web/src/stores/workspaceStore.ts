@@ -5,9 +5,9 @@ import type { ExecuteQueryResponse, RowFilter, SchemaObjectKind } from '@prost/s
 export interface WorkspaceTab {
   id: string;
   label: string;
-  kind: 'table' | 'query' | 'overview' | 'object' | 'sessions' | 'audit';
+  kind: 'table' | 'query' | 'overview' | 'object' | 'erDiagram' | 'sessions' | 'audit';
   /**
-   * The connection a data tab is bound to (table/overview/object/sessions tabs). A tab always
+   * The connection a data tab is bound to (table/overview/object/erDiagram/sessions tabs). A tab always
    * loads from this connection, independent of which connection is currently active — so switching
    * the active connection never re-points an already-open tab at the wrong database. Query tabs are
    * connection-agnostic (they run against the active connection) and leave this unset; the audit tab
@@ -74,6 +74,8 @@ interface WorkspaceState {
   openOverview: (connectionId: string, schema: string) => void;
   /** Open a read-only definition panel for a non-table object (Phase 24). */
   openObject: (connectionId: string, schema: string, kind: SchemaObjectKind, name: string) => void;
+  /** Open the read-only ER diagram for a schema (Phase 36). */
+  openErDiagram: (connectionId: string, schema: string) => void;
   /** Open a connection's live-session monitor (Phase 27). */
   openSessions: (connectionId: string) => void;
   /**
@@ -177,6 +179,19 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       }
       return {
         tabs: [...state.tabs, { id, label: schema, kind: 'overview', connectionId, schema }],
+        activeTabId: id,
+      };
+    });
+  },
+
+  openErDiagram: (connectionId, schema) => {
+    const id = `er:${connectionId}:${schema}`;
+    set((state) => {
+      if (state.tabs.some((tab) => tab.id === id)) {
+        return { activeTabId: id };
+      }
+      return {
+        tabs: [...state.tabs, { id, label: `${schema} diagram`, kind: 'erDiagram', connectionId, schema }],
         activeTabId: id,
       };
     });

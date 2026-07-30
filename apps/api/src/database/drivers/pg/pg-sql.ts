@@ -352,6 +352,41 @@ export function pgBuildListReferencingForeignKeys(ref: TableRef): SqlFragment {
   };
 }
 
+/** Every FK owned by a table in `namespace` — the relationship graph of one schema (Phase 36). */
+export function pgBuildListSchemaForeignKeys(namespace: string): SqlFragment {
+  return {
+    sql: `SELECT
+         con.conname AS constraint_name,
+         n.nspname AS table_schema,
+         cl.relname AS table_name,
+         ARRAY(
+           SELECT a.attname
+           FROM   unnest(con.conkey) WITH ORDINALITY AS k(attnum, ord)
+           JOIN   pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.attnum
+           ORDER BY k.ord
+         )::text[] AS columns,
+         rns.nspname AS referenced_schema,
+         rcl.relname AS referenced_table,
+         ARRAY(
+           SELECT a.attname
+           FROM   unnest(con.confkey) WITH ORDINALITY AS k(attnum, ord)
+           JOIN   pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.attnum
+           ORDER BY k.ord
+         )::text[] AS referenced_columns,
+         ${PG_FK_ACTION.replace('$CODE$', 'con.confdeltype')} AS on_delete,
+         ${PG_FK_ACTION.replace('$CODE$', 'con.confupdtype')} AS on_update
+       FROM   pg_constraint con
+       JOIN   pg_class     cl  ON cl.oid  = con.conrelid
+       JOIN   pg_namespace n   ON n.oid   = cl.relnamespace
+       JOIN   pg_class     rcl ON rcl.oid = con.confrelid
+       JOIN   pg_namespace rns ON rns.oid = rcl.relnamespace
+       WHERE  con.contype = 'f'
+         AND  n.nspname = $1
+       ORDER BY cl.relname, con.conname`,
+    params: [namespace],
+  };
+}
+
 const PG_SYS_SCHEMAS = `NOT IN ('pg_catalog', 'information_schema') AND %C% NOT LIKE 'pg_toast%' AND %C% NOT LIKE 'pg_temp%'`;
 
 /** All non-table schema objects across user schemas, one aliased row each: `kind, schema, name, comment`. */

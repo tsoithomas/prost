@@ -121,6 +121,27 @@ describe('SchemaTree object groups', () => {
   });
 });
 
+describe('SchemaTree diagram entry point', () => {
+  it('calls onOpenDiagram with the schema name', async () => {
+    const onOpenDiagram = vi.fn();
+    renderTree({ onOpenDiagram });
+    await userEvent.click(screen.getByRole('button', { name: 'Relationship diagram of analytics' }));
+    expect(onOpenDiagram).toHaveBeenCalledWith('analytics');
+  });
+
+  it('hides the affordance when no handler is given', () => {
+    renderTree();
+    expect(screen.queryByRole('button', { name: /Relationship diagram/ })).not.toBeInTheDocument();
+  });
+
+  it('offers a single diagram action on engines with no schema layer', async () => {
+    const onOpenDiagram = vi.fn();
+    renderTree({ onOpenDiagram, hasSchemas: false });
+    await userEvent.click(screen.getByRole('button', { name: 'Relationship diagram' }));
+    expect(onOpenDiagram).toHaveBeenCalledWith('public');
+  });
+});
+
 describe('SchemaTree accessibility', () => {
   it('exposes a tree with treeitems and aria-expanded on schema rows', () => {
     renderTree();

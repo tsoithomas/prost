@@ -60,6 +60,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
   const openTable = useWorkspaceStore((state) => state.openTable);
   const openObject = useWorkspaceStore((state) => state.openObject);
   const openOverview = useWorkspaceStore((state) => state.openOverview);
+  const openErDiagram = useWorkspaceStore((state) => state.openErDiagram);
   const loadQuery = useWorkspaceStore((state) => state.loadQuery);
 
   const pinnedByConnection = usePinnedTablesStore((state) => state.pinned);
@@ -143,6 +144,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
           onSelectObject={(object) => openSchemaObject({ openTable, openObject }, activeConnectionId, object)}
           onNewTable={(schema) => setCreateTableState({ open: true, schema })}
           onOpenOverview={(schema) => openOverview(activeConnectionId, schema)}
+          onOpenDiagram={(schema) => openErDiagram(activeConnectionId, schema)}
           hasSchemas={activeConnection?.capabilities.hasSchemas ?? true}
           writable={!activeConnection?.capabilities.readOnly}
           pinnedKeys={pinnedKeys}

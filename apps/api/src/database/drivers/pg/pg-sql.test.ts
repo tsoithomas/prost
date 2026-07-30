@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pgPlaceholder, pgQuoteIdent, pgBuildListAllColumns, pgBuildListColumns, pgBuildListIndexes, pgBuildListForeignKeys, pgBuildListReferencingForeignKeys, pgBuildListTables } from './pg-sql';
+import { pgPlaceholder, pgQuoteIdent, pgBuildListAllColumns, pgBuildListColumns, pgBuildListIndexes, pgBuildListForeignKeys, pgBuildListReferencingForeignKeys, pgBuildListSchemaForeignKeys, pgBuildListTables } from './pg-sql';
 import { pgBuildSelectRows, pgBuildInsertRow, pgBuildUpdateRow, pgBuildUpdateRowGuarded, pgBuildDeleteRow, pgBuildRowCountEstimate } from './pg-sql';
 import { pgBuildCreateTable, pgBuildAlterTable, pgBuildCreateIndex, pgBuildDropIndex, pgBuildResolveTypeNames } from './pg-sql';
 import { pgBuildSchemaTableStats, pgBuildDropTable, pgBuildTruncateTable } from './pg-sql';
@@ -62,6 +62,18 @@ describe('pg-sql metadata builders', () => {
       expect(sql).toContain(alias);
     }
     expect(params).toEqual(['public', 'users']);
+  });
+
+  it('builds a schema-wide FK query bound to the schema alone, exposing the owning table', () => {
+    const { sql, params } = pgBuildListSchemaForeignKeys('public');
+    expect(sql).toContain("con.contype = 'f'");
+    expect(sql).toContain('n.nspname = $1');
+    // Schema-wide: no table predicate on either side.
+    expect(sql).not.toContain('$2');
+    for (const alias of ['constraint_name', 'table_schema', 'table_name', 'columns', 'referenced_schema', 'referenced_table', 'referenced_columns', 'on_delete', 'on_update']) {
+      expect(sql).toContain(alias);
+    }
+    expect(params).toEqual(['public']);
   });
 
   it('unions views/matviews/sequences/routines/triggers/enums with kind/schema/name/comment aliases', () => {

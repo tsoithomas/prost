@@ -64,6 +64,34 @@ describe('workspaceStore — loadQuery', () => {
 });
 
 
+describe('workspaceStore — openErDiagram', () => {
+  it('opens an ER diagram tab keyed by connection + schema and makes it active', () => {
+    useWorkspaceStore.getState().openErDiagram(C, 'public');
+    const state = useWorkspaceStore.getState();
+    expect(state.activeTabId).toBe(`er:${C}:public`);
+    expect(state.tabs[1]).toMatchObject({
+      id: `er:${C}:public`, label: 'public diagram', kind: 'erDiagram', connectionId: C, schema: 'public',
+    });
+  });
+
+  it('dedupes: reopening the same schema reactivates the existing tab', () => {
+    useWorkspaceStore.getState().openErDiagram(C, 'public');
+    useWorkspaceStore.getState().openTable(C, 'public', 'users');
+    useWorkspaceStore.getState().openErDiagram(C, 'public');
+    const state = useWorkspaceStore.getState();
+    expect(state.tabs.filter((t) => t.id === `er:${C}:public`)).toHaveLength(1);
+    expect(state.activeTabId).toBe(`er:${C}:public`);
+  });
+
+  it('opens a separate tab for the same schema under a different connection', () => {
+    useWorkspaceStore.getState().openErDiagram(C, 'public');
+    useWorkspaceStore.getState().openErDiagram('conn-2', 'public');
+    const ids = useWorkspaceStore.getState().tabs.map((t) => t.id);
+    expect(ids).toContain(`er:${C}:public`);
+    expect(ids).toContain('er:conn-2:public');
+  });
+});
+
 describe('workspaceStore — openOverview', () => {
   it('opens an overview tab keyed by connection + schema and makes it active', () => {
     useWorkspaceStore.getState().openOverview(C, 'public');

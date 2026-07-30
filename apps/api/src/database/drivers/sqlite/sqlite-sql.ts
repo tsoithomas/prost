@@ -292,6 +292,32 @@ export function sqliteBuildListReferencingForeignKeys(ref: TableRef): SqlFragmen
   };
 }
 
+/**
+ * Every FK owned by any table in the database — the relationship graph (Phase 36). SQLite has a
+ * single namespace, so `namespace` is accepted for interface uniformity and not used.
+ */
+export function sqliteBuildListSchemaForeignKeys(): SqlFragment {
+  return {
+    sql: `SELECT 'fk_' || m.name || '_' || fk.id AS constraint_name,
+           NULL AS table_schema,
+           m.name AS table_name,
+           json_group_array(fk."from") AS columns,
+           NULL AS referenced_schema,
+           fk."table" AS referenced_table,
+           json_group_array(COALESCE(fk."to",
+             (SELECT ti.name FROM pragma_table_info(fk."table") ti WHERE ti.pk = fk.seq + 1)
+           )) AS referenced_columns,
+           fk.on_delete AS on_delete,
+           fk.on_update AS on_update
+         FROM sqlite_master m
+         JOIN pragma_foreign_key_list(m.name) fk
+         WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%'
+         GROUP BY m.name, fk.id, fk."table", fk.on_delete, fk.on_update
+         ORDER BY m.name, fk.id`,
+    params: [],
+  };
+}
+
 /** SQLite exposes views and triggers via `sqlite_master`; no sequences/routines/enums/matviews. */
 export function sqliteBuildListAllSchemaObjects(): SqlFragment {
   return {

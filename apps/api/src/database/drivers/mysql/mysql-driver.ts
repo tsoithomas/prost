@@ -421,6 +421,7 @@ export class MysqlDriver implements DbDriver {
   buildListIndexes = (ref: TableRef) => sql.mysqlBuildListIndexes(ref);
   buildListForeignKeys = (ref: TableRef) => sql.mysqlBuildListForeignKeys(ref);
   buildListReferencingForeignKeys = (ref: TableRef) => sql.mysqlBuildListReferencingForeignKeys(ref);
+  buildListSchemaForeignKeys = (namespace: string) => sql.mysqlBuildListSchemaForeignKeys(namespace);
   buildListAllSchemaObjects = () => sql.mysqlBuildListAllSchemaObjects();
   buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.mysqlBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.mysqlBuildSchemaTableStats(namespace);

@@ -49,7 +49,7 @@ passes **and** it violates none of the architecture principles.
 | [33](./phase-33-ai-schema-suggestions.md) | AI schema-change suggestions | ✅ Complete |
 | [34](./phase-34-settings-redesign.md) | Settings & preferences redesign (unified modal + fine-tune styling) | ✅ Complete |
 | [35](./phase-35-accessibility-hardening.md) | Accessibility & keyboard-navigation hardening | ✅ Complete |
-| [36](./phase-36-er-diagram.md) | ER diagram / relationship visualization | 🔲 Planned |
+| [36](./phase-36-er-diagram.md) | ER diagram / relationship visualization | ✅ Complete |
 | [37](./phase-37-column-profiling.md) | Column profiling & table data statistics | 🔲 Planned |
 | [38](./phase-38-object-comments.md) | Table & column documentation (native comments) | 🔲 Planned |
 | [39](./phase-39-data-masking.md) | Data masking / sensitive-column redaction | 🔲 Planned |
@@ -78,11 +78,14 @@ column profiling, native-comment documentation, data masking, on-demand perf/ind
 data generation, saved dashboards, AI query-rewrite and AI-assisted data editing) with strengthening of
 shipped features (a redesigned settings experience, accessibility hardening, and grid concurrency
 detection). It is sequenced in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md); every hard dependency
-lands on an already-complete phase, and its only §13 amendment unfreezes ER diagrams. **Phases 34–35 are
-complete** (the settings/preferences redesign and the accessibility & keyboard-navigation pass — a visible
+lands on an already-complete phase, and its only §13 amendment unfreezes ER diagrams. **Phases 34–36 are
+complete**: the settings/preferences redesign; the accessibility & keyboard-navigation pass (a visible
 focus ring, the shared `Modal` adopted across all dialogs, ARIA on the tab bar / schema tree / command
 palette / bottom nav, an expanded keyboard-shortcut registry with a help overlay, and automated `axe-core`
-checks); **phases 36–46 are planned**.
+checks); and the read-only ER diagram (a schema-wide `buildListSchemaForeignKeys` driver read behind
+`GET :id/schemas/:schema/foreign-keys`, a dependency-free layered layout in `workspace/erLayout.ts`, and an
+`'erDiagram'` workspace tab rendering `ErDiagramView` — pan/zoom, node → open table, edge → constraint
+detail, no DDL and no persisted layout). **Phases 37–46 are planned**.
 
 ## Sequencing notes
 

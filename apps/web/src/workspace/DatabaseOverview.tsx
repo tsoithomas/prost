@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Eraser, Rows3, Search, StretchHorizontal, Table2, Trash2 } from 'lucide-react';
+import { Download, Eraser, Rows3, Search, StretchHorizontal, Table2, Trash2, Waypoints } from 'lucide-react';
 import type { TableOverview } from '@prost/shared-types';
 import { Button, IconButton, Toast } from '@prost/ui';
 import { useDropTable, useTruncateTable } from '../api/ddl';
@@ -43,6 +43,7 @@ export function DatabaseOverview({ connectionId, schema, writable = true }: Data
 
   const openTable = useWorkspaceStore((state) => state.openTable);
   const closeTableTab = useWorkspaceStore((state) => state.closeTableTab);
+  const openErDiagram = useWorkspaceStore((state) => state.openErDiagram);
 
   const dropTable = useDropTable(connectionId);
   const truncateTable = useTruncateTable(connectionId);
@@ -107,10 +108,16 @@ export function DatabaseOverview({ connectionId, schema, writable = true }: Data
             {data.totalSizeBytes !== null ? ` · ${formatBytes(data.totalSizeBytes)}` : ''}
           </span>
           {data.tables.length > 0 ? (
-            <Button variant="secondary" size="sm" className="ml-auto" onClick={() => setExportOpen(true)}>
-              <Download size={13} />
-              Export
-            </Button>
+            <div className="ml-auto flex items-center gap-xs">
+              <Button variant="secondary" size="sm" onClick={() => openErDiagram(connectionId, schema)}>
+                <Waypoints size={13} />
+                Diagram
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)}>
+                <Download size={13} />
+                Export
+              </Button>
+            </div>
           ) : null}
         </header>
 

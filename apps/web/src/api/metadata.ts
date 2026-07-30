@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type {
+  SchemaForeignKey,
   SchemaMetadata,
   SchemaObjectDetail,
   SchemaObjectKind,
@@ -21,6 +22,18 @@ export function useSchemaOverview(connectionId: string | null, schema: string) {
     queryKey: ['schema-overview', connectionId, schema],
     queryFn: () =>
       apiFetch<SchemaOverview>(`/connections/${connectionId}/schemas/${encodeURIComponent(schema)}/overview`),
+    enabled: connectionId !== null && schema !== '',
+  });
+}
+
+/** Every FK owned by a table in the schema — the ER diagram's edges (Phase 36). */
+export function useSchemaForeignKeys(connectionId: string | null, schema: string) {
+  return useQuery({
+    queryKey: ['schema-foreign-keys', connectionId, schema],
+    queryFn: () =>
+      apiFetch<SchemaForeignKey[]>(
+        `/connections/${connectionId}/schemas/${encodeURIComponent(schema)}/foreign-keys`,
+      ),
     enabled: connectionId !== null && schema !== '',
   });
 }

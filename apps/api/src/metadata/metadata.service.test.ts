@@ -339,6 +339,76 @@ describe('MetadataService.getReferencingForeignKeys', () => {
   });
 });
 
+describe('MetadataService.getSchemaForeignKeys', () => {
+  it('reads the whole schema graph in one query, binding the schema as a param', async () => {
+    const run = vi.fn().mockResolvedValue(result([]));
+    const { service } = createService(run);
+
+    await service.getSchemaForeignKeys('conn-1', 'public');
+
+    expect(run).toHaveBeenCalledTimes(1);
+    const [connectionId, frag] = run.mock.calls[0] as [string, { sql: string; params: unknown[] }];
+    expect(connectionId).toBe('conn-1');
+    expect(frag.sql).not.toContain("'public'");
+    expect(frag.params).toEqual(['public']);
+  });
+
+  it('maps rows to SchemaForeignKey, normalizing JSON column arrays and a null schema', async () => {
+    const run = vi.fn().mockResolvedValue(
+      result([
+        {
+          constraint_name: 'orders_user_id_fkey',
+          table_schema: 'public',
+          table_name: 'orders',
+          columns: ['user_id'], // PG: real array
+          referenced_schema: 'public',
+          referenced_table: 'users',
+          referenced_columns: ['id'],
+          on_delete: 'CASCADE',
+          on_update: 'NO ACTION',
+        },
+        {
+          constraint_name: 'fk_order_items_0',
+          table_schema: null, // MySQL/SQLite may have no schema namespace
+          table_name: 'order_items',
+          columns: '["order_id","line"]', // JSON-encoded string
+          referenced_schema: null,
+          referenced_table: 'orders',
+          referenced_columns: '["id","line"]',
+          on_delete: null,
+          on_update: null,
+        },
+      ]),
+    );
+    const { service } = createService(run);
+
+    const edges = await service.getSchemaForeignKeys('conn-1', 'public');
+
+    expect(edges[0]).toEqual({
+      constraintName: 'orders_user_id_fkey',
+      table: 'orders',
+      schema: 'public',
+      columns: ['user_id'],
+      referencedSchema: 'public',
+      referencedTable: 'users',
+      referencedColumns: ['id'],
+      onDelete: 'CASCADE',
+      onUpdate: 'NO ACTION',
+    });
+    expect(edges[1]).toEqual({
+      constraintName: 'fk_order_items_0',
+      table: 'order_items',
+      schema: null,
+      columns: ['order_id', 'line'],
+      referencedSchema: null,
+      referencedTable: 'orders',
+      referencedColumns: ['id', 'line'],
+      onDelete: undefined,
+      onUpdate: undefined,
+    });
+  });
+});
+
 describe('MetadataService.getSchemaOverview', () => {
   it('binds the schema, maps stat rows to TableOverview, and sums non-null totals', async () => {
     const run = vi.fn().mockResolvedValue(

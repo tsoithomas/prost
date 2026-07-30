@@ -85,6 +85,13 @@ export interface DbDriver {
    */
   buildListReferencingForeignKeys(ref: TableRef): SqlFragment;
   /**
+   * Every foreign key owned by a table in `namespace`, in one read — the relationship graph of a
+   * schema (Phase 36). Same aliased shape as `buildListReferencingForeignKeys`, where
+   * `table_schema`/`table_name` identify the owning (child) table. Engines without a schema layer
+   * ignore `namespace` and return the whole database.
+   */
+  buildListSchemaForeignKeys(namespace: string): SqlFragment;
+  /**
    * All non-table schema objects (views/materialized views/sequences/functions/procedures/triggers/
    * enums) the engine supports, across all schemas, aliased `kind, schema, name, comment`. `kind` is
    * a `SchemaObjectKind` literal. Powers the read-only object groups in the schema tree (Phase 24).

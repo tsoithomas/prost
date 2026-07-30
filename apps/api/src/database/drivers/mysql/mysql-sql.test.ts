@@ -12,6 +12,7 @@ import {
   mysqlBuildListColumns,
   mysqlBuildListForeignKeys,
   mysqlBuildListReferencingForeignKeys,
+  mysqlBuildListSchemaForeignKeys,
   mysqlBuildListAllSchemaObjects,
   mysqlBuildObjectDefinition,
   mysqlBuildListIndexes,
@@ -132,6 +133,16 @@ describe('mysql metadata builders', () => {
       expect(frag.sql).toContain(alias);
     }
     expect(frag.params).toEqual(['app_db', 'users']);
+  });
+
+  it('builds a schema-wide FK query bound to the database alone, exposing the owning table', () => {
+    const frag = mysqlBuildListSchemaForeignKeys('app_db');
+    expect(frag.sql).toContain('kcu.TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL');
+    expect(frag.sql).not.toContain('kcu.TABLE_NAME = ?');
+    for (const alias of ['constraint_name', 'table_schema', 'table_name', 'columns', 'referenced_schema', 'referenced_table', 'referenced_columns', 'on_delete', 'on_update']) {
+      expect(frag.sql).toContain(alias);
+    }
+    expect(frag.params).toEqual(['app_db']);
   });
 
   it('lists views/routines/triggers scoped to DATABASE() with kind/schema/name/comment aliases', () => {

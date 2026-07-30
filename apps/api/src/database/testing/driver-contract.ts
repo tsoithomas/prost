@@ -367,6 +367,20 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       expect(asArray(row!.referenced_columns)).toEqual(['id']);
     });
 
+    it('lists every foreign key in the schema in one read, with the owning table', async (ctx) => {
+      skipIfUnreachable(ctx);
+      const asArray = (raw: unknown): string[] =>
+        typeof raw === 'string' ? (JSON.parse(raw) as string[]) : (raw as string[]);
+      const all = await driver.query(pool!, driver.buildListSchemaForeignKeys(schema));
+      const row = all.rows.find((r) => (r as Record<string, unknown>).table_name === 'widget_parts') as
+        | Record<string, unknown>
+        | undefined;
+      expect(row).toBeDefined();
+      expect(asArray(row!.columns)).toEqual(['widget_id']);
+      expect(row!.referenced_table).toBe('widgets');
+      expect(asArray(row!.referenced_columns)).toEqual(['id']);
+    });
+
     it('adds and drops a foreign key through buildAlterTable (engines that support FK DDL)', async (ctx) => {
       skipIfUnreachable(ctx);
       if (!driver.descriptor.ddl.supportsForeignKeyDdl) {

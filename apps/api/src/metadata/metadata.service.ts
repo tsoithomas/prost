@@ -4,6 +4,7 @@ import type {
   ForeignKeyMetadata,
   IndexMetadata,
   ReferencingKeyMetadata,
+  SchemaForeignKey,
   SchemaMetadata,
   SchemaObjectDetail,
   SchemaObjectKind,
@@ -259,6 +260,30 @@ export class MetadataService {
     const { rows } = (await this.pool.run(
       connectionId,
       driver.buildListReferencingForeignKeys({ namespace: schema, name: table }),
+    )) as unknown as { rows: ReferencingKeyRow[] };
+
+    return rows.map((row) => ({
+      constraintName: row.constraint_name,
+      table: row.table_name,
+      schema: row.table_schema == null ? null : String(row.table_schema),
+      columns: toColumnArray(row.columns),
+      referencedSchema: row.referenced_schema == null ? null : String(row.referenced_schema),
+      referencedTable: row.referenced_table,
+      referencedColumns: toColumnArray(row.referenced_columns),
+      onDelete: row.on_delete == null ? undefined : String(row.on_delete),
+      onUpdate: row.on_update == null ? undefined : String(row.on_update),
+    }));
+  }
+
+  /**
+   * Every FK owned by a table in `schema`, in one read — the edges of the ER diagram (Phase 36).
+   * Same normalization as the per-table reads; the driver decides the SQL, the service never does.
+   */
+  async getSchemaForeignKeys(connectionId: string, schema: string): Promise<SchemaForeignKey[]> {
+    const driver = await this.pool.driverFor(connectionId);
+    const { rows } = (await this.pool.run(
+      connectionId,
+      driver.buildListSchemaForeignKeys(schema),
     )) as unknown as { rows: ReferencingKeyRow[] };
 
     return rows.map((row) => ({

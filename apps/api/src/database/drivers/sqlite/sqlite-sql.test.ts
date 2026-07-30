@@ -11,6 +11,7 @@ import {
   sqliteBuildListColumns,
   sqliteBuildListForeignKeys,
   sqliteBuildListReferencingForeignKeys,
+  sqliteBuildListSchemaForeignKeys,
   sqliteBuildListAllSchemaObjects,
   sqliteBuildObjectDefinition,
   sqliteBuildRowCountEstimate,
@@ -79,6 +80,16 @@ describe('sqlite metadata builders', () => {
     expect(frag.sql).toContain('m.name AS table_name');
     expect(frag.sql).not.toContain("'users'");
     expect(frag.params).toEqual(['users']);
+  });
+
+  it('scans every user table for FKs when listing the schema graph, with no table predicate', () => {
+    const frag = sqliteBuildListSchemaForeignKeys();
+    expect(frag.sql).toContain('FROM sqlite_master m');
+    expect(frag.sql).toContain('JOIN pragma_foreign_key_list(m.name) fk');
+    expect(frag.sql).toContain('m.name AS table_name');
+    expect(frag.sql).toContain("m.name NOT LIKE 'sqlite_%'");
+    expect(frag.sql).not.toContain('fk."table" = ?');
+    expect(frag.params).toEqual([]);
   });
 
   it('lists only views and triggers from sqlite_master with a main schema', () => {

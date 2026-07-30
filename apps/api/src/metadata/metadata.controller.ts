@@ -1,5 +1,5 @@
 import { BadRequestException, Controller, Get, Param } from '@nestjs/common';
-import type { SchemaMetadata, SchemaObjectDetail, SchemaObjectKind, SchemaOverview, TableStructure } from '@prost/shared-types';
+import type { SchemaForeignKey, SchemaMetadata, SchemaObjectDetail, SchemaObjectKind, SchemaOverview, TableStructure } from '@prost/shared-types';
 import { CurrentUser, type AuthenticatedUser } from '../auth/current-user.decorator';
 import { ConnectionsService } from '../connections/connections.service';
 import { MetadataService } from './metadata.service';
@@ -32,6 +32,16 @@ export class MetadataController {
   ): Promise<SchemaOverview> {
     await this.connectionsService.assertOwnership(user.userId, id);
     return this.metadataService.getSchemaOverview(id, schema);
+  }
+
+  @Get(':id/schemas/:schema/foreign-keys')
+  async getSchemaForeignKeys(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Param('schema') schema: string,
+  ): Promise<SchemaForeignKey[]> {
+    await this.connectionsService.assertOwnership(user.userId, id);
+    return this.metadataService.getSchemaForeignKeys(id, schema);
   }
 
   @Get(':id/tables/:schema/:table/structure')

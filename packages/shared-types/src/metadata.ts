@@ -75,17 +75,24 @@ export interface ForeignKeyMetadata {
 }
 
 /**
- * A foreign key on *another* table that points *at* the current table — the inverse of
- * `ForeignKeyMetadata`. `table`/`schema` identify the referencing (child) table; `columns` are its
- * local FK columns, and `referencedColumns` are the current table's columns they point at. Powers
- * "show referencing rows" navigation.
+ * A foreign key qualified by the table that *owns* it: `schema.table` (the child) references
+ * `referencedSchema.referencedTable` (the parent). One edge of a schema's relationship graph —
+ * what `GET :id/schemas/:schema/foreign-keys` returns for the ER diagram (Phase 36).
  */
-export interface ReferencingKeyMetadata extends ForeignKeyMetadata {
+export interface SchemaForeignKey extends ForeignKeyMetadata {
   /** The referencing (child) table that owns this FK. */
   table: string;
   /** The referencing table's schema, or `null` where the engine has no schema namespace. */
   schema: string | null;
 }
+
+/**
+ * A foreign key on *another* table that points *at* the current table — the inverse of
+ * `ForeignKeyMetadata`. `table`/`schema` identify the referencing (child) table; `columns` are its
+ * local FK columns, and `referencedColumns` are the current table's columns they point at. Powers
+ * "show referencing rows" navigation. Structurally a `SchemaForeignKey` viewed from the parent.
+ */
+export type ReferencingKeyMetadata = SchemaForeignKey;
 
 export interface TableStructure {
   columns: ColumnMetadata[];
