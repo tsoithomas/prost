@@ -81,8 +81,17 @@ const TYPE_PATTERN = /^([a-z]+(?: [a-z]+)*)(\(\s*\d+\s*(?:,\s*\d+\s*)?\))?$/i;
 const SAFE_DEFAULT_PATTERN = /^(\d+|true|false|null|now\(\)|current_timestamp(?:\(\))?)$/i;
 const MYSQL_COLUMN_DEFINITION = Symbol('mysqlColumnDefinition');
 
+/**
+ * The catalog's verbatim column definition, attached for `setComment` (Phase 38). MySQL can only set
+ * a column comment by restating the column, and unlike `buildColumnDefinition` — which rebuilds from
+ * normalized metadata — this preserves exactly what the engine reported (length, unsigned, charset,
+ * `ON UPDATE`), so a documentation edit can't quietly alter the column.
+ */
+const MYSQL_NATIVE_DEFINITION = Symbol('mysqlNativeDefinition');
+
 type NormalizedAlterOperation = AlterTableOperation & {
   [MYSQL_COLUMN_DEFINITION]?: NewColumn;
+  [MYSQL_NATIVE_DEFINITION]?: string;
 };
 
 function validateType(type: string): string {
@@ -227,6 +236,24 @@ export function mysqlNormalizeAlterTable(
       const column = { ...current, type };
       return attachColumnDefinition({ kind: 'changeType', column: op.column, type }, column);
     }
+    case 'setComment': {
+      if (op.column === undefined) return op;
+      const column = requireColumn(columns, op.column);
+      if (!column.nativeDefinition) {
+        throw new UnprocessableEntityException(
+          `Cannot set a comment on column "${op.column}": MySQL must restate the column definition, ` +
+            'which is unavailable for generated columns',
+        );
+      }
+      const operation: AlterTableOperation = { ...op };
+      Object.defineProperty(operation, MYSQL_NATIVE_DEFINITION, {
+        configurable: false,
+        enumerable: false,
+        value: column.nativeDefinition,
+        writable: false,
+      });
+      return operation;
+    }
     default:
       throw new UnprocessableEntityException('Unknown operation kind');
   }
@@ -332,6 +359,28 @@ export function mysqlBuildListAllColumns(): SqlFragment {
   };
 }
 
+/**
+ * MySQL can only set a column comment by restating the column's whole definition, so this read also
+ * assembles `column_definition` (type + charset/collation + nullability + default + extra) exactly as
+ * the catalog reports it. `GENERATION_EXPRESSION` is returned separately: generated columns can't be
+ * rewritten this way, and the driver refuses them rather than emitting a lossy `MODIFY`.
+ */
+const MYSQL_COLUMN_DEFINITION_SQL = `CONCAT(
+             COLUMN_TYPE,
+             IF(COLLATION_NAME IS NULL OR CHARACTER_SET_NAME IS NULL, '',
+                CONCAT(' CHARACTER SET ', CHARACTER_SET_NAME, ' COLLATE ', COLLATION_NAME)),
+             IF(IS_NULLABLE = 'NO', ' NOT NULL', ' NULL'),
+             CASE
+               WHEN COLUMN_DEFAULT IS NULL THEN ''
+               WHEN EXTRA LIKE '%DEFAULT_GENERATED%' THEN CONCAT(' DEFAULT ', COLUMN_DEFAULT)
+               ELSE CONCAT(' DEFAULT ', QUOTE(COLUMN_DEFAULT))
+             END,
+             -- Strip only the DEFAULT_GENERATED marker: the rest of EXTRA can still carry
+             -- 'on update CURRENT_TIMESTAMP', which must survive the restatement.
+             IF(TRIM(REPLACE(EXTRA, 'DEFAULT_GENERATED', '')) = '', '',
+                CONCAT(' ', TRIM(REPLACE(EXTRA, 'DEFAULT_GENERATED', ''))))
+           )`;
+
 export function mysqlBuildListColumns(ref: TableRef): SqlFragment {
   return {
     sql: `SELECT COLUMN_NAME AS column_name,
@@ -339,10 +388,22 @@ export function mysqlBuildListColumns(ref: TableRef): SqlFragment {
            IS_NULLABLE AS is_nullable,
            CASE WHEN COLUMN_KEY = 'PRI' THEN 1 ELSE 0 END AS is_primary_key,
            COLUMN_DEFAULT AS default_value,
-           CASE WHEN EXTRA LIKE '%auto_increment%' THEN 1 ELSE 0 END AS is_auto_increment
+           CASE WHEN EXTRA LIKE '%auto_increment%' THEN 1 ELSE 0 END AS is_auto_increment,
+           COLUMN_COMMENT AS comment,
+           ${MYSQL_COLUMN_DEFINITION_SQL} AS column_definition,
+           GENERATION_EXPRESSION AS generation_expression
          FROM information_schema.columns
          WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
          ORDER BY ORDINAL_POSITION`,
+    params: [ref.namespace, ref.name],
+  };
+}
+
+export function mysqlBuildTableComment(ref: TableRef): SqlFragment {
+  return {
+    sql: `SELECT TABLE_COMMENT AS comment
+         FROM information_schema.tables
+         WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
     params: [ref.namespace, ref.name],
   };
 }
@@ -732,6 +793,24 @@ export function mysqlBuildAlterTable(ref: TableRef, op: AlterTableOperation): Sq
     case 'dropForeignKey':
       // MySQL uses DROP FOREIGN KEY (not DROP CONSTRAINT on pre-8.0.19 / MariaDB).
       return { sql: `${prefix} DROP FOREIGN KEY ${mysqlQuoteIdent(op.constraintName)}`, params: [] };
+    case 'setComment': {
+      // DDL takes no parameters, so the text is escaped as a literal — the same helper the SQL export
+      // uses. Clearing a comment is an empty string; MySQL has no "no comment" state.
+      const value = mysqlQuoteString(op.comment ?? '');
+      if (op.column === undefined) {
+        return { sql: `${prefix} COMMENT = ${value}`, params: [] };
+      }
+      const definition = normalized[MYSQL_NATIVE_DEFINITION];
+      if (!definition) {
+        throw new UnprocessableEntityException(
+          'MySQL setComment must be normalized with the current column metadata before building SQL',
+        );
+      }
+      return {
+        sql: `${prefix} MODIFY COLUMN ${mysqlQuoteIdent(op.column)} ${definition} COMMENT ${value}`,
+        params: [],
+      };
+    }
   }
 }
 

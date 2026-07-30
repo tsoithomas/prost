@@ -73,6 +73,7 @@ export class PgDriver implements DbDriver {
       supportsAutoIncrement: true,
       supportsUsingExpression: true,
       supportsForeignKeyDdl: true,
+      supportsObjectComments: true,
     },
     objects: {
       views: true, materializedViews: true, sequences: true,
@@ -265,6 +266,7 @@ export class PgDriver implements DbDriver {
   buildListAllColumns = sql.pgBuildListAllColumns;
   buildListColumns = (ref: TableRef) => sql.pgBuildListColumns(ref);
   buildListIndexes = (ref: TableRef) => sql.pgBuildListIndexes(ref);
+  buildTableComment = (ref: TableRef) => sql.pgBuildTableComment(ref);
   buildListForeignKeys = (ref: TableRef) => sql.pgBuildListForeignKeys(ref);
   buildListReferencingForeignKeys = (ref: TableRef) => sql.pgBuildListReferencingForeignKeys(ref);
   buildListSchemaForeignKeys = (namespace: string) => sql.pgBuildListSchemaForeignKeys(namespace);

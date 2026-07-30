@@ -5,6 +5,19 @@ export interface ColumnMetadata {
   isPrimaryKey: boolean;
   autoIncrement: boolean;
   defaultValue: string | null;
+  /**
+   * Native object comment (PG `col_description`, MySQL `COLUMN_COMMENT`); absent on SQLite. Only the
+   * per-table read (`getTableColumns`/`getTableStructure`) fetches it — the schema-wide index that
+   * builds the tree stays lean and leaves it undefined.
+   */
+  comment?: string | null;
+  /**
+   * The engine's own column-definition text (type + constraints), populated by MySQL only. It exists
+   * because MySQL has no comment-only column ALTER: setting a column comment means restating the whole
+   * definition, and `normalizeAlterTable`/`buildAlterTable` are synchronous — they get `columns`, not a
+   * query fn, so the definition has to arrive with the column. Not a general-purpose field.
+   */
+  nativeDefinition?: string;
 }
 
 export interface TableMetadata {
@@ -98,6 +111,8 @@ export interface TableStructure {
   columns: ColumnMetadata[];
   indexes: IndexMetadata[];
   foreignKeys: ForeignKeyMetadata[];
+  /** The table's own native comment; `null` when unset or unsupported (SQLite). */
+  comment: string | null;
 }
 
 /**

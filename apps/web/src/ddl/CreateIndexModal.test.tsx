@@ -25,6 +25,7 @@ const MYSQL: DbEngineDescriptor = {
     supportsAutoIncrement: true,
     supportsUsingExpression: false,
     supportsForeignKeyDdl: true,
+    supportsObjectComments: true,
   },
   objects: { views: true, materializedViews: false, sequences: false, functions: true, procedures: true, triggers: true, enums: false },
 };

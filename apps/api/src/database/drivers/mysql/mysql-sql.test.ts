@@ -296,6 +296,68 @@ describe('mysql ddl builders and normalization', () => {
     )).toThrow(ConflictException);
   });
 
+  describe('setComment', () => {
+    const ref = { namespace: 'app_db', name: 'users' };
+    const columns = [
+      {
+        name: 'id',
+        dataType: 'int',
+        nullable: false,
+        isPrimaryKey: true,
+        autoIncrement: true,
+        defaultValue: null,
+        nativeDefinition: 'int unsigned NOT NULL AUTO_INCREMENT',
+      },
+      {
+        name: 'generated',
+        dataType: 'int',
+        nullable: true,
+        isPrimaryKey: false,
+        autoIncrement: false,
+        defaultValue: null,
+      },
+    ];
+
+    it('sets a table comment with a standalone ALTER', () => {
+      const op = mysqlNormalizeAlterTable(ref, { kind: 'setComment', comment: "Bob's users" }, columns);
+      const frag = mysqlBuildAlterTable(ref, op);
+      expect(frag.sql).toBe("ALTER TABLE `app_db`.`users` COMMENT = 'Bob\\'s users'");
+      expect(frag.params).toEqual([]);
+    });
+
+    it('restates the catalog definition verbatim when commenting a column', () => {
+      const op = mysqlNormalizeAlterTable(ref, { kind: 'setComment', column: 'id', comment: 'Surrogate key' }, columns);
+      const frag = mysqlBuildAlterTable(ref, op);
+      // Length/unsigned/NOT NULL/AUTO_INCREMENT all survive because the definition is the engine's own.
+      expect(frag.sql).toBe(
+        "ALTER TABLE `app_db`.`users` MODIFY COLUMN `id` int unsigned NOT NULL AUTO_INCREMENT COMMENT 'Surrogate key'",
+      );
+    });
+
+    it('clears a comment with an empty string', () => {
+      const op = mysqlNormalizeAlterTable(ref, { kind: 'setComment', comment: null }, columns);
+      expect(mysqlBuildAlterTable(ref, op).sql).toBe("ALTER TABLE `app_db`.`users` COMMENT = ''");
+    });
+
+    it('refuses a column comment when the engine gave no definition to restate', () => {
+      expect(() =>
+        mysqlNormalizeAlterTable(ref, { kind: 'setComment', column: 'generated', comment: 'x' }, columns),
+      ).toThrow(UnprocessableEntityException);
+    });
+
+    it('rejects an unknown column', () => {
+      expect(() =>
+        mysqlNormalizeAlterTable(ref, { kind: 'setComment', column: 'nope', comment: 'x' }, columns),
+      ).toThrow(UnprocessableEntityException);
+    });
+
+    it('refuses to build a column comment that skipped normalization', () => {
+      expect(() => mysqlBuildAlterTable(ref, { kind: 'setComment', column: 'id', comment: 'x' })).toThrow(
+        UnprocessableEntityException,
+      );
+    });
+  });
+
   it('creates tables with AUTO_INCREMENT and a table primary key', () => {
     const frag = mysqlBuildCreateTable({
       schema: 'app_db',

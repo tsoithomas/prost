@@ -59,6 +59,8 @@ export class SqliteDriver implements DbDriver {
       supportsAutoIncrement: false,
       supportsUsingExpression: false,
       supportsForeignKeyDdl: false,
+      // SQLite has no COMMENT syntax at all — the UI hides every comment affordance.
+      supportsObjectComments: false,
     },
     objects: {
       views: true, materializedViews: false, sequences: false,
@@ -228,6 +230,7 @@ export class SqliteDriver implements DbDriver {
   buildListAllColumns = sql.sqliteBuildListAllColumns;
   buildListColumns = (ref: TableRef) => sql.sqliteBuildListColumns(ref);
   buildListIndexes = (ref: TableRef) => sql.sqliteBuildListIndexes(ref);
+  buildTableComment = (ref: TableRef) => sql.sqliteBuildTableComment(ref);
   buildListForeignKeys = (ref: TableRef) => sql.sqliteBuildListForeignKeys(ref);
   buildListReferencingForeignKeys = (ref: TableRef) => sql.sqliteBuildListReferencingForeignKeys(ref);
   // SQLite has a single namespace, so the whole database *is* the schema graph.

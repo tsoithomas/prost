@@ -28,6 +28,8 @@ function changeLabel(change: SchemaSuggestionChange): string {
     changeType: 'Change type of',
     addForeignKey: 'Add foreign key on',
     dropForeignKey: 'Drop foreign key on',
+    // Not suggestable (documentation isn't a schema *change*), but the union covers every kind.
+    setComment: 'Comment on',
   }[operation.kind];
   const name = operation.kind === 'addColumn' ? operation.column.name : target;
   return `${verb} ${schema}.${table}${name ? `.${name}` : ''}`;

@@ -115,6 +115,7 @@ const fallbackNetworkEngine: DbEngineDescriptor = {
     supportsAutoIncrement: false,
     supportsUsingExpression: true,
     supportsForeignKeyDdl: true,
+    supportsObjectComments: true,
   },
   objects: {
     views: false, materializedViews: false, sequences: false,

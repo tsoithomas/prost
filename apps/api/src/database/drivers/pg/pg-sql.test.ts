@@ -215,6 +215,22 @@ describe('pg-sql ddl builders', () => {
     });
     expect(sql).toBe('ALTER TABLE "public"."oi" ADD CONSTRAINT "oi_fk" FOREIGN KEY ("a", "b") REFERENCES "gc" ("x", "y")');
   });
+  it('builds COMMENT ON TABLE/COLUMN, escaping the text as a literal', () => {
+    const ref = { namespace: 'public', name: 'users' };
+    expect(pgBuildAlterTable(ref, { kind: 'setComment', comment: 'Registered users' }).sql).toBe(
+      `COMMENT ON TABLE "public"."users" IS 'Registered users'`,
+    );
+    // An apostrophe is doubled, never interpolated raw — DDL can't bind parameters.
+    const { sql, params } = pgBuildAlterTable(ref, { kind: 'setComment', column: 'email', comment: "user's email" });
+    expect(sql).toBe(`COMMENT ON COLUMN "public"."users"."email" IS 'user''s email'`);
+    expect(params).toEqual([]);
+  });
+
+  it('builds COMMENT ... IS NULL to clear a comment', () => {
+    expect(pgBuildAlterTable({ namespace: 'public', name: 'users' }, { kind: 'setComment', column: 'email', comment: null }).sql)
+      .toBe('COMMENT ON COLUMN "public"."users"."email" IS NULL');
+  });
+
   it('builds DROP CONSTRAINT for a dropped FK', () => {
     const { sql } = pgBuildAlterTable({ namespace: 'public', name: 'orders' }, { kind: 'dropForeignKey', constraintName: 'orders_user_id_fkey' });
     expect(sql).toBe('ALTER TABLE "public"."orders" DROP CONSTRAINT "orders_user_id_fkey"');

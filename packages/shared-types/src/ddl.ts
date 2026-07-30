@@ -45,7 +45,12 @@ export type AlterTableOperation =
       onDelete?: ForeignKeyAction;
       onUpdate?: ForeignKeyAction;
     }
-  | { kind: 'dropForeignKey'; constraintName: string };
+  | { kind: 'dropForeignKey'; constraintName: string }
+  /**
+   * Set (or clear, with `null`) a native object comment — the table's own when `column` is omitted,
+   * otherwise that column's. Documentation only; it changes no data or structure (Phase 38).
+   */
+  | { kind: 'setComment'; column?: string; comment: string | null };
 
 export interface AlterTableRequest {
   schema: string;
@@ -70,7 +75,8 @@ export type AlterTableBody =
       onDelete?: ForeignKeyAction;
       onUpdate?: ForeignKeyAction;
     }
-  | { kind: 'dropForeignKey'; constraintName: string };
+  | { kind: 'dropForeignKey'; constraintName: string }
+  | { kind: 'setComment'; columnName?: string; comment: string | null };
 
 export interface AlterTableResult {
   schema: string;

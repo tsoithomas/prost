@@ -172,11 +172,11 @@ describe('MetadataService.getTableColumns', () => {
     await expect(service.getTableColumns('conn-1', 'main', 'widgets')).resolves.toEqual([
       {
         name: 'id', dataType: 'INTEGER', nullable: false, isPrimaryKey: true,
-        autoIncrement: true, defaultValue: null,
+        autoIncrement: true, defaultValue: null, comment: null,
       },
       {
         name: 'name', dataType: 'TEXT', nullable: true, isPrimaryKey: false,
-        autoIncrement: false, defaultValue: "''",
+        autoIncrement: false, defaultValue: "''", comment: null,
       },
     ]);
   });
@@ -626,6 +626,27 @@ describe('MetadataService.getSchemaOverview', () => {
   });
 });
 
+describe('MetadataService.getTableComment', () => {
+  it('binds schema and table, and normalizes an unset comment to null', async () => {
+    const run = vi.fn().mockResolvedValue(result([{ comment: null }]));
+    const { service } = createService(run);
+
+    await expect(service.getTableComment('conn-1', 'public', 'users')).resolves.toBeNull();
+    const [, frag] = run.mock.calls[0] as [string, { sql: string; params: unknown[] }];
+    expect(frag.params).toEqual(['public', 'users']);
+  });
+
+  it("treats MySQL's empty-string comment as no comment", async () => {
+    const { service } = createService(vi.fn().mockResolvedValue(result([{ comment: '' }])));
+    await expect(service.getTableComment('conn-1', 'app', 'users')).resolves.toBeNull();
+  });
+
+  it('returns the comment when one is set', async () => {
+    const { service } = createService(vi.fn().mockResolvedValue(result([{ comment: 'Registered users' }])));
+    await expect(service.getTableComment('conn-1', 'public', 'users')).resolves.toBe('Registered users');
+  });
+});
+
 describe('MetadataService.getTableStructure', () => {
   it('calls getTableColumns, getTableIndexes and getTableForeignKeys once each and merges their results', async () => {
     const { service } = createService();
@@ -639,6 +660,7 @@ describe('MetadataService.getTableStructure', () => {
         referencedTable: 'users', referencedColumns: ['id'], onDelete: 'CASCADE', onUpdate: 'NO ACTION',
       },
     ]);
+    const commentSpy = vi.spyOn(service, 'getTableComment').mockResolvedValue('Customer orders');
 
     const structure = await service.getTableStructure('conn-1', 'public', 'orders');
 
@@ -648,8 +670,10 @@ describe('MetadataService.getTableStructure', () => {
     expect(idxSpy).toHaveBeenCalledWith('conn-1', 'public', 'orders');
     expect(fkSpy).toHaveBeenCalledOnce();
     expect(fkSpy).toHaveBeenCalledWith('conn-1', 'public', 'orders');
+    expect(commentSpy).toHaveBeenCalledOnce();
     expect(structure.columns).toHaveLength(1);
     expect(structure.indexes).toHaveLength(0);
     expect(structure.foreignKeys).toHaveLength(1);
+    expect(structure.comment).toBe('Customer orders');
   });
 });

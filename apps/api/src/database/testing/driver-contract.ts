@@ -410,6 +410,52 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       }
     });
 
+    // Phase 38: on MySQL a column comment can only be set by restating the whole column, so this
+    // asserts the restatement is lossless — the definition must come back identical but for the comment.
+    it('sets table and column comments without altering the column definition', async (ctx) => {
+      skipIfUnreachable(ctx);
+      if (!driver.descriptor.ddl.supportsObjectComments) {
+        (ctx as TestContext & { skip: (note?: string) => void }).skip('engine has no object comments');
+        return;
+      }
+
+      const columnsBefore = await driver.query(pool!, driver.buildListColumns(ref));
+      const idBefore = columnsBefore.rows.find((r) => (r as Record<string, unknown>).column_name === 'id') as
+        | Record<string, unknown>
+        | undefined;
+      expect(idBefore).toBeDefined();
+
+      const tableOp = driver.normalizeAlterTable(ref, { kind: 'setComment', comment: "Bob's widgets" }, []);
+      await driver.query(pool!, driver.buildAlterTable(ref, tableOp));
+      const tableComment = await driver.query(pool!, driver.buildTableComment(ref));
+      expect((tableComment.rows[0] as Record<string, unknown>).comment).toBe("Bob's widgets");
+
+      const metadata = columnsBefore.rows.map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          name: String(r.column_name),
+          dataType: String(r.data_type),
+          nullable: r.is_nullable === 'YES',
+          isPrimaryKey: Boolean(r.is_primary_key),
+          autoIncrement: Boolean(r.is_auto_increment),
+          defaultValue: r.default_value == null ? null : String(r.default_value),
+          ...(r.column_definition ? { nativeDefinition: String(r.column_definition) } : {}),
+        } as ColumnMetadata;
+      });
+      const columnOp = driver.normalizeAlterTable(ref, { kind: 'setComment', column: 'id', comment: 'Surrogate key' }, metadata);
+      await driver.query(pool!, driver.buildAlterTable(ref, columnOp));
+
+      const columnsAfter = await driver.query(pool!, driver.buildListColumns(ref));
+      const idAfter = columnsAfter.rows.find((r) => (r as Record<string, unknown>).column_name === 'id') as
+        | Record<string, unknown>
+        | undefined;
+      expect(idAfter!.comment).toBe('Surrogate key');
+      // Everything that describes the column itself is untouched.
+      for (const field of ['data_type', 'is_nullable', 'is_primary_key', 'is_auto_increment', 'default_value', 'column_definition']) {
+        expect(String(idAfter![field])).toBe(String(idBefore![field]));
+      }
+    });
+
     it('lists every foreign key in the schema in one read, with the owning table', async (ctx) => {
       skipIfUnreachable(ctx);
       const asArray = (raw: unknown): string[] =>

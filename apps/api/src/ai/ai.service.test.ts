@@ -17,7 +17,7 @@ import type { DecryptedEndpoint, LlmEndpointService } from './llm-endpoint.servi
 import type { RetrievalService } from './retrieval.service';
 import type { QueryService } from '../query/query.service';
 import type { RowsStatementResult } from '@prost/shared-types';
-import { AiService, parseSchemaSuggestions, resolveTablesFromSql, sanitizePlanForPrompt } from './ai.service';
+import { AiService, MAX_COMMENT_CHARS, parseSchemaSuggestions, resolveTablesFromSql, sanitizePlanForPrompt } from './ai.service';
 
 const SAMPLE_CONTEXT = `-- public.users\n(\n  id integer PRIMARY KEY,\n  email text NOT NULL\n)`;
 
@@ -713,6 +713,51 @@ describe('sanitizePlanForPrompt', () => {
       depth += 1;
     }
     expect(depth).toBeLessThanOrEqual(12);
+  });
+});
+
+describe('AiService.describeObject (Phase 38)', () => {
+  const req = { endpointId: 'ep-1', model: 'gpt-4o', schema: 'public', table: 'users' };
+
+  it('returns a trimmed draft grounded only in the described table', async () => {
+    const { service, retrieval, provider } = createService({
+      providerResponse: '  Registered application users.\n',
+    });
+
+    const out = await service.describeObject('user-1', 'conn-1', { ...req, column: 'email' });
+
+    expect(out.comment).toBe('Registered application users.');
+    expect(retrieval.describeTables).toHaveBeenCalledWith('conn-1', ['public.users']);
+    // Schema-only grounding: the prompt is built from the described table, never from rows.
+    const [{ systemPrompt }] = (provider.complete as unknown as { mock: { calls: [{ systemPrompt: string }][] } }).mock.calls[0]!;
+    expect(systemPrompt).toContain('-- described');
+    expect(systemPrompt).toContain('the column "email"');
+  });
+
+  it('unwraps a quoted or fenced reply and caps its length', async () => {
+    const quoted = await createService({ providerResponse: '"Just a quoted sentence."' })
+      .service.describeObject('user-1', 'conn-1', req);
+    expect(quoted.comment).toBe('Just a quoted sentence.');
+
+    const fenced = await createService({ providerResponse: '```\nA fenced sentence.\n```' })
+      .service.describeObject('user-1', 'conn-1', req);
+    expect(fenced.comment).toBe('A fenced sentence.');
+
+    const long = await createService({ providerResponse: 'x'.repeat(500) })
+      .service.describeObject('user-1', 'conn-1', req);
+    expect(long.comment.length).toBeLessThanOrEqual(MAX_COMMENT_CHARS);
+  });
+
+  it('refuses on a read-only connection before spending anything on the provider', async () => {
+    const { service, provider } = createService({ readOnly: true });
+
+    await expect(service.describeObject('user-1', 'conn-1', req)).rejects.toThrow(ForbiddenException);
+    expect(provider.complete).not.toHaveBeenCalled();
+  });
+
+  it('maps a provider failure to a safe 503', async () => {
+    const { service } = createService({ providerThrows: true });
+    await expect(service.describeObject('user-1', 'conn-1', req)).rejects.toThrow(ServiceUnavailableException);
   });
 });
 

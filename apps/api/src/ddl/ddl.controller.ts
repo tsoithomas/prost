@@ -147,6 +147,12 @@ export class DdlController {
         return { kind: 'setDefault', column: dto.columnName!, default: dto.default ?? null };
       case 'changeType':
         return { kind: 'changeType', column: dto.columnName!, type: dto.type!, using: dto.using };
+      case 'setComment':
+        return {
+          kind: 'setComment',
+          ...(dto.columnName ? { column: dto.columnName } : {}),
+          comment: dto.comment ?? null,
+        };
       case 'addForeignKey':
         return {
           kind: 'addForeignKey',

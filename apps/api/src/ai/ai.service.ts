@@ -8,6 +8,8 @@ import type {
   ChatRequest,
   ChatResponse,
   ColumnMetadata,
+  DescribeObjectRequest,
+  DescribeObjectResponse,
   ExecuteQueryResponse,
   QueryPlanNode,
   QueryPlanResult,
@@ -265,6 +267,58 @@ export class AiService {
       `schema-suggest connectionId=${connectionId} correlationId=${correlationId} proposed=${candidates.length} accepted=${suggestions.length}`,
     );
     return suggestions;
+  }
+
+  /**
+   * Draft documentation for one table or column (Phase 38). Grounded in schema metadata only — the
+   * same `describeTables` context the suggestion path uses, no row data — and the draft is *returned*,
+   * never written: it lands in an editable field, and applying it still goes through the DDL
+   * preview → confirm → execute path. Unlike `suggestSchemaChanges` this needs no allow-list, because
+   * the output is prose the user edits, not a change request.
+   */
+  async describeObject(
+    userId: string,
+    connectionId: string,
+    req: DescribeObjectRequest,
+    correlationId = '',
+  ): Promise<DescribeObjectResponse> {
+    const endpoint = await this.resolveEndpoint(userId, connectionId, req.endpointId, req.model);
+    // Documenting is a write in the end, so a read-only connection is refused before any LLM spend.
+    await this.pool.assertWritable(connectionId);
+
+    const schemaContext = await this.retrieval.describeTables(connectionId, [`${req.schema}.${req.table}`]);
+    const engineLabel = (await this.pool.driverFor(connectionId)).descriptor.label;
+    const target = req.column ? `the column "${req.column}" of ` : '';
+    const systemPrompt = `You write terse database documentation for a ${engineLabel} database.
+
+The table under consideration (columns and foreign keys):
+
+${schemaContext}
+
+Task: write a single sentence describing ${target}"${req.schema}.${req.table}" — what it holds and what
+it is for. Use only the schema shown above; never guess at data you cannot see. No markdown, no quotes,
+no prefix like "This column" — just the sentence, at most ${MAX_COMMENT_CHARS} characters.`;
+
+    let content: string;
+    try {
+      content = await this.provider.complete({
+        baseUrl: endpoint.baseUrl,
+        apiKey: endpoint.apiKey,
+        model: req.model,
+        systemPrompt,
+        messages: [{ role: 'user', content: 'Write the description.' }],
+        ...(endpoint.maxOutputTokens != null ? { maxOutputTokens: endpoint.maxOutputTokens } : {}),
+      });
+    } catch {
+      throw new ServiceUnavailableException('AI provider request failed.');
+    }
+
+    this.logger.log(
+      `describe-object connectionId=${connectionId} correlationId=${correlationId} target=${req.schema}.${req.table}${
+        req.column ? `.${req.column}` : ''
+      }`,
+    );
+    return { comment: normalizeDraftedComment(content) };
   }
 
   /**
@@ -535,6 +589,17 @@ interface SanitizedPlanNode {
   actualTimeMs?: number;
   actualRows?: number;
   children: SanitizedPlanNode[];
+}
+
+/** Comment drafts are prose, so the only shaping needed is unwrapping and a hard length cap. */
+export const MAX_COMMENT_CHARS = 200;
+
+function normalizeDraftedComment(content: string): string {
+  const collapsed = content.trim().replace(/\s+/g, ' ');
+  // Models like to wrap a one-liner in quotes or a code fence despite being told not to.
+  const unfenced = collapsed.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '');
+  const unquoted = unfenced.replace(/^["'`]/, '').replace(/["'`]$/, '').trim();
+  return unquoted.length > MAX_COMMENT_CHARS ? `${unquoted.slice(0, MAX_COMMENT_CHARS - 1).trimEnd()}…` : unquoted;
 }
 
 /** Replaces quoted strings and bare numbers with `?`, so a plan fragment can't carry a row value. */

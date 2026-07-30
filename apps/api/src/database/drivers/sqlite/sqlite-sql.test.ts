@@ -18,9 +18,11 @@ import {
   sqliteBuildSchemaTableStats,
   sqliteBuildDropTable,
   sqliteBuildTruncateTable,
+  sqliteBuildTableComment,
   sqliteBuildSelectRows,
   sqliteBuildUpdateRow,
   sqliteBuildUpdateRowGuarded,
+  sqliteNormalizeAlterTable,
   sqlitePlaceholder,
   sqliteQuoteIdent,
 } from './sqlite-sql';
@@ -244,5 +246,22 @@ describe('sqlite ddl builders', () => {
     expect(() => sqliteBuildAlterTable({ namespace: 'main', name: 'orders' }, {
       kind: 'dropForeignKey', constraintName: 'fk',
     })).toThrow(/does not support/);
+  });
+
+  it('rejects comments outright — SQLite has no COMMENT syntax', () => {
+    expect(() => sqliteNormalizeAlterTable(
+      { namespace: 'main', name: 'orders' },
+      { kind: 'setComment', comment: 'nope' },
+      [],
+      ['TEXT'],
+    )).toThrow(/does not support table or column comments/);
+    expect(() => sqliteBuildAlterTable({ namespace: 'main', name: 'orders' }, { kind: 'setComment', comment: 'nope' }))
+      .toThrow(/does not support/);
+  });
+
+  it('reports no table comment', () => {
+    const frag = sqliteBuildTableComment({ namespace: 'main', name: 'orders' });
+    expect(frag.sql).toBe('SELECT NULL AS comment');
+    expect(frag.params).toEqual([]);
   });
 });

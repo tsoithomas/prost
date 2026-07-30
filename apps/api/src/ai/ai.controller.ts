@@ -4,6 +4,7 @@ import type { Response } from 'express';
 import type {
   ChartSuggestResponse,
   ChatResponse,
+  DescribeObjectResponse,
   RunReadQueryResponse,
   SchemaSuggestResponse,
 } from '@prost/shared-types';
@@ -14,6 +15,7 @@ import { AiService } from './ai.service';
 import type { TokenUsage } from './ai-provider.service';
 import { ChatDto } from './dto/chat.dto';
 import { ChartSuggestDto } from './dto/chart-suggest.dto';
+import { DescribeObjectDto } from './dto/describe-object.dto';
 import { RunReadQueryDto } from './dto/run-read-query.dto';
 import { SchemaSuggestDto } from './dto/schema-suggest.dto';
 
@@ -119,6 +121,25 @@ export class AiController {
       req.correlationId,
     );
     return { suggestions };
+  }
+
+  /**
+   * Draft a table/column description (Phase 38). Returns prose for the user to edit — nothing is
+   * written here; applying it still goes through the DDL preview → confirm → execute path. Rejected
+   * on read-only connections, like every other write-adjacent AI call.
+   */
+  @SkipThrottle()
+  @UseGuards(UserThrottlerGuard)
+  @Throttle(AI_THROTTLE)
+  @Post(':id/ai/describe-object')
+  @HttpCode(200)
+  async describeObject(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: DescribeObjectDto,
+    @Req() req: RequestWithCorrelationId,
+  ): Promise<DescribeObjectResponse> {
+    return this.aiService.describeObject(user.userId, id, dto, req.correlationId);
   }
 
   /**

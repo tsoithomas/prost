@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import clsx from 'clsx';
-import { Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { MessageSquareText, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react';
 import type { ColumnMetadata } from '@prost/shared-types';
 import { Badge, Button, IconButton } from '@prost/ui';
 import { ColumnTypePill } from '../grid/columnDefs';
@@ -10,6 +10,7 @@ import { AddColumnModal } from '../ddl/AddColumnModal';
 import { AddForeignKeyModal } from '../ddl/AddForeignKeyModal';
 import { CreateIndexModal } from '../ddl/CreateIndexModal';
 import { EditColumnModal } from '../ddl/EditColumnModal';
+import { EditCommentModal } from '../ddl/EditCommentModal';
 import { SchemaSuggestionList } from '../ddl/SchemaSuggestionList';
 import { useSchemaSuggestions } from '../ddl/useSchemaSuggestions';
 import { useConfirm } from '../hooks/useConfirm';
@@ -31,11 +32,16 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
   const [editingColumn, setEditingColumn] = useState<ColumnMetadata | null>(null);
   const [createIndexOpen, setCreateIndexOpen] = useState(false);
   const [addForeignKeyOpen, setAddForeignKeyOpen] = useState(false);
+  /** Which comment is being edited: the table's own (`{}`) or a column's. Null when closed. */
+  const [commentTarget, setCommentTarget] = useState<{ column?: string } | null>(null);
   const [highlightedColumn, setHighlightedColumn] = useState<string | null>(null);
   const columnsRef = useRef<HTMLDivElement>(null);
 
   const descriptor = useEngineDescriptor(connectionId);
   const supportsForeignKeyDdl = descriptor?.ddl.supportsForeignKeyDdl ?? false;
+  // Comments are a write, so they follow the same gate as the other DDL affordances — plus the
+  // engine capability, since SQLite has no comment syntax at all.
+  const canEditComments = writable && (descriptor?.ddl.supportsObjectComments ?? false);
   const dropIndex = useDropIndex(connectionId, schema, table);
   const alterTable = useAlterTable(connectionId, schema, table);
   const { confirm, dialog: confirmDialog } = useConfirm();
@@ -121,7 +127,41 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
         availableColumns={data.columns}
       />
 
+      {commentTarget ? (
+        <EditCommentModal
+          open
+          onClose={() => setCommentTarget(null)}
+          connectionId={connectionId}
+          schema={schema}
+          table={table}
+          {...(commentTarget.column ? { column: commentTarget.column } : {})}
+          current={
+            commentTarget.column
+              ? data.columns.find((c) => c.name === commentTarget.column)?.comment ?? null
+              : data.comment
+          }
+        />
+      ) : null}
+
       <div className="h-full space-y-lg overflow-y-auto p-lg">
+        {/* The table's own documentation, read from the target DB (Phase 38). */}
+        {data.comment !== null || canEditComments ? (
+          <section>
+            <div className="mb-sm flex items-center justify-between">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-text-faint">Comment</h2>
+              {canEditComments ? (
+                <Button variant="ghost" size="sm" onClick={() => setCommentTarget({})}>
+                  <Pencil size={13} />
+                  {data.comment === null ? 'Add comment' : 'Edit comment'}
+                </Button>
+              ) : null}
+            </div>
+            <p className={clsx('text-sm', data.comment === null ? 'italic text-text-faint' : 'text-text')}>
+              {data.comment ?? 'No description yet.'}
+            </p>
+          </section>
+        ) : null}
+
         {/* AI schema advice (Phase 33). Writes, so it's hidden on read-only alongside the DDL actions;
             the server refuses it there regardless. */}
         {writable ? (
@@ -167,23 +207,40 @@ export function TableStructurePanel({ connectionId, schema, table, writable = tr
                 key={col.name}
                 data-column={col.name}
                 className={clsx(
-                  'group flex items-center gap-sm px-md py-sm text-sm transition-colors',
+                  'group flex flex-col gap-xs px-md py-sm text-sm transition-colors',
                   i < data.columns.length - 1 && 'border-b border-border',
                   highlightedColumn === col.name && 'bg-accent-muted',
                 )}
               >
-                <span className="min-w-0 flex-1 font-medium text-text">{col.name}</span>
-                <ColumnTypePill dataType={col.dataType} />
-                {col.isPrimaryKey ? <Badge variant="accent">PK</Badge> : null}
-                {!col.nullable && !col.isPrimaryKey ? <Badge variant="neutral">NOT NULL</Badge> : null}
-                {writable ? (
-                  <IconButton
-                    aria-label={`Edit column ${col.name}`}
-                    onClick={() => setEditingColumn(col)}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity max-md:opacity-100"
-                  >
-                    <Pencil size={13} />
-                  </IconButton>
+                <div className="flex items-center gap-sm">
+                  <span className="min-w-0 flex-1 font-medium text-text">{col.name}</span>
+                  <ColumnTypePill dataType={col.dataType} />
+                  {col.isPrimaryKey ? <Badge variant="accent">PK</Badge> : null}
+                  {!col.nullable && !col.isPrimaryKey ? <Badge variant="neutral">NOT NULL</Badge> : null}
+                  {canEditComments ? (
+                    <IconButton
+                      aria-label={`Edit comment on ${col.name}`}
+                      title="Edit comment"
+                      onClick={() => setCommentTarget({ column: col.name })}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity max-md:opacity-100"
+                    >
+                      <MessageSquareText size={13} />
+                    </IconButton>
+                  ) : null}
+                  {writable ? (
+                    <IconButton
+                      aria-label={`Edit column ${col.name}`}
+                      onClick={() => setEditingColumn(col)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity max-md:opacity-100"
+                    >
+                      <Pencil size={13} />
+                    </IconButton>
+                  ) : null}
+                </div>
+                {col.comment ? (
+                  <p className="truncate text-xs text-text-muted" title={col.comment}>
+                    {col.comment}
+                  </p>
                 ) : null}
               </div>
             ))}

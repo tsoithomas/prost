@@ -20,20 +20,29 @@ vi.mock('../ddl/AddColumnModal', () => ({ AddColumnModal: () => null }));
 vi.mock('../ddl/EditColumnModal', () => ({ EditColumnModal: () => null }));
 vi.mock('../ddl/CreateIndexModal', () => ({ CreateIndexModal: () => null }));
 vi.mock('../ddl/AddForeignKeyModal', () => ({ AddForeignKeyModal: () => null }));
+vi.mock('../ddl/EditCommentModal', () => ({
+  EditCommentModal: (props: { column?: string; current: string | null }) => (
+    <div data-testid="comment-modal" data-column={props.column ?? ''} data-current={props.current ?? ''} />
+  ),
+}));
 vi.mock('../ddl/useSchemaSuggestions', () => ({
   useSchemaSuggestions: () => ({
     suggestions: null, error: null, ready: true, isPending: false, request: mockRequest, reset: vi.fn(),
   }),
 }));
 
-/** A descriptor whose only relevant field is the FK-DDL capability flag. */
-function descriptor(supportsForeignKeyDdl: boolean): Partial<DbEngineDescriptor> {
-  return { ddl: { supportsForeignKeyDdl } as DbEngineDescriptor['ddl'] };
+/** A descriptor carrying only the DDL capability flags this panel branches on. */
+function descriptor(supportsForeignKeyDdl: boolean, supportsObjectComments = true): Partial<DbEngineDescriptor> {
+  return { ddl: { supportsForeignKeyDdl, supportsObjectComments } as DbEngineDescriptor['ddl'] };
 }
 
 const STRUCTURE: TableStructure = {
+  comment: 'Customer orders',
   columns: [
-    { name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, defaultValue: null },
+    {
+      name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true,
+      autoIncrement: false, defaultValue: null, comment: 'Surrogate key',
+    },
   ],
   indexes: [],
   foreignKeys: [
@@ -139,5 +148,74 @@ describe('TableStructurePanel — schema suggestions (Phase 33)', () => {
       <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable={false} />,
     );
     expect(queryByText('Suggest improvements')).not.toBeInTheDocument();
+  });
+});
+
+describe('TableStructurePanel — object comments (Phase 38)', () => {
+  beforeEach(() => {
+    mockStructure.mockReturnValue({ data: STRUCTURE, isLoading: false, isError: false });
+    mockDescriptor.mockReturnValue(descriptor(true));
+  });
+
+  it('renders the table comment and each column comment', () => {
+    const { getByText } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable />,
+    );
+    expect(getByText('Customer orders')).toBeInTheDocument();
+    expect(getByText('Surrogate key')).toBeInTheDocument();
+  });
+
+  it('opens the editor on the table itself', async () => {
+    const { getByText, getByTestId } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable />,
+    );
+
+    await userEvent.click(getByText('Edit comment'));
+
+    expect(getByTestId('comment-modal')).toHaveAttribute('data-column', '');
+    expect(getByTestId('comment-modal')).toHaveAttribute('data-current', 'Customer orders');
+  });
+
+  it('opens the editor on a column, seeded with that column’s comment', async () => {
+    const { getByLabelText, getByTestId } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable />,
+    );
+
+    await userEvent.click(getByLabelText('Edit comment on id'));
+
+    expect(getByTestId('comment-modal')).toHaveAttribute('data-column', 'id');
+    expect(getByTestId('comment-modal')).toHaveAttribute('data-current', 'Surrogate key');
+  });
+
+  it('hides every comment affordance on an engine without comment support', () => {
+    mockDescriptor.mockReturnValue(descriptor(true, false));
+    const { queryByText, queryByLabelText } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable />,
+    );
+    expect(queryByText('Edit comment')).not.toBeInTheDocument();
+    expect(queryByLabelText('Edit comment on id')).not.toBeInTheDocument();
+    // The comment itself is still shown — it's read-only information, not an action.
+    expect(queryByText('Customer orders')).toBeInTheDocument();
+  });
+
+  it('hides the editor on a read-only connection', () => {
+    const { queryByText, queryByLabelText } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable={false} />,
+    );
+    expect(queryByText('Edit comment')).not.toBeInTheDocument();
+    expect(queryByLabelText('Edit comment on id')).not.toBeInTheDocument();
+  });
+
+  it('offers to add a comment when the table has none', () => {
+    mockStructure.mockReturnValue({
+      data: { ...STRUCTURE, comment: null },
+      isLoading: false,
+      isError: false,
+    });
+    const { getByText } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable />,
+    );
+    expect(getByText('Add comment')).toBeInTheDocument();
+    expect(getByText('No description yet.')).toBeInTheDocument();
   });
 });

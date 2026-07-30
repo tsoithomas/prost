@@ -128,6 +128,8 @@ export function sqliteNormalizeAlterTable(
     case 'addForeignKey':
     case 'dropForeignKey':
       throw new UnprocessableEntityException('SQLite does not support adding or dropping foreign key constraints');
+    case 'setComment':
+      throw new UnprocessableEntityException('SQLite does not support table or column comments');
     default:
       throw new UnprocessableEntityException('Unknown operation kind');
   }
@@ -231,6 +233,11 @@ export function sqliteBuildListColumns(ref: TableRef): SqlFragment {
          ORDER BY cid`,
     params: [ref.name, ref.name],
   };
+}
+
+/** SQLite has no COMMENT syntax, so there is never a table comment to report. */
+export function sqliteBuildTableComment(_ref: TableRef): SqlFragment {
+  return { sql: 'SELECT NULL AS comment', params: [] };
 }
 
 /** `columns` comes back as a JSON-encoded array (SQLite has no array type); consumers parse it. */
@@ -512,6 +519,7 @@ export function sqliteBuildAlterTable(ref: TableRef, op: AlterTableOperation): S
     case 'changeType':
     case 'addForeignKey':
     case 'dropForeignKey':
+    case 'setComment':
       throw new Error(`SQLite does not support the "${op.kind}" alter-table operation`);
   }
 }

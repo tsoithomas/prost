@@ -51,6 +51,8 @@ export interface DbEngineDescriptor {
     supportsUsingExpression: boolean;
     /** Whether the engine supports `ALTER TABLE ADD/DROP` foreign-key constraints (SQLite does not). */
     supportsForeignKeyDdl: boolean;
+    /** Whether the engine stores native table/column comments (PG, MySQL — SQLite has no syntax). */
+    supportsObjectComments: boolean;
   };
   /** Which non-table schema-object kinds this engine exposes for read-only browsing (Phase 24). */
   objects: {

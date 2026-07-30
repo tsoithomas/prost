@@ -49,6 +49,7 @@ const POSTGRES_DESCRIPTOR: DbEngineDescriptor = {
     supportsAutoIncrement: false,
     supportsUsingExpression: true,
     supportsForeignKeyDdl: true,
+    supportsObjectComments: true,
   },
   objects: { views: true, materializedViews: true, sequences: true, functions: true, procedures: true, triggers: true, enums: true },
 };
@@ -69,6 +70,7 @@ const MYSQL_DESCRIPTOR: DbEngineDescriptor = {
     supportsAutoIncrement: true,
     supportsUsingExpression: false,
     supportsForeignKeyDdl: true,
+    supportsObjectComments: true,
   },
 };
 

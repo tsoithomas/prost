@@ -26,6 +26,7 @@ const BASE: DbEngineDescriptor = {
     supportsAutoIncrement: false,
     supportsUsingExpression: true,
     supportsForeignKeyDdl: true,
+    supportsObjectComments: true,
   },
   objects: { views: true, materializedViews: true, sequences: true, functions: true, procedures: true, triggers: true, enums: true },
 };

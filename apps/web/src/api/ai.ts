@@ -8,6 +8,8 @@ import type {
   ConversationDetailDto,
   ConversationDto,
   CreateLlmEndpointBody,
+  DescribeObjectRequest,
+  DescribeObjectResponse,
   LlmEndpointDto,
   LlmProbeBody,
   LlmProbeResult,
@@ -132,6 +134,21 @@ export function useSuggestSchemaChanges(connectionId: string | null) {
   return useMutation({
     mutationFn: (req: SchemaSuggestRequest) =>
       apiFetch<SchemaSuggestResponse>(`/connections/${connectionId!}/ai/schema-suggest`, {
+        method: 'POST',
+        body: req,
+      }),
+  });
+}
+
+/**
+ * Ask the model to draft a table/column description (`POST :id/ai/describe-object`, Phase 38). The
+ * draft is returned for the user to edit — nothing is written until they apply it through the normal
+ * DDL preview → confirm path. Refused with a 403 on read-only connections.
+ */
+export function useDescribeObject(connectionId: string | null) {
+  return useMutation({
+    mutationFn: (req: DescribeObjectRequest) =>
+      apiFetch<DescribeObjectResponse>(`/connections/${connectionId!}/ai/describe-object`, {
         method: 'POST',
         body: req,
       }),

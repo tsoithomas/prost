@@ -45,6 +45,12 @@ function toStringOrNull(value: unknown): string | null {
   return value === null || value === undefined ? null : String(value);
 }
 
+/** Comments come back as `''` when unset on MySQL and as NULL elsewhere — normalize to null. */
+function emptyToNull(value: unknown): string | null {
+  const text = toStringOrNull(value);
+  return text === null || text === '' ? null : text;
+}
+
 /** Index `columns` arrive as a real array (PG) or a JSON-encoded array string (SQLite). */
 function toColumnArray(value: unknown): string[] {
   if (Array.isArray(value)) return value as string[];
@@ -92,6 +98,12 @@ interface ColumnRow {
   is_primary_key: boolean;
   default_value: string | null;
   is_auto_increment: boolean | number;
+  /** Native column comment; absent on engines without comment support (SQLite). */
+  comment?: string | null;
+  /** MySQL only — the catalog's own column definition, needed to restate a column (Phase 38). */
+  column_definition?: string | null;
+  /** MySQL only — non-empty for generated columns, which can't be restated. */
+  generation_expression?: string | null;
 }
 
 interface AllColumnsRow extends ColumnRow {
@@ -242,6 +254,12 @@ export class MetadataService {
       isPrimaryKey: Boolean(row.is_primary_key),
       autoIncrement: Boolean(row.is_auto_increment),
       defaultValue: row.default_value == null ? null : String(row.default_value),
+      comment: emptyToNull(row.comment),
+      // Only carried where the engine needs it to restate a column; a generated column reports its
+      // expression instead, and the driver refuses to rewrite those.
+      ...(row.column_definition && !row.generation_expression
+        ? { nativeDefinition: String(row.column_definition) }
+        : {}),
     }));
   }
 
@@ -323,13 +341,21 @@ export class MetadataService {
     }));
   }
 
+  /** The table's own native comment; `null` where unset or unsupported (SQLite). */
+  async getTableComment(connectionId: string, schema: string, table: string): Promise<string | null> {
+    const driver = await this.pool.driverFor(connectionId);
+    const { rows } = await this.pool.run(connectionId, driver.buildTableComment({ namespace: schema, name: table }));
+    return emptyToNull((rows[0] as { comment?: unknown } | undefined)?.comment);
+  }
+
   async getTableStructure(connectionId: string, schema: string, table: string): Promise<TableStructure> {
-    const [columns, indexes, foreignKeys] = await Promise.all([
+    const [columns, indexes, foreignKeys, comment] = await Promise.all([
       this.getTableColumns(connectionId, schema, table),
       this.getTableIndexes(connectionId, schema, table),
       this.getTableForeignKeys(connectionId, schema, table),
+      this.getTableComment(connectionId, schema, table),
     ]);
-    return { columns, indexes, foreignKeys };
+    return { columns, indexes, foreignKeys, comment };
   }
 
   /**

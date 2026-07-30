@@ -1,12 +1,18 @@
 import { Type } from 'class-transformer';
-import { ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsOptional, IsString, MinLength, ValidateIf, ValidateNested } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsOptional, IsString, MaxLength, MinLength, ValidateIf, ValidateNested } from 'class-validator';
 import { FOREIGN_KEY_ACTIONS } from '@prost/shared-types';
 import { NewColumnDto } from './create-table.dto';
 
-const KINDS = ['addColumn', 'dropColumn', 'setNotNull', 'setDefault', 'changeType', 'addForeignKey', 'dropForeignKey'] as const;
+const KINDS = [
+  'addColumn', 'dropColumn', 'setNotNull', 'setDefault', 'changeType',
+  'addForeignKey', 'dropForeignKey', 'setComment',
+] as const;
 
-/** Kinds that address a single column via `columnName`. */
+/** Kinds that address a single column via `columnName`. `setComment` may omit it (table comment). */
 const COLUMN_NAME_KINDS = ['dropColumn', 'setNotNull', 'setDefault', 'changeType'];
+
+/** Both engines that support comments store them in a TEXT-ish column; keep drafts sane. */
+const MAX_COMMENT_LENGTH = 1024;
 
 export class AlterTableDto {
   @IsString()
@@ -77,6 +83,12 @@ export class AlterTableDto {
   @ValidateIf((o: AlterTableDto) => o.kind === 'addForeignKey' && (o as AlterTableDto).onUpdate !== undefined)
   @IsIn(FOREIGN_KEY_ACTIONS)
   onUpdate?: string;
+
+  // setComment — `null` clears it; `columnName` is optional (omitted = the table's own comment)
+  @ValidateIf((o: AlterTableDto) => o.kind === 'setComment' && o.comment !== null)
+  @IsString()
+  @MaxLength(MAX_COMMENT_LENGTH)
+  comment?: string | null;
 
   // addForeignKey (optional) / dropForeignKey (required)
   @ValidateIf((o: AlterTableDto) => o.kind === 'dropForeignKey')

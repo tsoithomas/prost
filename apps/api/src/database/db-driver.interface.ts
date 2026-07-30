@@ -74,6 +74,11 @@ export interface DbDriver {
   buildListColumns(ref: TableRef): SqlFragment;
   buildListIndexes(ref: TableRef): SqlFragment;
   /**
+   * The table's own native comment, aliased `comment` (Phase 38). Engines without comment support
+   * return a literal `NULL`, so the caller needs no capability branch.
+   */
+  buildTableComment(ref: TableRef): SqlFragment;
+  /**
    * Foreign-key constraints on `ref`, one row per constraint with columns aliased
    * `constraint_name, columns, referenced_schema, referenced_table, referenced_columns,
    * on_delete, on_update`. `columns`/`referenced_columns` are ordered arrays (PG native `text[]`,

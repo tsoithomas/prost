@@ -141,6 +141,25 @@ export interface SchemaSuggestResponse {
   suggestions: SchemaSuggestion[];
 }
 
+/**
+ * Ask the model to draft documentation for one table or column (Phase 38). Grounded in schema
+ * metadata only — no row data — and the draft is *returned*, never written: it lands in an editable
+ * field and still goes through the normal DDL preview → confirm path.
+ */
+export interface DescribeObjectRequest {
+  endpointId: string;
+  model: string;
+  schema: string;
+  table: string;
+  /** Omit to describe the table itself. */
+  column?: string;
+}
+
+export interface DescribeObjectResponse {
+  /** A single-sentence draft, trimmed and length-capped by the server. */
+  comment: string;
+}
+
 /** A persisted chat thread (summary form, for the conversation list). */
 export interface ConversationDto {
   id: string;

@@ -198,6 +198,7 @@ export class MysqlDriver implements DbDriver {
       supportsAutoIncrement: true,
       supportsUsingExpression: false,
       supportsForeignKeyDdl: true,
+      supportsObjectComments: true,
     },
     objects: {
       views: true, materializedViews: false, sequences: false,
@@ -421,6 +422,7 @@ export class MysqlDriver implements DbDriver {
   buildListAllColumns = sql.mysqlBuildListAllColumns;
   buildListColumns = (ref: TableRef) => sql.mysqlBuildListColumns(ref);
   buildListIndexes = (ref: TableRef) => sql.mysqlBuildListIndexes(ref);
+  buildTableComment = (ref: TableRef) => sql.mysqlBuildTableComment(ref);
   buildListForeignKeys = (ref: TableRef) => sql.mysqlBuildListForeignKeys(ref);
   buildListReferencingForeignKeys = (ref: TableRef) => sql.mysqlBuildListReferencingForeignKeys(ref);
   buildListSchemaForeignKeys = (namespace: string) => sql.mysqlBuildListSchemaForeignKeys(namespace);

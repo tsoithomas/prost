@@ -170,6 +170,12 @@ export function pgNormalizeAlterTable(
       }
       return { kind: 'changeType', column: op.column, type, ...(using !== undefined ? { using } : {}) };
     }
+    case 'setComment': {
+      if (op.column !== undefined && !colNames.has(op.column)) {
+        throw new UnprocessableEntityException(`Column "${op.column}" does not exist`);
+      }
+      return op;
+    }
     default:
       throw new UnprocessableEntityException('Unknown operation kind');
   }
@@ -257,7 +263,8 @@ export function pgBuildListColumns(ref: TableRef): SqlFragment {
              AND tc.table_schema = c.table_schema
              AND tc.table_name = c.table_name
              AND kcu.column_name = c.column_name
-         ) AS is_primary_key
+         ) AS is_primary_key,
+         col_description(to_regclass(format('%I.%I', c.table_schema, c.table_name)), c.ordinal_position) AS comment
        FROM information_schema.columns c
        WHERE c.table_schema = $1 AND c.table_name = $2
        ORDER BY c.ordinal_position`,
@@ -288,6 +295,13 @@ export function pgBuildListIndexes(ref: TableRef): SqlFragment {
        WHERE  n.nspname = $1
          AND  t.relname = $2
        ORDER BY ix.indisprimary DESC, i.relname`,
+    params: [ref.namespace, ref.name],
+  };
+}
+
+export function pgBuildTableComment(ref: TableRef): SqlFragment {
+  return {
+    sql: "SELECT obj_description(to_regclass(format('%I.%I', $1::text, $2::text)), 'pg_class') AS comment",
     params: [ref.namespace, ref.name],
   };
 }
@@ -756,6 +770,15 @@ export function pgBuildAlterTable(ref: TableRef, op: AlterTableOperation): SqlFr
     }
     case 'dropForeignKey':
       return { sql: `${prefix} DROP CONSTRAINT ${pgQuoteIdent(op.constraintName)}`, params: [] };
+    case 'setComment': {
+      // `COMMENT ON` is a utility statement: PostgreSQL doesn't accept parameters in one, so the text
+      // is escaped as a literal by the same helper the SQL export uses.
+      const target = op.column === undefined
+        ? `TABLE ${qualify(ref)}`
+        : `COLUMN ${qualify(ref)}.${pgQuoteIdent(op.column)}`;
+      const value = op.comment === null ? 'NULL' : standardQuoteString(op.comment);
+      return { sql: `COMMENT ON ${target} IS ${value}`, params: [] };
+    }
   }
 }
 
