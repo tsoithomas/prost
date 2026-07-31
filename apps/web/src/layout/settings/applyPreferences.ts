@@ -12,6 +12,7 @@ export function applyPreferencesToStore(prefs: Partial<UserPreferenceDto>): void
   if (prefs.keybindings !== undefined) s.setKeybindings(prefs.keybindings);
   if (prefs.connectionOverrides !== undefined) s.setConnectionOverrides(prefs.connectionOverrides);
   if (prefs.columnRenderOverrides !== undefined) s.setColumnRenderOverrides(prefs.columnRenderOverrides);
+  if (prefs.maskedColumns !== undefined) s.setMaskedColumns(prefs.maskedColumns);
   if (prefs.fontFamily !== undefined) s.setFontFamily(prefs.fontFamily);
   if (prefs.monoFontFamily !== undefined) s.setMonoFontFamily(prefs.monoFontFamily);
   if (prefs.radiusScale !== undefined) s.setRadiusScale(prefs.radiusScale);
@@ -30,6 +31,7 @@ export function currentPreferencesFromStore(): UserPreferenceDto {
     customPalettes: s.customPalettes,
     connectionOverrides: s.connectionOverrides,
     columnRenderOverrides: s.columnRenderOverrides,
+    maskedColumns: s.maskedColumns,
     fontFamily: s.fontFamily,
     monoFontFamily: s.monoFontFamily,
     radiusScale: s.radiusScale,

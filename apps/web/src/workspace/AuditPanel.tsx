@@ -15,6 +15,8 @@ const ACTION_VARIANT: Record<AuditAction, 'neutral' | 'accent' | 'warning' | 'da
   ddl: 'warning',
   truncate: 'danger',
   import: 'neutral',
+  // Not a mutation — a record that masked values were shown in the clear (Phase 39).
+  reveal: 'warning',
 };
 
 function formatDuration(ms: number): string {

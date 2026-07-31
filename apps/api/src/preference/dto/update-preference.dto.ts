@@ -19,6 +19,7 @@ import {
   type KeybindingMap,
   type MonoFontFamily,
   type RadiusScale,
+  type MaskedColumns,
   type UserPreferenceDto,
 } from '@prost/shared-types';
 
@@ -60,6 +61,10 @@ export class UpdatePreferenceDto implements Partial<UserPreferenceDto> {
   @IsOptional()
   @IsObject()
   columnRenderOverrides?: ColumnRenderOverrides;
+
+  @IsOptional()
+  @IsObject()
+  maskedColumns?: MaskedColumns;
 
   @IsOptional()
   @IsIn(FONT_FAMILIES)

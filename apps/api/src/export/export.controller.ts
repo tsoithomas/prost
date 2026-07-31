@@ -37,7 +37,8 @@ export class ExportController {
 
     let prepared;
     try {
-      prepared = await this.exportService.prepare(id, dto);
+      // Masking is per-user, so the export needs the caller's identity to redact (Phase 39).
+      prepared = await this.exportService.prepare(id, dto, user.userId);
     } catch (err) {
       if (err instanceof HttpException) {
         res.status(err.getStatus()).json({ message: err.message });

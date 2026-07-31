@@ -25,6 +25,11 @@ export interface GridResponse {
   foreignKeys?: ForeignKeyMetadata[];
   /** FKs on other tables pointing at the source table — enables "show referencing rows". */
   referencingKeys?: ReferencingKeyMetadata[];
+  /**
+   * Columns redacted in *this* response (Phase 39). Present and non-empty only when masking actually
+   * applied — a revealed read reports none. The grid renders these read-only; the server enforces it.
+   */
+  maskedColumns?: string[];
 }
 
 /** One column's new value within a staged row edit. */

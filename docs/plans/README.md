@@ -52,7 +52,7 @@ passes **and** it violates none of the architecture principles.
 | [36](./phase-36-er-diagram.md) | ER diagram / relationship visualization | ✅ Complete |
 | [37](./phase-37-column-profiling.md) | Column profiling & table data statistics | ✅ Complete |
 | [38](./phase-38-object-comments.md) | Table & column documentation (native comments) | ✅ Complete |
-| [39](./phase-39-data-masking.md) | Data masking / sensitive-column redaction | 🔲 Planned |
+| [39](./phase-39-data-masking.md) | Data masking / sensitive-column redaction | ✅ Complete |
 | [40](./phase-40-perf-insights.md) | On-demand query-performance insights & index advisor | 🔲 Planned |
 | [41](./phase-41-schema-diff.md) | Schema comparison & migration diff (live-vs-live) | 🔲 Planned |
 | [42](./phase-42-data-generation.md) | Data generation / test-data seeding | 🔲 Planned |
@@ -92,8 +92,12 @@ null share, distinct count, range and a lazily-loaded top-N distribution — bou
 sampling and labelled as such); and native table/column comments (read via `buildTableComment` +
 `comment` aliases, written as a `setComment` `AlterTableOperation` through the *existing* DDL
 preview→confirm→execute pipeline, capability-gated by `ddl.supportsObjectComments` so SQLite hides it,
-with an optional `POST :id/ai/describe-object` draft the user edits before applying). **Phases 39–46
-are planned**.
+with an optional `POST :id/ai/describe-object` draft the user edits before applying); and per-column data
+masking (a `maskedColumns` preference of identifiers only, redacted **server-side** in grid reads and
+CSV/JSON/SQL exports via the pure `grid/masking.ts`, with masked columns refused for editing, an audited
+per-session `?reveal=true`, and a Settings › Privacy roster). Masking is a display/export transform, not
+access control: query results are deliberately never masked, and the UI says so. **Phases 40–46 are
+planned**.
 
 ## Sequencing notes
 

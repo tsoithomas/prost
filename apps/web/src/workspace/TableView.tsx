@@ -12,7 +12,7 @@ import type {
   IGetRowsParams,
   SelectionChangedEvent,
 } from 'ag-grid-community';
-import { CopyPlus, Download, Filter, Plus, Redo2, RefreshCw, Save, Search, Trash2, Undo2, Upload, X } from 'lucide-react';
+import { CopyPlus, Download, Eye, EyeOff, Filter, Plus, Redo2, RefreshCw, Save, Search, Trash2, Undo2, Upload, X } from 'lucide-react';
 import type { BulkRowEdit, ColumnMetadata, ColumnRenderMode, FilterOperator, GridResponse, RowConcurrency, RowFilter } from '@prost/shared-types';
 import { ROW_VERSION_KEY } from '@prost/shared-types';
 import { Badge, Button, GRID_DENSITY_ROW_HEIGHT, IconButton, Input, prostGridTheme, Toast } from '@prost/ui';
@@ -98,6 +98,8 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const [renderMenu, setRenderMenu] = useState<HeaderContextMenuArgs | null>(null);
   const [cellMenu, setCellMenu] = useState<CellMenuState | null>(null);
   const [jsonCell, setJsonCell] = useState<{ column: string; value: unknown } | null>(null);
+  /** Per-session unmasking (Phase 39) — never persisted; a reload masks again. */
+  const [revealed, setRevealed] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
   const openTable = useWorkspaceStore((state) => state.openTable);
@@ -109,6 +111,10 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const sourceTable = `${schema}.${table}`;
   const renderOverrides = useThemeStore((state) => state.columnRenderOverrides[connectionId]?.[sourceTable]);
   const setColumnRenderOverride = useThemeStore((state) => state.setColumnRenderOverride);
+  // Masked columns for this table (Phase 39). The store mirror drives the menu + settings roster;
+  // what the grid actually shows is whatever the *server* chose to redact.
+  const maskedHere = useThemeStore((state) => state.maskedColumns[connectionId]?.[sourceTable]);
+  const setColumnMasked = useThemeStore((state) => state.setColumnMasked);
   // Explicit density-driven heights so a density change applies live (AG Grid caches the theme's
   // auto row height until reload) and centers cell text via the derived `--ag-line-height`.
   const gridDensity = useThemeStore((state) => state.gridDensity);
@@ -197,7 +203,13 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const columnDefs = useMemo(
     () =>
       columnsQuery.data
-        ? buildColumnDefs(columnsQuery.data.columns, editable, { renderOverrides, onHeaderContextMenu: setRenderMenu, display: gridPrefs })
+        ? buildColumnDefs(columnsQuery.data.columns, editable, {
+            renderOverrides,
+            onHeaderContextMenu: setRenderMenu,
+            display: gridPrefs,
+            // What the *server* redacted, not the local mirror — a revealed read reports none.
+            masked: new Set(columnsQuery.data.maskedColumns ?? []),
+          })
         : [],
     [columnsQuery.data, editable, renderOverrides, gridPrefs],
   );
@@ -213,6 +225,55 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
     },
     [renderMenu, setColumnRenderOverride, connectionId, sourceTable, updatePreferences, pushToast],
   );
+
+  // Mark/unmark a column sensitive (Phase 39). Only persists — `useUpdatePreferences` invalidates the
+  // grid read on success, and the effect below drops the cached rows, so this works the same whether
+  // the change came from here or from the Settings roster.
+  const handleToggleMask = useCallback(
+    (masked: boolean) => {
+      if (!renderMenu) return;
+      const next = setColumnMasked(connectionId, sourceTable, renderMenu.field, masked);
+      updatePreferences.mutate(
+        { maskedColumns: next },
+        { onError: (error) => pushToast('danger', apiErrorDetail(error, 'Failed to save masking preference.')) },
+      );
+    },
+    [renderMenu, setColumnMasked, connectionId, sourceTable, updatePreferences, pushToast],
+  );
+
+  // Rows live in AG Grid's infinite cache, which a query invalidation doesn't reach. Watch what the
+  // *server* says is masked (not the local store mirror, which changes before the write lands) and
+  // drop the cached rows whenever it changes, so masking applied anywhere shows up here.
+  const serverMaskedKey = (columnsQuery.data?.maskedColumns ?? []).join(',');
+  const maskingSettled = useRef(false);
+  useEffect(() => {
+    if (!maskingSettled.current) {
+      maskingSettled.current = true;
+      return;
+    }
+    gridApiRef.current?.refreshInfiniteCache();
+  }, [serverMaskedKey]);
+
+  /** Whether this table has any masked columns at all — gates the Reveal affordance. */
+  const hasMasked = (maskedHere?.length ?? 0) > 0;
+
+  // Revealing shows values the user deliberately hid, and the server audits it — so it asks first.
+  const handleToggleReveal = useCallback(async () => {
+    if (revealed) {
+      setRevealed(false);
+      gridApiRef.current?.refreshInfiniteCache();
+      return;
+    }
+    const ok = await confirm({
+      title: 'Reveal masked columns?',
+      description:
+        'Values in masked columns will be shown for the rest of this session, and the reveal is recorded in the audit log. Reloading masks them again.',
+      confirmLabel: 'Reveal',
+    });
+    if (!ok) return;
+    setRevealed(true);
+    gridApiRef.current?.refreshInfiniteCache();
+  }, [revealed, confirm]);
 
   const onCellClicked = useCallback(
     (event: CellClickedEvent) => {
@@ -253,6 +314,8 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         columnsQuery.data?.foreignKeys ?? [],
         columnsQuery.data?.referencingKeys ?? [],
         schema,
+        // A masked cell holds a token, not the key — navigating on it would find nothing.
+        new Set(columnsQuery.data?.maskedColumns ?? []),
       ).map((target) => ({
         direction: target.direction,
         label: target.label,
@@ -345,6 +408,8 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         if (activeFilter?.conditions.length) {
           search.set('filter', JSON.stringify(activeFilter));
         }
+        // Per-session reveal (Phase 39): the server redacts unless this asks otherwise, and audits it.
+        if (revealed) search.set('reveal', 'true');
         apiFetch<GridResponse>(rowsUrl(connectionId, schema, table, search))
           .then((response) => {
             const lastRow = response.rows.length < limit ? offset + response.rows.length : undefined;
@@ -353,7 +418,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
           .catch(() => params.failCallback());
       },
     }),
-    [connectionId, schema, table, activeFilter],
+    [connectionId, schema, table, activeFilter, revealed],
   );
 
   const onGridReady = useCallback((event: GridReadyEvent) => {
@@ -672,6 +737,16 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
           </>
         ) : null}
         <div className="ml-auto flex items-center gap-sm">
+          {viewMode === 'rows' && hasMasked ? (
+            <IconButton
+              aria-label={revealed ? 'Hide masked columns' : 'Reveal masked columns'}
+              title={revealed ? 'Hide masked columns' : 'Reveal masked columns for this session'}
+              variant={revealed ? 'active' : 'ghost'}
+              onClick={() => void handleToggleReveal()}
+            >
+              {revealed ? <Eye size={14} /> : <EyeOff size={14} />}
+            </IconButton>
+          ) : null}
           {viewMode === 'rows' ? (
             <IconButton aria-label="Export" title="Export table" onClick={() => setExportOpen(true)}>
               <Download size={14} />
@@ -767,6 +842,8 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
       </div>
       <ColumnRenderMenu
         state={renderMenu}
+        masked={renderMenu ? (maskedHere ?? []).includes(renderMenu.field) : false}
+        onToggleMask={handleToggleMask}
         currentMode={renderMenu ? renderOverrides?.[renderMenu.field] : undefined}
         onSelect={handleSelectRenderMode}
         onFilterColumn={handleFilterColumn}

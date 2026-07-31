@@ -3,10 +3,10 @@
  * bound values, row data, or credentials (principles §1, §12). Distinct from query history: it
  * isolates mutations/DDL and records **failures** as well as successes, for accountability.
  */
-export type AuditAction = 'insert' | 'update' | 'delete' | 'ddl' | 'truncate' | 'import';
+export type AuditAction = 'insert' | 'update' | 'delete' | 'ddl' | 'truncate' | 'import' | 'reveal';
 export type AuditOutcome = 'success' | 'failure';
 
-export const AUDIT_ACTIONS: readonly AuditAction[] = ['insert', 'update', 'delete', 'ddl', 'truncate', 'import'];
+export const AUDIT_ACTIONS: readonly AuditAction[] = ['insert', 'update', 'delete', 'ddl', 'truncate', 'import', 'reveal'];
 export const AUDIT_OUTCOMES: readonly AuditOutcome[] = ['success', 'failure'];
 
 export interface AuditEntryDto {

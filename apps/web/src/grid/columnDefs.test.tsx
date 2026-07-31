@@ -326,3 +326,22 @@ describe('ColumnHeader — click to sort', () => {
     expect(none.container.querySelector('[aria-label="sorted descending"]')).toBeNull();
   });
 });
+
+describe('buildColumnDefs masking (Phase 39)', () => {
+  it('makes a masked column read-only even on an editable result', () => {
+    const defs = buildColumnDefs(COLUMNS, true, { masked: new Set(['price']) });
+    const byField = Object.fromEntries(defs.map((d) => [d.field, d]));
+
+    // You cannot blind-write over a mask token, so no editor is attached either.
+    expect(byField.price!.editable).toBe(false);
+    expect(byField.price!.cellEditor).toBeUndefined();
+    // Unmasked columns on the same table stay editable.
+    expect(byField.id!.editable).toBe(true);
+    expect(byField.id!.cellEditor).toBe('agNumberCellEditor');
+  });
+
+  it('is a no-op when nothing is masked', () => {
+    const defs = buildColumnDefs(COLUMNS, true, { masked: new Set() });
+    expect(defs.every((d) => d.editable)).toBe(true);
+  });
+});

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_MASKED_COLUMNS_PER_TABLE, MAX_MASKED_TABLES } from '@prost/shared-types';
 import {
   validateBehaviorPrefs,
   validateColumnRenderOverrides,
@@ -8,6 +9,7 @@ import {
   validateEditorPrefs,
   validateGridPrefs,
   validateKeybindings,
+  validateMaskedColumns,
 } from './preference-validation';
 
 describe('validateKeybindings', () => {
@@ -151,5 +153,48 @@ describe('validateColumnRenderOverrides', () => {
     expect(() => validateColumnRenderOverrides({ 'conn-1': { 'public.orders': 'nope' } })).toThrow(
       /table render-override entry must be an object/,
     );
+  });
+});
+
+describe('validateMaskedColumns', () => {
+  it('accepts a well-formed map and an empty one', () => {
+    const masked = { 'conn-1': { 'public.users': ['email', 'phone'] } };
+    expect(validateMaskedColumns(masked)).toEqual(masked);
+    expect(validateMaskedColumns({})).toEqual({});
+  });
+
+  it('collapses duplicate column names', () => {
+    expect(validateMaskedColumns({ 'conn-1': { 'public.users': ['email', 'email'] } })).toEqual({
+      'conn-1': { 'public.users': ['email'] },
+    });
+  });
+
+  it('drops tables (and connections) left with no masked columns', () => {
+    expect(validateMaskedColumns({ 'conn-1': { 'public.users': [] } })).toEqual({});
+  });
+
+  it('rejects a non-array column list', () => {
+    expect(() => validateMaskedColumns({ 'conn-1': { 'public.users': 'email' } })).toThrow(/must be an array/);
+  });
+
+  it('rejects a non-string or blank column name — identifiers only, never row data', () => {
+    expect(() => validateMaskedColumns({ 'conn-1': { 'public.users': [42] } })).toThrow(/Invalid masked column/);
+    expect(() => validateMaskedColumns({ 'conn-1': { 'public.users': ['  '] } })).toThrow(/Invalid masked column/);
+    expect(() => validateMaskedColumns({ 'conn-1': { 'public.users': [{ v: 'x' }] } })).toThrow(/Invalid masked column/);
+  });
+
+  it('rejects a non-object at either level', () => {
+    expect(() => validateMaskedColumns('nope')).toThrow(/must be an object/);
+    expect(() => validateMaskedColumns({ 'conn-1': 'nope' })).toThrow(/must be an object/);
+  });
+
+  it('caps how much one user can mask', () => {
+    const tables = Object.fromEntries(
+      Array.from({ length: MAX_MASKED_TABLES + 1 }, (_, i) => [`public.t${i}`, ['c']]),
+    );
+    expect(() => validateMaskedColumns({ 'conn-1': tables })).toThrow(/Too many masked tables/);
+
+    const columns = Array.from({ length: MAX_MASKED_COLUMNS_PER_TABLE + 1 }, (_, i) => `c${i}`);
+    expect(() => validateMaskedColumns({ 'conn-1': { 'public.users': columns } })).toThrow(/Too many masked columns/);
   });
 });

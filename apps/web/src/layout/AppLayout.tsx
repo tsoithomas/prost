@@ -77,6 +77,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     store.setKeybindings(preferences.keybindings ?? {});
     store.setConnectionOverrides(preferences.connectionOverrides ?? {});
     store.setColumnRenderOverrides(preferences.columnRenderOverrides ?? {});
+    store.setMaskedColumns(preferences.maskedColumns ?? {});
     if (preferences.fontFamily !== store.fontFamily) store.setFontFamily(preferences.fontFamily);
     if (preferences.monoFontFamily !== store.monoFontFamily) store.setMonoFontFamily(preferences.monoFontFamily);
     if (preferences.radiusScale && preferences.radiusScale !== store.radiusScale) {

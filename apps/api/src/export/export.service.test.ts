@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
-import type { ColumnMetadata } from '@prost/shared-types';
+import type { ColumnMetadata, MaskedColumns } from '@prost/shared-types';
+import { MASK_TOKEN } from '@prost/shared-types';
 import { ExportService, type ExportWriter } from './export.service';
 import type { MetadataService } from '../metadata/metadata.service';
+import type { PreferenceService } from '../preference/preference.service';
 import type { QueryService } from '../query/query.service';
 import type { PoolManager } from '../database/pool-manager.service';
 import type { DriverCursor, SqlFragment } from '../database/types';
@@ -41,6 +43,8 @@ function createService(opts: {
   openCursor?: ReturnType<typeof vi.fn>;
   resolveSingleSelect?: ReturnType<typeof vi.fn>;
   run?: ReturnType<typeof vi.fn>;
+  /** The caller's masking preference (Phase 39); omitted = nothing masked. */
+  maskedColumns?: MaskedColumns;
 } = {}) {
   const driver = new PgDriver({ get: () => undefined } as unknown as ConfigService);
   const openCursor = opts.openCursor ?? vi.fn().mockResolvedValue(opts.cursor ?? fakeCursor([[]]));
@@ -59,7 +63,14 @@ function createService(opts: {
   } as unknown as QueryService;
   const config = { get: (k: string) => (k === 'STREAM_MAX_ROWS' ? opts.maxRows ?? 100_000 : undefined) } as unknown as ConfigService;
 
-  return { service: new ExportService(pool, metadata, queryService, config), openCursor, metadata, queryService, run };
+  const preferences = {
+    get: vi.fn().mockResolvedValue({ maskedColumns: opts.maskedColumns ?? {} }),
+  } as unknown as PreferenceService;
+
+  return {
+    service: new ExportService(pool, metadata, queryService, preferences, config),
+    openCursor, metadata, queryService, run, preferences,
+  };
 }
 
 /** A `run` mock returning faithful PG DDL columns (what `pgBuildTableColumnsForDdl` yields). */
@@ -243,5 +254,86 @@ describe('ExportService — SQL format', () => {
     await expect(
       service.prepare('c1', { scope: 'schema', format: 'sql', schema: 'public', tables: ['ghost'] }),
     ).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('ExportService column masking (Phase 39)', () => {
+  const MASKED: MaskedColumns = { c1: { 'public.users': ['note'] } };
+  const ROWS = [[{ id: 1, note: 'secret' }, { id: 2, note: null }]];
+
+  it('redacts a masked column in CSV output', async () => {
+    const { service } = createService({ cursor: fakeCursor(ROWS), maskedColumns: MASKED });
+    const out = collector();
+
+    const prepared = await service.prepare('c1', { scope: 'table', format: 'csv', schema: 'public', table: 'users' }, 'u1');
+    await service.stream(out, 'c1', prepared);
+
+    expect(out.text()).toContain(MASK_TOKEN);
+    expect(out.text()).not.toContain('secret');
+    // Unmasked columns still export normally.
+    expect(out.text()).toContain('1');
+  });
+
+  it('redacts a masked column in JSON output', async () => {
+    const { service } = createService({ cursor: fakeCursor(ROWS), maskedColumns: MASKED });
+    const out = collector();
+
+    const prepared = await service.prepare('c1', { scope: 'table', format: 'json', schema: 'public', table: 'users' }, 'u1');
+    await service.stream(out, 'c1', prepared);
+
+    expect(out.text()).toContain(MASK_TOKEN);
+    expect(out.text()).not.toContain('secret');
+    // NULL stays null rather than becoming a token.
+    expect(out.text()).toContain('null');
+  });
+
+  it('redacts a masked column in the SQL dump INSERTs', async () => {
+    const { service } = createService({
+      cursor: fakeCursor(ROWS),
+      run: pgDdlColumnsRun(),
+      maskedColumns: MASKED,
+    });
+    const out = collector();
+
+    const prepared = await service.prepare(
+      'c1',
+      { scope: 'table', format: 'sql', schema: 'public', table: 'users', includeSchema: false },
+      'u1',
+    );
+    await service.stream(out, 'c1', prepared);
+
+    expect(out.text()).toContain(MASK_TOKEN);
+    expect(out.text()).not.toContain('secret');
+  });
+
+  it('does not mask a query-scope export — it has no source table to key on', async () => {
+    const { service } = createService({ cursor: fakeCursor(ROWS), maskedColumns: MASKED });
+    const out = collector();
+
+    const prepared = await service.prepare('c1', { scope: 'query', format: 'csv', sql: 'SELECT * FROM users' }, 'u1');
+    await service.stream(out, 'c1', prepared);
+
+    expect(out.text()).toContain('secret');
+  });
+
+  it('does not mask without a user context (internal callers)', async () => {
+    const { service, preferences } = createService({ cursor: fakeCursor(ROWS), maskedColumns: MASKED });
+    const out = collector();
+
+    const prepared = await service.prepare('c1', { scope: 'table', format: 'csv', schema: 'public', table: 'users' });
+    await service.stream(out, 'c1', prepared);
+
+    expect(out.text()).toContain('secret');
+    expect(preferences.get).not.toHaveBeenCalled();
+  });
+
+  it('leaves an unmasked table alone', async () => {
+    const { service } = createService({ cursor: fakeCursor(ROWS), maskedColumns: MASKED });
+    const out = collector();
+
+    const prepared = await service.prepare('c1', { scope: 'table', format: 'csv', schema: 'public', table: 'orders' }, 'u1');
+    await service.stream(out, 'c1', prepared);
+
+    expect(out.text()).toContain('secret');
   });
 });

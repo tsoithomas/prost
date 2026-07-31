@@ -8,6 +8,7 @@ import type {
   EditorPreferences,
   GridDisplayPreferences,
   KeybindingMap,
+  MaskedColumns,
   UserPreferenceDto,
 } from '@prost/shared-types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -21,6 +22,7 @@ import {
   validateEditorPrefs,
   validateGridPrefs,
   validateKeybindings,
+  validateMaskedColumns,
 } from './preference-validation';
 
 const DEFAULTS: UserPreferenceDto = {
@@ -32,6 +34,7 @@ const DEFAULTS: UserPreferenceDto = {
   customPalettes: [],
   connectionOverrides: {},
   columnRenderOverrides: {},
+  maskedColumns: {},
   radiusScale: 'normal',
   dataColors: {},
   editor: {},
@@ -81,6 +84,7 @@ type PreferenceRowData = Partial<
     | 'customPalettes'
     | 'connectionOverrides'
     | 'columnRenderOverrides'
+    | 'maskedColumns'
     | 'fontFamily'
     | 'monoFontFamily'
     | 'radiusScale'
@@ -109,6 +113,9 @@ function toRowData(dto: UpdatePreferenceDto): PreferenceRowData {
   }
   if (dto.columnRenderOverrides !== undefined) {
     data.columnRenderOverrides = JSON.stringify(validateColumnRenderOverrides(dto.columnRenderOverrides));
+  }
+  if (dto.maskedColumns !== undefined) {
+    data.maskedColumns = JSON.stringify(validateMaskedColumns(dto.maskedColumns));
   }
   if (dto.fontFamily !== undefined) data.fontFamily = dto.fontFamily;
   if (dto.monoFontFamily !== undefined) data.monoFontFamily = dto.monoFontFamily;
@@ -140,6 +147,7 @@ export function toUserPreferenceDto(row: UserPreference): UserPreferenceDto {
     customPalettes: parseJson<CustomPalette[]>(row.customPalettes, []),
     connectionOverrides: parseJson<Record<string, ConnectionThemeOverride>>(row.connectionOverrides, {}),
     columnRenderOverrides: parseJson<ColumnRenderOverrides>(row.columnRenderOverrides, {}),
+    maskedColumns: parseJson<MaskedColumns>(row.maskedColumns, {}),
     fontFamily: (row.fontFamily as UserPreferenceDto['fontFamily']) ?? undefined,
     monoFontFamily: (row.monoFontFamily as UserPreferenceDto['monoFontFamily']) ?? undefined,
     radiusScale: row.radiusScale as UserPreferenceDto['radiusScale'],

@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import type { RowFilter } from '@prost/shared-types';
 
 export class GetRowsQueryDto {
@@ -30,4 +30,10 @@ export class GetRowsQueryDto {
     try { return JSON.parse(value) as RowFilter; } catch { return undefined; }
   })
   filter?: RowFilter;
+
+  /** Per-session opt-out of column masking for this read (Phase 39). Audited; never persisted. */
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => value === 'true' || value === true)
+  @IsBoolean()
+  reveal?: boolean;
 }

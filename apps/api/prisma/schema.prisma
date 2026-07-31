@@ -194,6 +194,7 @@ model UserPreference {
   //   customPalettes        -> CustomPalette[]
   //   connectionOverrides   -> Record<connectionId, ConnectionThemeOverride>
   //   columnRenderOverrides -> ColumnRenderOverrides                  (connectionId -> "schema.table" -> column -> mode)
+  //   maskedColumns         -> MaskedColumns                          (connectionId -> "schema.table" -> column names)
   //   dataColors            -> Partial<Record<DataColorKey, string>>  (data-cell tint overrides, hex)
   //   editor                -> EditorPreferences                      (Monaco options)
   //   grid                  -> GridDisplayPreferences                 (grid rendering)
@@ -202,6 +203,7 @@ model UserPreference {
   customPalettes        String @default("[]")
   connectionOverrides   String @default("{}")
   columnRenderOverrides String @default("{}")
+  maskedColumns         String @default("{}")
   dataColors            String @default("{}")
   editor                String @default("{}")
   grid                  String @default("{}")

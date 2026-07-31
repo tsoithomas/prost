@@ -5,6 +5,7 @@ import {
   Palette,
   Paintbrush,
   RotateCcw,
+  ShieldOff,
   SlidersHorizontal,
   SquareCode,
   Table2,
@@ -21,6 +22,7 @@ import { BehaviorSection } from './settings/BehaviorSection';
 import { EditorSection } from './settings/EditorSection';
 import { GridSection } from './settings/GridSection';
 import { KeyboardSection } from './settings/KeyboardSection';
+import { PrivacySection } from './settings/PrivacySection';
 import { ThemeSection } from './settings/ThemeSection';
 import {
   applyPreferencesToStore,
@@ -36,6 +38,7 @@ const TABS: TabItem[] = [
   { id: 'editor', label: 'Editor', icon: <SquareCode size={15} /> },
   { id: 'grid', label: 'Grid', icon: <Table2 size={15} /> },
   { id: 'behavior', label: 'Behavior', icon: <SlidersHorizontal size={15} /> },
+  { id: 'privacy', label: 'Privacy', icon: <ShieldOff size={15} /> },
   { id: 'keyboard', label: 'Keyboard', icon: <Keyboard size={15} /> },
   { id: 'account', label: 'Account', icon: <User size={15} /> },
 ];
@@ -123,6 +126,7 @@ export function SettingsModal() {
           {active === 'editor' ? <EditorSection save={save} query={q} /> : null}
           {active === 'grid' ? <GridSection save={save} query={q} /> : null}
           {active === 'behavior' ? <BehaviorSection save={save} query={q} /> : null}
+          {active === 'privacy' ? <PrivacySection save={save} query={q} /> : null}
           {active === 'keyboard' ? <KeyboardSection save={save} /> : null}
           {active === 'account' ? <AccountSection /> : null}
         </div>

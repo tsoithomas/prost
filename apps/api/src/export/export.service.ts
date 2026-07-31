@@ -6,6 +6,8 @@ import { PoolManager } from '../database/pool-manager.service';
 import type { DbDriver } from '../database/db-driver.interface';
 import type { SqlFragment, TableRef } from '../database/types';
 import { compileWhere } from '../grid/filter';
+import { maskedColumnsFor, redactRows, tableKey } from '../grid/masking';
+import { PreferenceService } from '../preference/preference.service';
 import { buildOrderedStatement, QUERY_PAGE_SIZE } from '../query/paging';
 import { QueryService } from '../query/query.service';
 import { MetadataService } from '../metadata/metadata.service';
@@ -31,6 +33,11 @@ export type PreparedExport =
       delimiter?: string;
       nullToken?: string | null;
       filename: string;
+      /**
+       * Columns to redact before writing (Phase 39). Resolved at prepare time from the caller's
+       * masking preference; empty for a query-scope export, which has no stable table to key on.
+       */
+      masked: Set<string>;
     }
   | {
       kind: 'sql';
@@ -38,6 +45,8 @@ export type PreparedExport =
       includeSchema: boolean;
       includeData: boolean;
       filename: string;
+      /** Per-table masked columns, keyed `"schema.table"` (Phase 39). */
+      maskedByTable: Map<string, Set<string>>;
     };
 
 export interface ExportResult {
@@ -57,6 +66,7 @@ export class ExportService {
     private readonly pool: PoolManager,
     private readonly metadata: MetadataService,
     private readonly queryService: QueryService,
+    private readonly preferences: PreferenceService,
     config: ConfigService,
   ) {
     // Shares the streaming row budget with the Phase 22 cursor (principle §7).
@@ -68,7 +78,7 @@ export class ExportService {
    * (unknown table, non-SELECT query, bad filter, unsupported engine, `sql`+`query`) happens here,
    * before the controller writes any bytes. Touches the DB only for metadata lookups.
    */
-  async prepare(connectionId: string, dto: ExportDto): Promise<PreparedExport> {
+  async prepare(connectionId: string, dto: ExportDto, userId?: string): Promise<PreparedExport> {
     const driver = await this.pool.driverFor(connectionId);
     if (!driver.capabilities.supportsCursors) {
       throw new BadRequestException('Streaming export is not supported for this engine');
@@ -77,7 +87,7 @@ export class ExportService {
     const stamp = new Date().toISOString().slice(0, 10);
 
     if (dto.format === 'sql') {
-      return this.prepareSql(connectionId, dto, stamp);
+      return this.prepareSql(connectionId, dto, stamp, userId);
     }
     if (dto.scope === 'schema') {
       throw new BadRequestException('The schema scope requires the sql format');
@@ -124,6 +134,13 @@ export class ExportService {
       base = 'query';
     }
 
+    // A query-scope export has no stable source table, so nothing is masked — the same boundary the
+    // SQL editor has: masking covers table browsing and table exports, not ad-hoc SQL.
+    const masked =
+      dto.scope === 'table' && dto.schema && dto.table
+        ? await this.resolveMasked(userId, connectionId, dto.schema, dto.table)
+        : new Set<string>();
+
     return {
       kind: 'rows',
       frag,
@@ -131,11 +148,37 @@ export class ExportService {
       delimiter: dto.delimiter,
       nullToken: dto.nullToken,
       filename: `${sanitizeFilename(base)}-${stamp}.${dto.format}`,
+      masked,
     };
   }
 
+  /**
+   * The caller's masked columns for one table; empty without a user context (internal callers).
+   * Primary-key columns are never masked (see `maskedColumnsFor`) — beyond matching what the grid
+   * shows, a SQL dump with a redacted key would emit INSERTs that can't be replayed.
+   */
+  private async resolveMasked(
+    userId: string | undefined,
+    connectionId: string,
+    schema: string,
+    table: string,
+  ): Promise<Set<string>> {
+    if (!userId) return new Set();
+    const [prefs, columns] = await Promise.all([
+      this.preferences.get(userId),
+      this.metadata.getTableColumns(connectionId, schema, table),
+    ]);
+    const primaryKey = columns.filter((column) => column.isPrimaryKey).map((column) => column.name);
+    return maskedColumnsFor(prefs.maskedColumns, connectionId, schema, table, primaryKey);
+  }
+
   /** Validate a SQL dump request (single table or a multi-table schema) and resolve its table list. */
-  private async prepareSql(connectionId: string, dto: ExportDto, stamp: string): Promise<PreparedExport> {
+  private async prepareSql(
+    connectionId: string,
+    dto: ExportDto,
+    stamp: string,
+    userId?: string,
+  ): Promise<PreparedExport> {
     if (dto.scope === 'query') {
       throw new BadRequestException('SQL export is not available for a query result (no target table)');
     }
@@ -156,9 +199,11 @@ export class ExportService {
     }
 
     // Validate each table exists (columns non-empty) before any bytes are written.
+    const maskedByTable = new Map<string, Set<string>>();
     for (const table of tableNames) {
       const columns = await this.metadata.getTableColumns(connectionId, dto.schema, table);
       if (columns.length === 0) throw new NotFoundException(`Table "${dto.schema}.${table}" not found`);
+      maskedByTable.set(tableKey(dto.schema, table), await this.resolveMasked(userId, connectionId, dto.schema, table));
     }
 
     return {
@@ -167,6 +212,7 @@ export class ExportService {
       includeSchema: dto.includeSchema ?? true,
       includeData: dto.includeData ?? true,
       filename: `${sanitizeFilename(base)}-${stamp}.sql`,
+      maskedByTable,
     };
   }
 
@@ -205,7 +251,9 @@ export class ExportService {
           headerWritten = true;
         }
 
-        for (const row of rows) {
+        // Redact before anything is written, so a masked value never reaches the file (Phase 39).
+        const safeRows = redactRows(rows, prepared.masked);
+        for (const row of safeRows) {
           if (prepared.format === 'csv') {
             const values = cursor.columns().map((c) => row[c.name]);
             writer.write(formatCsvRow(values, this.csvOptions(prepared)) + CSV_ROW_TERMINATOR);
@@ -258,7 +306,8 @@ export class ExportService {
 
       if (prepared.includeData) {
         const columns = await this.metadata.getTableColumns(connectionId, schema, table);
-        const { rowCount, truncated } = await this.streamTableInserts(writer, connectionId, driver, ref, columns);
+        const masked = prepared.maskedByTable.get(tableKey(schema, table)) ?? new Set<string>();
+        const { rowCount, truncated } = await this.streamTableInserts(writer, connectionId, driver, ref, columns, masked);
         total += rowCount;
         anyTruncated = anyTruncated || truncated;
         writer.write('\n');
@@ -275,6 +324,7 @@ export class ExportService {
     driver: DbDriver,
     ref: TableRef,
     columns: ColumnMetadata[],
+    masked: Set<string>,
   ): Promise<ExportResult> {
     const frag = driver.buildSelectRows(ref, {
       whereClause: '',
@@ -308,7 +358,7 @@ export class ExportService {
         const blockSize = Math.min(QUERY_PAGE_SIZE, remaining);
         const { rows, complete } = await cursor.fetch(blockSize);
 
-        for (const row of rows) {
+        for (const row of redactRows(rows, masked)) {
           batch.push(`  (${columns.map((c) => driver.formatLiteral(row[c.name], c)).join(', ')})`);
           rowCount += 1;
           if (batch.length >= INSERT_BATCH_ROWS) flush();

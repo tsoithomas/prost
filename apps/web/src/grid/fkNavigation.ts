@@ -26,11 +26,17 @@ export function buildFkNavTargets(
   foreignKeys: ForeignKeyMetadata[],
   referencingKeys: ReferencingKeyMetadata[],
   currentSchema: string,
+  /**
+   * Columns redacted in this response (Phase 39). A masked value is a mask token, not the real key,
+   * so navigating on it would silently filter for `••••` and find nothing — the target is dropped.
+   */
+  masked: Set<string> = new Set(),
 ): FkNavTarget[] {
   const targets: FkNavTarget[] = [];
 
   for (const fk of foreignKeys) {
     if (!fk.columns.includes(colId) || !fk.columns.every((c) => c in row)) continue;
+    if (fk.columns.some((c) => masked.has(c))) continue;
     const values = fk.columns.map((c) => row[c]);
     if (values.some((v) => v === null || v === undefined)) continue;
     targets.push({
@@ -47,6 +53,7 @@ export function buildFkNavTargets(
 
   for (const rk of referencingKeys) {
     if (!rk.referencedColumns.every((c) => c in row)) continue;
+    if (rk.referencedColumns.some((c) => masked.has(c))) continue;
     const values = rk.referencedColumns.map((c) => row[c]);
     if (values.some((v) => v === null || v === undefined)) continue;
     targets.push({

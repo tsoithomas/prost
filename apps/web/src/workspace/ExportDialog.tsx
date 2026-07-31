@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
+import { ShieldOff, X } from 'lucide-react';
 import type { ExportFormat, ExportRequest, RowFilter } from '@prost/shared-types';
 import { Button, IconButton, Input, Modal, Surface, Switch } from '@prost/ui';
 import { useExport } from '../api/export';
 import { apiErrorDetail } from '../lib/apiClient';
+import { useThemeStore } from '../stores/themeStore';
 
 /** What a caller can export: a table (optionally with the active filter) or the current query result. */
 export type ExportTarget =
@@ -25,6 +26,12 @@ export function ExportDialog({ open, onClose, connectionId, target }: Props) {
   const [includeData, setIncludeData] = useState(true);
   const [formError, setFormError] = useState<string | null>(null);
   const exportMutation = useExport(connectionId);
+
+  // Masked columns on the target table (Phase 39) — the server redacts them; this just says so up
+  // front. A query-scope export has no source table, so nothing is masked.
+  const maskedAll = useThemeStore((s) => s.maskedColumns);
+  const maskedHere =
+    target.scope === 'table' ? maskedAll[connectionId]?.[`${target.schema}.${target.table}`] ?? [] : [];
 
   const hasFilter = target.scope === 'table' && (target.filter?.conditions.length ?? 0) > 0;
   // SQL export needs a target table; a bare query result has none.
@@ -90,6 +97,15 @@ export function ExportDialog({ open, onClose, connectionId, target }: Props) {
         </div>
 
         <div className="flex flex-col gap-lg p-lg">
+          {maskedHere.length > 0 ? (
+            <p className="flex items-start gap-sm rounded-sm border border-border bg-surface-sunken p-sm text-xs text-text-muted">
+              <ShieldOff size={13} className="mt-0.5 shrink-0 text-text-faint" />
+              <span>
+                <span className="font-mono text-text">{maskedHere.join(', ')}</span> will be redacted in
+                this export.
+              </span>
+            </p>
+          ) : null}
           <label className="flex flex-col gap-xs">
             <span className="text-xs font-medium uppercase tracking-wider text-text-faint">Format</span>
             <select className={selectCls} value={format} onChange={(e) => setFormat(e.target.value as ExportFormat)} aria-label="Export format">

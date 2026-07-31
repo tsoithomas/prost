@@ -77,3 +77,57 @@ describe('ColumnRenderMenu — clear sort', () => {
     expect(screen.queryByRole('button', { name: 'Clear sort' })).toBeNull();
   });
 });
+
+describe('ColumnRenderMenu — mark sensitive (Phase 39)', () => {
+  it('offers the toggle only when the host can persist it', () => {
+    const { rerender } = render(<ColumnRenderMenu state={stringHeader} onSelect={vi.fn()} onClose={vi.fn()} />);
+    expect(screen.queryByText('Mark sensitive')).not.toBeInTheDocument();
+
+    rerender(
+      <ColumnRenderMenu state={stringHeader} onSelect={vi.fn()} onToggleMask={vi.fn()} onClose={vi.fn()} />,
+    );
+    expect(screen.getByText('Mark sensitive')).toBeInTheDocument();
+  });
+
+  it('marks an unmasked column and closes', async () => {
+    const onToggleMask = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <ColumnRenderMenu state={stringHeader} onSelect={vi.fn()} onToggleMask={onToggleMask} onClose={onClose} />,
+    );
+
+    await userEvent.click(screen.getByText('Mark sensitive'));
+
+    expect(onToggleMask).toHaveBeenCalledWith(true);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('offers to unmark an already-masked column', async () => {
+    const onToggleMask = vi.fn();
+    render(
+      <ColumnRenderMenu state={stringHeader} masked onSelect={vi.fn()} onToggleMask={onToggleMask} onClose={vi.fn()} />,
+    );
+
+    await userEvent.click(screen.getByText('Unmark sensitive'));
+
+    expect(onToggleMask).toHaveBeenCalledWith(false);
+  });
+});
+
+describe('ColumnRenderMenu — primary keys cannot be masked (Phase 39)', () => {
+  const pkHeader: HeaderContextMenuArgs = { field: 'id', category: 'integer', isPrimaryKey: true, x: 10, y: 20 };
+
+  it('explains why instead of offering the toggle', () => {
+    render(<ColumnRenderMenu state={pkHeader} onSelect={vi.fn()} onToggleMask={vi.fn()} onClose={vi.fn()} />);
+
+    expect(screen.getByText("A primary key can't be masked")).toBeInTheDocument();
+    expect(screen.queryByText('Mark sensitive')).not.toBeInTheDocument();
+  });
+
+  it('still offers the toggle on a non-key column', () => {
+    render(<ColumnRenderMenu state={stringHeader} onSelect={vi.fn()} onToggleMask={vi.fn()} onClose={vi.fn()} />);
+
+    expect(screen.getByText('Mark sensitive')).toBeInTheDocument();
+    expect(screen.queryByText("A primary key can't be masked")).not.toBeInTheDocument();
+  });
+});

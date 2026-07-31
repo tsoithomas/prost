@@ -87,3 +87,36 @@ describe('buildFkNavTargets — reverse navigation', () => {
     expect(targets.map((t) => t.direction)).toEqual(['forward', 'reverse']);
   });
 });
+
+describe('buildFkNavTargets — masked columns (Phase 39)', () => {
+  it('drops a forward target whose FK column is masked', () => {
+    // The cell holds a mask token, not the key, so the filter would match nothing.
+    const targets = buildFkNavTargets(
+      'user_id',
+      { id: 1, user_id: '••••' },
+      [usersFk],
+      [],
+      'public',
+      new Set(['user_id']),
+    );
+    expect(targets).toEqual([]);
+  });
+
+  it('drops a reverse target whose referenced column is masked', () => {
+    const targets = buildFkNavTargets('id', { id: '••••' }, [], [ordersReferencing], 'public', new Set(['id']));
+    expect(targets).toEqual([]);
+  });
+
+  it('keeps targets when an unrelated column is masked', () => {
+    const targets = buildFkNavTargets(
+      'user_id',
+      { id: 1, user_id: 7, email: '••••' },
+      [usersFk],
+      [],
+      'public',
+      new Set(['email']),
+    );
+    expect(targets).toHaveLength(1);
+    expect(targets[0]!.filter.conditions[0]!.value).toBe(7);
+  });
+});

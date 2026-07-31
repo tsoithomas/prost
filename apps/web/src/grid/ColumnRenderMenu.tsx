@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowUpDown, Braces, Calendar, Check, RotateCcw, Search, ToggleLeft } from 'lucide-react';
+import { ArrowUpDown, Braces, Calendar, Check, RotateCcw, Search, ShieldOff, ToggleLeft } from 'lucide-react';
 import type { ColumnRenderMode } from '@prost/shared-types';
 import { Input } from '@prost/ui';
 import { availableRenderModes, type HeaderContextMenuArgs } from './columnDefs';
@@ -28,6 +28,13 @@ interface Props {
    * term calls this to add an inline filter on the column (only hosts with a filter feature pass it).
    */
   onFilterColumn?: (term: string) => void;
+  /** Whether this column is currently marked sensitive (Phase 39). */
+  masked?: boolean;
+  /**
+   * Mark/unmark the column sensitive. When omitted the affordance is hidden — hosts without a stable
+   * table identity (ad-hoc query results) have nothing to persist against.
+   */
+  onToggleMask?: (masked: boolean) => void;
   onClose: () => void;
 }
 
@@ -36,7 +43,7 @@ interface Props {
  * has no context-menu API, so this mirrors the custom-menu pattern in `SchemaTree` (fixed-positioned,
  * closes on any outside click / another context-menu / Escape).
  */
-export function ColumnRenderMenu({ state, currentMode, onSelect, onFilterColumn, onClose }: Props) {
+export function ColumnRenderMenu({ state, currentMode, onSelect, onFilterColumn, masked, onToggleMask, onClose }: Props) {
   const [term, setTerm] = useState('');
 
   // Reset the search term whenever a new header is right-clicked.
@@ -148,6 +155,29 @@ export function ColumnRenderMenu({ state, currentMode, onSelect, onFilterColumn,
             <RotateCcw size={13} className="shrink-0 text-text-faint" />
             <span className="flex-1 text-left">Show raw value</span>
           </button>
+        </>
+      ) : null}
+      {onToggleMask ? (
+        <>
+          <div className="my-1 h-px bg-border" />
+          {state.isPrimaryKey ? (
+            // A PK's values are the grid's row identity and the locator for every update/delete, so
+            // redacting one would break the table rather than just hide a value.
+            <div className="px-3 py-1.5 text-xs text-text-faint">A primary key can&apos;t be masked</div>
+          ) : (
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-text hover:bg-surface-hover"
+              onClick={() => {
+                onToggleMask(!masked);
+                onClose();
+              }}
+            >
+              <ShieldOff size={13} className="shrink-0 text-text-faint" />
+              <span className="flex-1 text-left">{masked ? 'Unmark sensitive' : 'Mark sensitive'}</span>
+              {masked ? <Check size={13} className="shrink-0 text-accent" /> : null}
+            </button>
+          )}
         </>
       ) : null}
     </div>

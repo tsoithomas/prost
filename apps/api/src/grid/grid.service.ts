@@ -21,9 +21,11 @@ import type { AuditAction } from '@prost/shared-types';
 import { MetadataService } from '../metadata/metadata.service';
 import { PoolManager } from '../database/pool-manager.service';
 import { AuditService, type AuditRecordBase } from '../audit/audit.service';
+import { PreferenceService } from '../preference/preference.service';
 import type { DbDriver } from '../database/db-driver.interface';
 import type { DriverQueryFn, RowUpdateGuard, TableRef } from '../database/types';
 import { compileWhere } from './filter';
+import { maskedColumnsFor, redactRows } from './masking';
 
 const DEFAULT_LIMIT = 100;
 
@@ -49,6 +51,10 @@ export interface GetRowsOptions {
   sortBy?: string;
   sortDir?: 'asc' | 'desc';
   filter?: RowFilter;
+  /** Whose masking preference applies (Phase 39). Omitted = no masking (internal callers). */
+  userId?: string;
+  /** Per-session opt-out of masking for this read. Audited; never persisted. */
+  reveal?: boolean;
 }
 
 interface ResolvedTable {
@@ -65,6 +71,7 @@ export class GridService {
     private readonly pool: PoolManager,
     private readonly metadataService: MetadataService,
     private readonly audit: AuditService,
+    private readonly preferences: PreferenceService,
   ) {}
 
   private auditBase(
@@ -94,6 +101,7 @@ export class GridService {
   ): Promise<GridResponse> {
     const driver = await this.pool.driverFor(connectionId);
     const { columns, columnNames, primaryKey } = await this.resolveTable(connectionId, schema, table);
+    const masked = await this.resolveMasked(options.userId, connectionId, schema, table, primaryKey);
 
     const hasFilter = (options.filter?.conditions.length ?? 0) > 0;
     const { clause: whereClause, params: filterParams } = hasFilter
@@ -106,6 +114,13 @@ export class GridService {
 
     const limit = options.limit ?? DEFAULT_LIMIT;
     const offset = options.offset ?? 0;
+
+    // A revealed read returns real values and is audited; every other read redacts before the rows
+    // leave the seam, so a masked value never reaches the client (principle §4).
+    const redacting = masked.size > 0 && !options.reveal;
+    if (masked.size > 0 && options.reveal) {
+      await this.recordReveal(options.userId!, connectionId, schema, table, [...masked]);
+    }
 
     const editable = primaryKey.length > 0;
     const ref = { namespace: schema, name: table };
@@ -141,7 +156,7 @@ export class GridService {
       : await this.getApproximateRowCount(connectionId, driver, schema, table);
 
     return {
-      rows,
+      rows: redacting ? redactRows(rows as Record<string, unknown>[], masked) : rows,
       columns,
       totalRows,
       editable,
@@ -150,7 +165,65 @@ export class GridService {
       concurrency: editable ? driver.capabilities.concurrency : undefined,
       foreignKeys,
       referencingKeys,
+      ...(redacting ? { maskedColumns: [...masked] } : {}),
     };
+  }
+
+  /**
+   * Refuses a write to a masked column (Phase 39). The client reads a mask token, so an edit there
+   * would be a blind overwrite of a value the user can't see — the server rejects it rather than
+   * relying on a disabled input.
+   */
+  private async assertNotMasked(
+    userId: string,
+    connectionId: string,
+    schema: string,
+    table: string,
+    columns: string[],
+    primaryKey: readonly string[] = [],
+  ): Promise<void> {
+    // Same PK exclusion as the read, so a PK the user marked stays editable rather than being
+    // shown in the clear but refused on write.
+    const masked = await this.resolveMasked(userId, connectionId, schema, table, primaryKey);
+    const blocked = columns.filter((column) => masked.has(column));
+    if (blocked.length > 0) {
+      throw new UnprocessableEntityException(
+        `Cannot edit masked ${blocked.length === 1 ? 'column' : 'columns'} ${blocked.map((c) => `"${c}"`).join(', ')} — unmark them as sensitive first`,
+      );
+    }
+  }
+
+  /**
+   * The masked columns for this read, or an empty set when no user context / nothing is masked.
+   * `primaryKey` columns are excluded — see `maskedColumnsFor`.
+   */
+  private async resolveMasked(
+    userId: string | undefined,
+    connectionId: string,
+    schema: string,
+    table: string,
+    primaryKey: readonly string[] = [],
+  ): Promise<Set<string>> {
+    if (!userId) return new Set();
+    const prefs = await this.preferences.get(userId);
+    return maskedColumnsFor(prefs.maskedColumns, connectionId, schema, table, primaryKey);
+  }
+
+  /**
+   * Records that masked columns were shown in the clear (Phase 39). Identifiers only — the audit row
+   * names the columns revealed, never a value.
+   */
+  private async recordReveal(
+    userId: string,
+    connectionId: string,
+    schema: string,
+    table: string,
+    columns: string[],
+  ): Promise<void> {
+    await this.audit.withAudit(
+      this.auditBase({ userId }, connectionId, 'reveal', schema, table, `REVEAL ${schema}.${table} (${columns.join(', ')})`),
+      async () => undefined,
+    );
   }
 
   /** Runs a best-effort metadata load: logs and returns `undefined` on failure instead of throwing. */
@@ -186,6 +259,7 @@ export class GridService {
         if (!columnNames.has(req.column)) {
           throw new UnprocessableEntityException(`Column "${req.column}" does not exist on "${schema}.${table}"`);
         }
+        await this.assertNotMasked(ctx.userId, connectionId, schema, table, [req.column], primaryKey);
         this.assertPrimaryKeyMatches(req.primaryKey, primaryKey, schema, table);
 
         return this.pool.withTransaction(connectionId, (q) =>
@@ -226,6 +300,7 @@ export class GridService {
       if (body.rows.length === 0) {
         throw new BadRequestException('No row edits supplied');
       }
+      await this.assertNotMasked(ctx.userId, connectionId, schema, table, bulkColumns, primaryKey);
 
       const ref = { namespace: schema, name: table };
       const prepared = body.rows.map((row) => ({

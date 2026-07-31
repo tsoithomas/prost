@@ -204,6 +204,23 @@ export const COLUMN_RENDER_MODES: ColumnRenderMode[] = ['date', 'boolean', 'json
  */
 export type ColumnRenderOverrides = Record<string, Record<string, Record<string, ColumnRenderMode>>>;
 
+/**
+ * Columns the user marked sensitive, keyed `connectionId → "schema.table" → column names` (Phase 39).
+ * Identifiers only — no target row data is ever persisted (principle §1).
+ *
+ * This is a **display/export transform, not access control**: the server redacts these columns in grid
+ * reads and exports so they can't leak incidentally (a shared screen, a handed-over CSV), but the same
+ * user can reveal them, and query results are never masked.
+ */
+export type MaskedColumns = Record<string, Record<string, string[]>>;
+
+/** What a redacted value is replaced with. Never a partial value — no format-preserving leak. */
+export const MASK_TOKEN = '••••';
+
+/** Caps on the masking preference, so one user's config can't grow unbounded. */
+export const MAX_MASKED_TABLES = 500;
+export const MAX_MASKED_COLUMNS_PER_TABLE = 100;
+
 export interface UserPreferenceDto {
   colorMode: ColorMode;
   accentColor: string;
@@ -216,6 +233,8 @@ export interface UserPreferenceDto {
   connectionOverrides: Record<string, ConnectionThemeOverride>;
   /** Per-column "render as" display overrides (see `ColumnRenderOverrides`). */
   columnRenderOverrides: ColumnRenderOverrides;
+  /** Columns marked sensitive, redacted server-side in grid reads + exports (see `MaskedColumns`). */
+  maskedColumns: MaskedColumns;
   /** UI font family (allowlisted key, not a raw stack); omitted = the shipped default. */
   fontFamily?: FontFamily;
   /** Code-editor (monospace) font family; omitted = the shipped default. */

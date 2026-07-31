@@ -9,6 +9,8 @@ import {
   HEX_COLOR_PATTERN,
   KEYBINDING_ACTIONS,
   LINE_NUMBER_MODES,
+  MAX_MASKED_COLUMNS_PER_TABLE,
+  MAX_MASKED_TABLES,
   MAX_PALETTE_NAME_LENGTH,
   MAX_PALETTES,
   NULL_DISPLAYS,
@@ -24,6 +26,7 @@ import {
   type EditorPreferences,
   type GridDisplayPreferences,
   type KeybindingMap,
+  type MaskedColumns,
 } from '@prost/shared-types';
 
 const COLOR_MODES: ColorMode[] = ['light', 'dark', 'system'];
@@ -97,6 +100,44 @@ export function validateColumnRenderOverrides(value: unknown): ColumnRenderOverr
     }
   }
   return value as ColumnRenderOverrides;
+}
+
+/**
+ * Validates the masked-column map (`connectionId → "schema.table" → column names`, Phase 39). A pure
+ * shape + cap check, exactly like `validateColumnRenderOverrides`: names are identifiers the server
+ * only ever compares against live metadata, and no row data can ride along. Duplicates are collapsed
+ * and empty tables dropped, so unmasking the last column of a table leaves no residue.
+ */
+export function validateMaskedColumns(value: unknown): MaskedColumns {
+  if (!isPlainObject(value)) bad('maskedColumns must be an object');
+  const out: MaskedColumns = {};
+
+  for (const [connectionId, tables] of Object.entries(value)) {
+    if (!isPlainObject(tables)) bad('Each connection masking entry must be an object');
+    if (Object.keys(tables).length > MAX_MASKED_TABLES) {
+      bad(`Too many masked tables (max ${MAX_MASKED_TABLES})`);
+    }
+    const connectionOut: Record<string, string[]> = {};
+
+    for (const [table, columns] of Object.entries(tables)) {
+      if (!Array.isArray(columns)) bad(`Masked columns for ${table} must be an array`);
+      if (columns.length > MAX_MASKED_COLUMNS_PER_TABLE) {
+        bad(`Too many masked columns on ${table} (max ${MAX_MASKED_COLUMNS_PER_TABLE})`);
+      }
+      const names = new Set<string>();
+      for (const column of columns) {
+        if (typeof column !== 'string' || column.trim() === '') {
+          bad(`Invalid masked column name on ${table}: ${String(column)}`);
+        }
+        names.add(column);
+      }
+      if (names.size > 0) connectionOut[table] = [...names];
+    }
+
+    if (Object.keys(connectionOut).length > 0) out[connectionId] = connectionOut;
+  }
+
+  return out;
 }
 
 /**

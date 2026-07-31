@@ -32,6 +32,9 @@ export class GridController {
       sortBy: query.sortBy,
       sortDir: query.sortDir,
       filter: query.filter,
+      // Masking is per-user, so the read needs the caller's identity (Phase 39).
+      userId: user.userId,
+      reveal: query.reveal,
     });
   }
 

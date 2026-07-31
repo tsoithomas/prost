@@ -23,6 +23,8 @@ export interface HeaderContextMenuArgs {
   category: DataTypeCategory;
   x: number;
   y: number;
+  /** A PK can't be masked — its row values are the grid's row identity and the write locator. */
+  isPrimaryKey?: boolean;
   /** Present only when this column is currently sorted — clears its sort (from `CustomHeaderProps.setSort`). */
   onClearSort?: () => void;
 }
@@ -399,6 +401,7 @@ function ColumnHeader({
               onHeaderContextMenu({
                 field,
                 category,
+                isPrimaryKey,
                 x: e.clientX,
                 y: e.clientY,
                 onClearSort: sort ? () => setSort(null) : undefined,
@@ -430,6 +433,8 @@ export interface BuildColumnDefsOptions {
   onHeaderContextMenu?: (args: HeaderContextMenuArgs) => void;
   /** Global grid display preferences (null token, boolean/date formatting, wrap, row numbers). */
   display?: GridDisplayPreferences;
+  /** Columns the server redacted in this response (Phase 39) — rendered read-only. */
+  masked?: Set<string>;
 }
 
 /** A leading, read-only row-number column (`grid.rowNumbers`). */
@@ -452,9 +457,11 @@ export function buildColumnDefs(
   editable = false,
   options: BuildColumnDefsOptions = {},
 ): ColDef[] {
-  const { renderOverrides, onHeaderContextMenu, display = {} } = options;
+  const { renderOverrides, onHeaderContextMenu, display = {}, masked } = options;
   const defs = columns.map((column): ColDef => {
     const mode = renderOverrides?.[column.name];
+    // A masked cell shows a token, so editing it would be a blind overwrite (the server refuses too).
+    const isMasked = masked?.has(column.name) ?? false;
     const category = classifyDataType(column.dataType);
     // A cell renders as boolean when a boolean override is set, or (with no override) the column is a
     // native boolean type. Such cells are colored by truthiness (true = success, false = danger).
@@ -500,10 +507,10 @@ export function buildColumnDefs(
       sortingOrder: ['asc', 'desc'],
       // An edited cell round-trips the raw underlying value, so a render override disables editing for
       // that column (the display transform isn't reversible on write).
-      editable: editable && !mode,
+      editable: editable && !mode && !isMasked,
       // Pin-left/right from the Community column menu; presentation only (principle #5).
       lockPinned: false,
-      ...(editable && !mode ? editorForType(column.dataType) : {}),
+      ...(editable && !mode && !isMasked ? editorForType(column.dataType) : {}),
     };
   });
   return display.rowNumbers ? [rowNumberColDef(), ...defs] : defs;

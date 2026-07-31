@@ -6,10 +6,12 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
-import type { ColumnMetadata } from '@prost/shared-types';
+import type { ColumnMetadata, MaskedColumns } from '@prost/shared-types';
+import { MASK_TOKEN } from '@prost/shared-types';
 import { GridService } from './grid.service';
 import type { MetadataService } from '../metadata/metadata.service';
 import type { AuditService } from '../audit/audit.service';
+import type { PreferenceService } from '../preference/preference.service';
 import type { PoolManager } from '../database/pool-manager.service';
 import type { DriverResult, SqlFragment } from '../database/types';
 import { PgDriver } from '../database/drivers/pg/pg-driver';
@@ -31,6 +33,8 @@ function createService(
   run = vi.fn(),
   columns: ColumnMetadata[] = COLUMNS,
   q?: Mock<(frag: SqlFragment) => Promise<DriverResult>>,
+  /** The caller's masking preference (Phase 39); omitted = nothing masked. */
+  maskedColumns: MaskedColumns = {},
 ) {
   const metadataService = {
     getTableColumns: vi.fn().mockResolvedValue(columns),
@@ -58,7 +62,14 @@ function createService(
   const auditWithAudit = vi.fn((_base: unknown, fn: () => unknown) => fn());
   const audit = { withAudit: auditWithAudit, record: vi.fn() } as unknown as AuditService;
 
-  return { service: new GridService(pool, metadataService, audit), run, q, withTransaction, auditWithAudit };
+  const preferences = {
+    get: vi.fn().mockResolvedValue({ maskedColumns }),
+  } as unknown as PreferenceService;
+
+  return {
+    service: new GridService(pool, metadataService, audit, preferences),
+    run, q, withTransaction, auditWithAudit, preferences,
+  };
 }
 
 describe('GridService.getRows', () => {
@@ -402,5 +413,173 @@ describe('GridService audit (Phase 28)', () => {
     const base = auditWithAudit.mock.calls[0]![0] as { sql: string };
     expect(base.sql).toContain('UPDATE public.users');
     expect(base.sql).not.toContain('x@y.com');
+  });
+});
+
+describe('GridService column masking (Phase 39)', () => {
+  const MASKED: MaskedColumns = { 'conn-1': { 'public.users': ['email'] } };
+
+  /** rows, then the row-count estimate — the two reads getRows makes without a filter. */
+  function readRun() {
+    return vi
+      .fn()
+      .mockResolvedValueOnce(result([{ id: 1, email: 'a@x.com' }, { id: 2, email: null }]))
+      .mockResolvedValueOnce(result([{ reltuples: 2 }]));
+  }
+
+  it('redacts masked columns server-side and reports which were masked', async () => {
+    const { service } = createService(readRun(), COLUMNS, undefined, MASKED);
+
+    const res = await service.getRows('conn-1', 'public', 'users', { userId: 'u1' });
+
+    expect(res.rows[0]).toEqual({ id: 1, email: MASK_TOKEN });
+    expect(res.maskedColumns).toEqual(['email']);
+    // Unmasked columns are untouched, and NULL stays NULL rather than becoming a token.
+    expect(res.rows[1]).toEqual({ id: 2, email: null });
+  });
+
+  it('leaves rows alone when the table has nothing masked', async () => {
+    const { service } = createService(readRun(), COLUMNS, undefined, MASKED);
+
+    const res = await service.getRows('conn-1', 'public', 'orders', { userId: 'u1' });
+
+    expect(res.rows[0]).toEqual({ id: 1, email: 'a@x.com' });
+    expect(res.maskedColumns).toBeUndefined();
+  });
+
+  it('does not mask for a different connection', async () => {
+    const { service } = createService(readRun(), COLUMNS, undefined, MASKED);
+
+    const res = await service.getRows('conn-2', 'public', 'users', { userId: 'u1' });
+
+    expect(res.rows[0]!.email).toBe('a@x.com');
+  });
+
+  it('returns real values on a revealed read, and audits the reveal', async () => {
+    const { service, auditWithAudit } = createService(readRun(), COLUMNS, undefined, MASKED);
+
+    const res = await service.getRows('conn-1', 'public', 'users', { userId: 'u1', reveal: true });
+
+    expect(res.rows[0]!.email).toBe('a@x.com');
+    expect(res.maskedColumns).toBeUndefined();
+    expect(auditWithAudit).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'reveal', targetSchema: 'public', targetTable: 'users', userId: 'u1' }),
+      expect.any(Function),
+    );
+    // The audit row names the columns revealed, never a value.
+    const base = auditWithAudit.mock.calls[0]![0] as { sql: string };
+    expect(base.sql).toContain('email');
+    expect(base.sql).not.toContain('a@x.com');
+  });
+
+  it('does not audit a read of a table with nothing masked', async () => {
+    const { service, auditWithAudit } = createService(readRun(), COLUMNS, undefined, {});
+
+    await service.getRows('conn-1', 'public', 'users', { userId: 'u1', reveal: true });
+
+    expect(auditWithAudit).not.toHaveBeenCalled();
+  });
+
+  it('refuses an inline edit to a masked column', async () => {
+    const { service, run } = createService(vi.fn(), COLUMNS, undefined, MASKED);
+
+    await expect(
+      service.updateCell(
+        'conn-1', 'public', 'users',
+        { column: 'email', value: 'new@x.com', primaryKey: { id: 1 } },
+        { userId: 'u1' },
+      ),
+    ).rejects.toThrow(UnprocessableEntityException);
+    // Rejected before any statement ran — not a disabled input, a server-side gate.
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('refuses a bulk edit touching a masked column', async () => {
+    const { service } = createService(vi.fn(), COLUMNS, undefined, MASKED);
+
+    await expect(
+      service.bulkUpdate(
+        'conn-1', 'public', 'users',
+        { rows: [{ primaryKey: { id: 1 }, edits: [{ column: 'email', value: 'x' }], version: '1' }] },
+        { userId: 'u1' },
+      ),
+    ).rejects.toThrow(/masked/);
+  });
+
+  it('still allows editing an unmasked column on a table that has masks', async () => {
+    const run = vi.fn().mockResolvedValue(result([{ id: 9, email: 'a@x.com' }]));
+    const { service } = createService(run, COLUMNS, undefined, MASKED);
+
+    await expect(
+      service.updateCell(
+        'conn-1', 'public', 'users',
+        { column: 'id', value: 9, primaryKey: { id: 1 } },
+        { userId: 'u1' },
+      ),
+    ).resolves.toBeDefined();
+  });
+
+  it('skips masking entirely without a user context (internal callers)', async () => {
+    const { service, preferences } = createService(readRun(), COLUMNS, undefined, MASKED);
+
+    const res = await service.getRows('conn-1', 'public', 'users', {});
+
+    expect(res.rows[0]!.email).toBe('a@x.com');
+    expect(preferences.get).not.toHaveBeenCalled();
+  });
+});
+
+describe('GridService masking never redacts a primary key (Phase 39)', () => {
+  /** rows, then the row-count estimate. */
+  function readRun() {
+    return vi
+      .fn()
+      .mockResolvedValueOnce(result([{ id: 1, email: 'a@x.com' }, { id: 2, email: 'b@x.com' }]))
+      .mockResolvedValueOnce(result([{ reltuples: 2 }]));
+  }
+
+  it('returns real PK values even when the PK is marked sensitive', async () => {
+    const masked: MaskedColumns = { 'conn-1': { 'public.users': ['id', 'email'] } };
+    const { service } = createService(readRun(), COLUMNS, undefined, masked);
+
+    const res = await service.getRows('conn-1', 'public', 'users', { userId: 'u1' });
+
+    // Row identity and the write locator both come from these values.
+    expect(res.rows[0]!.id).toBe(1);
+    expect(res.rows[1]!.id).toBe(2);
+    expect(res.rows[0]!.email).toBe(MASK_TOKEN);
+    expect(res.maskedColumns).toEqual(['email']);
+  });
+
+  it('reports nothing masked when only the PK was marked', async () => {
+    const { service } = createService(readRun(), COLUMNS, undefined, {
+      'conn-1': { 'public.users': ['id'] },
+    });
+
+    const res = await service.getRows('conn-1', 'public', 'users', { userId: 'u1' });
+
+    expect(res.rows[0]!.id).toBe(1);
+    expect(res.maskedColumns).toBeUndefined();
+  });
+
+  it('still allows editing a PK that was marked sensitive', async () => {
+    const run = vi.fn().mockResolvedValue(result([{ id: 9, email: 'a@x.com' }]));
+    const { service } = createService(run, COLUMNS, undefined, { 'conn-1': { 'public.users': ['id'] } });
+
+    // The read shows it in the clear, so refusing the write would be inconsistent.
+    await expect(
+      service.updateCell('conn-1', 'public', 'users', { column: 'id', value: 9, primaryKey: { id: 1 } }, { userId: 'u1' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('masks normally on a table with no primary key', async () => {
+    const { service } = createService(readRun(), NO_PK_COLUMNS, undefined, {
+      'conn-1': { 'public.logs': ['email'] },
+    });
+
+    const res = await service.getRows('conn-1', 'public', 'logs', { userId: 'u1' });
+
+    expect(res.rows[0]!.email).toBe(MASK_TOKEN);
+    expect(res.editable).toBe(false);
   });
 });

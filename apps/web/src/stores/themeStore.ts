@@ -5,6 +5,7 @@ import type {
   ColorMode,
   ColumnRenderMode,
   ColumnRenderOverrides,
+  MaskedColumns,
   ConnectionThemeOverride,
   CustomPalette,
   DataColorKey,
@@ -99,6 +100,20 @@ interface ThemeState {
     column: string,
     mode: ColumnRenderMode | null,
   ) => ColumnRenderOverrides;
+  /**
+   * Columns marked sensitive (Phase 39). The server is what actually redacts them; this mirror only
+   * drives the UI (menu state, the settings roster) and the write-through to preferences.
+   */
+  maskedColumns: MaskedColumns;
+  /** Replace the whole mask map (used by server hydration). */
+  setMaskedColumns: (masked: MaskedColumns) => void;
+  /** Mark/unmark one column sensitive; returns the new full map to write through. */
+  setColumnMasked: (
+    connectionId: string,
+    sourceTable: string,
+    column: string,
+    masked: boolean,
+  ) => MaskedColumns;
 }
 
 /** Immutably set/clear one leaf in the `connection → table → column → mode` map, pruning empties. */
@@ -117,6 +132,29 @@ function applyRenderOverride(
   } else {
     delete columns[column];
     if (Object.keys(columns).length === 0) delete tables[sourceTable];
+    if (Object.keys(tables).length === 0) delete next[connectionId];
+  }
+  return next;
+}
+
+/** Immutably toggle one column in the `connection → table → column[]` mask map, pruning empties. */
+function applyMask(
+  current: MaskedColumns,
+  connectionId: string,
+  sourceTable: string,
+  column: string,
+  masked: boolean,
+): MaskedColumns {
+  const next: MaskedColumns = structuredClone(current);
+  const tables = (next[connectionId] ??= {});
+  const columns = new Set(tables[sourceTable] ?? []);
+  if (masked) {
+    columns.add(column);
+    tables[sourceTable] = [...columns];
+  } else {
+    columns.delete(column);
+    if (columns.size === 0) delete tables[sourceTable];
+    else tables[sourceTable] = [...columns];
     if (Object.keys(tables).length === 0) delete next[connectionId];
   }
   return next;
@@ -151,6 +189,7 @@ export const useThemeStore = create<ThemeState>()(
       connectionOverrides: {},
       activeOverrideConnectionId: null,
       columnRenderOverrides: {},
+      maskedColumns: {},
       fontFamily: undefined,
       monoFontFamily: undefined,
       radiusScale: 'normal',
@@ -264,6 +303,14 @@ export const useThemeStore = create<ThemeState>()(
         set({ columnRenderOverrides: next });
         return next;
       },
+
+      setMaskedColumns: (masked) => set({ maskedColumns: masked }),
+
+      setColumnMasked: (connectionId, sourceTable, column, masked) => {
+        const next = applyMask(get().maskedColumns, connectionId, sourceTable, column, masked);
+        set({ maskedColumns: next });
+        return next;
+      },
     }),
     {
       name: 'prost-theme',
@@ -279,6 +326,7 @@ export const useThemeStore = create<ThemeState>()(
         keybindings: state.keybindings,
         connectionOverrides: state.connectionOverrides,
         columnRenderOverrides: state.columnRenderOverrides,
+        maskedColumns: state.maskedColumns,
         fontFamily: state.fontFamily,
         monoFontFamily: state.monoFontFamily,
         radiusScale: state.radiusScale,
