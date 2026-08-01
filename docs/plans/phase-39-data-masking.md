@@ -9,7 +9,7 @@ those columns in grid reads **and** exports before the data leaves the seam. It 
 depending on Phase 30 (export), and it is a **display/export transform — explicitly not access control**
 (a single user toggling their own view), so it introduces no RBAC.
 
-Roadmap item: Phase 39 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md). Depends on Phase 30.
+Roadmap item: Phase 39 in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md). Depends on Phase 30.
 
 ## Decisions (to confirm before building)
 

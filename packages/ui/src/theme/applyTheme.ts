@@ -115,6 +115,15 @@ export function applyReduceMotion(on: boolean): void {
   document.documentElement.toggleAttribute('data-reduce-motion', on);
 }
 
+/**
+ * Toggles `<html data-hide-focus-ring>`; `tokens.css` suppresses the `:focus-visible` outline when
+ * present. An opt-out of an accessibility affordance (Phase 35) — hidden by default; turn it back
+ * on in Settings › Appearance if you rely on seeing keyboard focus.
+ */
+export function applyHideFocusRing(on: boolean): void {
+  document.documentElement.toggleAttribute('data-hide-focus-ring', on);
+}
+
 /** Concrete font stacks for each allowlisted UI-font key (`--font-sans`). */
 export const FONT_FAMILY_STACK: Record<FontFamily, string> = {
   system: 'ui-sans-serif, system-ui, sans-serif',

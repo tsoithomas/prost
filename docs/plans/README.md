@@ -53,13 +53,14 @@ passes **and** it violates none of the architecture principles.
 | [37](./phase-37-column-profiling.md) | Column profiling & table data statistics | ✅ Complete |
 | [38](./phase-38-object-comments.md) | Table & column documentation (native comments) | ✅ Complete |
 | [39](./phase-39-data-masking.md) | Data masking / sensitive-column redaction | ✅ Complete |
-| [40](./phase-40-perf-insights.md) | On-demand query-performance insights & index advisor | 🔲 Planned |
-| [41](./phase-41-schema-diff.md) | Schema comparison & migration diff (live-vs-live) | 🔲 Planned |
-| [42](./phase-42-data-generation.md) | Data generation / test-data seeding | 🔲 Planned |
-| [43](./phase-43-saved-dashboards.md) | Saved dashboards / pinned result charts | 🔲 Planned |
-| [44](./phase-44-grid-conflict-detection.md) | Grid concurrency: optimistic-conflict detection | 🔲 Planned |
-| [45](./phase-45-ai-query-rewrite.md) | AI query-optimization & rewrite advisor | 🔲 Planned |
-| [46](./phase-46-ai-data-editing.md) | AI-assisted data editing with preview | 🔲 Planned |
+| [40](./phase-40-usability-polish.md) | Usability & interaction polish (shortcuts, tooltips, feedback, focus mode) | ✅ Complete |
+| [41](./phase-41-perf-insights.md) | On-demand query-performance insights & index advisor | 🔲 Planned |
+| [42](./phase-42-schema-diff.md) | Schema comparison & migration diff (live-vs-live) | 🔲 Planned |
+| [43](./phase-43-data-generation.md) | Data generation / test-data seeding | 🔲 Planned |
+| [44](./phase-44-saved-dashboards.md) | Saved dashboards / pinned result charts | 🔲 Planned |
+| [45](./phase-45-grid-conflict-detection.md) | Grid concurrency: optimistic-conflict detection | 🔲 Planned |
+| [46](./phase-46-ai-query-rewrite.md) | AI query-optimization & rewrite advisor | 🔲 Planned |
+| [47](./phase-47-ai-data-editing.md) | AI-assisted data editing with preview | 🔲 Planned |
 
 Phases 0–5 are the **MVP** (complete). Phases 6–10 are the **first post-MVP wave** drawn from
 [`../future-features.md`](../future-features.md) (all complete). Phases 11–22 are the **second
@@ -72,32 +73,47 @@ sequenced in [`roadmap-phase-23-33.md`](./roadmap-phase-23-33.md). Phases 23–3
 guardrails, query-plan visualization, active-session monitoring, a mutation & DDL audit trail, error
 explanation + result-insight charts, streaming CSV/JSON data export & import, agentic read-only query
 execution, SSH tunneling, and AI schema-change suggestions) — the third wave is now **exhausted**.
-Phases 34–46 are the **fourth wave** — a "depth within the rails" set that stays single-user and
+Phases 34–47 are the **fourth wave** — a "depth within the rails" set that stays single-user and
 self-hosted (no team/multi-tenant, RBAC, new engines, or background jobs), mixing new features (ER diagram,
 column profiling, native-comment documentation, data masking, on-demand perf/index advisor, schema diff,
 data generation, saved dashboards, AI query-rewrite and AI-assisted data editing) with strengthening of
-shipped features (a redesigned settings experience, accessibility hardening, and grid concurrency
-detection). It is sequenced in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md); every hard dependency
-lands on an already-complete phase, and its only §13 amendment unfreezes ER diagrams. **Phases 34–36 are
-complete**: the settings/preferences redesign; the accessibility & keyboard-navigation pass (a visible
-focus ring, the shared `Modal` adopted across all dialogs, ARIA on the tab bar / schema tree / command
-palette / bottom nav, an expanded keyboard-shortcut registry with a help overlay, and automated `axe-core`
-checks); and the read-only ER diagram (a schema-wide `buildListSchemaForeignKeys` driver read behind
-`GET :id/schemas/:schema/foreign-keys`, a dependency-free layered layout in `workspace/erLayout.ts`, and an
-`'erDiagram'` workspace tab rendering `ErDiagramView` — pan/zoom, node → open table, edge → constraint
-detail, no DDL and no persisted layout); and on-demand column profiling (a `planProfileSample` /
-`buildColumnProfile` / `buildColumnTopValues` driver seam with shared SQL in `drivers/profile-sql.ts`,
-`GET …/profile` + `…/profile/:column/values`, and a third `Profile` table view mode showing per-column
-null share, distinct count, range and a lazily-loaded top-N distribution — bounded by engine-native
-sampling and labelled as such); and native table/column comments (read via `buildTableComment` +
-`comment` aliases, written as a `setComment` `AlterTableOperation` through the *existing* DDL
-preview→confirm→execute pipeline, capability-gated by `ddl.supportsObjectComments` so SQLite hides it,
-with an optional `POST :id/ai/describe-object` draft the user edits before applying); and per-column data
-masking (a `maskedColumns` preference of identifiers only, redacted **server-side** in grid reads and
-CSV/JSON/SQL exports via the pure `grid/masking.ts`, with masked columns refused for editing, an audited
-per-session `?reveal=true`, and a Settings › Privacy roster). Masking is a display/export transform, not
-access control: query results are deliberately never masked, and the UI says so. **Phases 40–46 are
-planned**.
+shipped features (a redesigned settings experience, accessibility hardening, usability/interaction polish,
+and grid concurrency detection). It is sequenced in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md);
+every hard dependency lands on an already-complete phase, and its only §13 amendment unfreezes ER diagrams.
+**Phases 34–40 are complete**: the settings/preferences
+redesign; the accessibility & keyboard-navigation pass (a visible focus ring, the shared `Modal` adopted
+across all dialogs, ARIA on the tab bar / schema tree / command palette / bottom nav, an expanded
+keyboard-shortcut registry with a help overlay, and automated `axe-core` checks); the read-only ER diagram
+(a schema-wide `buildListSchemaForeignKeys` driver read behind `GET :id/schemas/:schema/foreign-keys`, a
+dependency-free layered layout in `workspace/erLayout.ts`, and an `'erDiagram'` workspace tab rendering
+`ErDiagramView` — pan/zoom, node → open table, edge → constraint detail, no DDL and no persisted layout);
+on-demand column profiling (a `planProfileSample` / `buildColumnProfile` / `buildColumnTopValues` driver
+seam with shared SQL in `drivers/profile-sql.ts`, `GET …/profile` + `…/profile/:column/values`, and a third
+`Profile` table view mode showing per-column null share, distinct count, range and a lazily-loaded top-N
+distribution — bounded by engine-native sampling and labelled as such); native table/column comments (read
+via `buildTableComment` + `comment` aliases, written as a `setComment` `AlterTableOperation` through the
+*existing* DDL preview→confirm→execute pipeline, capability-gated by `ddl.supportsObjectComments` so
+SQLite hides it, with an optional `POST :id/ai/describe-object` draft the user edits before applying); and
+per-column data masking (a `maskedColumns` preference of identifiers only, redacted **server-side** in grid
+reads and CSV/JSON/SQL exports via the pure `grid/masking.ts`, with masked columns refused for editing, an
+audited per-session `?reveal=true`, and a Settings › Privacy roster). Masking is a display/export
+transform, not access control: query results are deliberately never masked, and the UI says so. **Phase 40
+is complete** — usability & interaction polish, inserted ahead of the original 40–46 run (which shifted to
+**41–47**) to close gaps Phase 35 left open before the remaining DBA/AI slices add more UI on top: an
+expanded `KEYBINDING_ACTIONS` registry (find-in-grid, copy-cells, save-edits, tab navigation, pane-focus,
+sidebar/focus-mode toggles, refresh); a `Tooltip` primitive in `@prost/ui` (hover + keyboard focus, an
+optional shortcut chord, suppressed on touch) adopted across previously-untooltipped icon buttons; a
+`commands` section in the command palette (`search/commands.ts`'s `useCommands`) listed first and shown
+even on an empty query, backed by one-shot `workspaceStore` hand-offs (`requestFocus`,
+`requestViewAction`) so it can trigger refresh/export/focus without new per-view plumbing; visible
+feedback (a spinning refresh icon with a minimum visible duration, success toasts, a flashed row on save,
+shimmering `Skeleton` loading, a live query-elapsed timer) — all riding the existing `[data-reduce-motion]`
+CSS gate for free; a focus mode (`layoutStore.focusMode`) that hides both shells' chrome behind a floating
+`FocusModeExit`, plus a persisted `leftSidebarCollapsed` and a generalized `useResizablePane` (vertical +
+horizontal) powering the SQL editor's maximize-editor/maximize-results split; an always-open grid cell
+context menu (copy value/row-as-TSV/row-as-JSON, filter by value, set NULL) ahead of any FK navigation
+entries; and small wins (middle-click/double-click tab-bar gestures, an unsaved-edit close guard, and a
+per-table `tableViewModeStore` remembering each table's last view mode). **Phases 41–47 are planned**.
 
 ## Sequencing notes
 

@@ -9,7 +9,7 @@ ever seen one edge at a time. This phase renders a schema's tables and their FK 
 metadata the app already fetches. It is a DBA-depth feature, **mostly frontend**, and adds no new data
 path: it is the read-only rendering the §13 amendment unfreezes. It depends on Phase 23.
 
-Roadmap item: Phase 36 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md). Requires the §13 amendment
+Roadmap item: Phase 36 in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md). Requires the §13 amendment
 (ER diagrams unfrozen).
 
 ## Decisions (to confirm before building)

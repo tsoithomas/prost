@@ -23,6 +23,7 @@ function buildRow(overrides: Partial<UserPreference> = {}): UserPreference {
     grid: '{}',
     behavior: '{}',
     reduceMotion: false,
+    hideFocusRing: false,
     aiEnabled: true,
     ...overrides,
   };
@@ -53,6 +54,7 @@ describe('toUserPreferenceDto', () => {
       grid: {},
       behavior: {},
       reduceMotion: false,
+      hideFocusRing: false,
       aiEnabled: true,
     });
   });
@@ -64,6 +66,7 @@ describe('toUserPreferenceDto', () => {
         grid: '{"nullDisplay":"upper","pageSize":200}',
         behavior: '{"confirmWrites":true}',
         reduceMotion: true,
+        hideFocusRing: true,
         aiEnabled: false,
       }),
     );
@@ -71,6 +74,7 @@ describe('toUserPreferenceDto', () => {
     expect(dto.grid).toEqual({ nullDisplay: 'upper', pageSize: 200 });
     expect(dto.behavior).toEqual({ confirmWrites: true });
     expect(dto.reduceMotion).toBe(true);
+    expect(dto.hideFocusRing).toBe(true);
     expect(dto.aiEnabled).toBe(false);
   });
 
@@ -113,6 +117,7 @@ describe('PreferenceService.get', () => {
       grid: {},
       behavior: {},
       reduceMotion: false,
+      hideFocusRing: true,
       aiEnabled: true,
     });
     expect(findUnique).toHaveBeenCalledWith({ where: { userId: 'user-1' } });
@@ -143,6 +148,7 @@ describe('PreferenceService.update', () => {
         fontSize: 'md',
         gridDensity: 'normal',
         radiusScale: 'normal',
+        hideFocusRing: true,
       },
       update: { colorMode: 'light' },
     });
@@ -178,6 +184,7 @@ describe('PreferenceService.update', () => {
       editor: { minimap: true },
       grid: { pageSize: 500 },
       reduceMotion: true,
+      hideFocusRing: true,
       aiEnabled: false,
     });
 
@@ -185,6 +192,7 @@ describe('PreferenceService.update', () => {
     expect(call.update.editor).toBe('{"minimap":true}');
     expect(call.update.grid).toBe('{"pageSize":500}');
     expect(call.update.reduceMotion).toBe(true);
+    expect(call.update.hideFocusRing).toBe(true);
     expect(call.update.aiEnabled).toBe(false);
   });
 

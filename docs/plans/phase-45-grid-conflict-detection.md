@@ -1,4 +1,4 @@
-# Prost — Phase 44: Grid Concurrency — Optimistic-Conflict Detection
+# Prost — Phase 45: Grid Concurrency — Optimistic-Conflict Detection
 
 ## Context
 
@@ -9,7 +9,7 @@ strengthening phase adds **optimistic-concurrency detection**: the server carrie
 re-checks it on write, and returns a specific conflict instead of clobbering. It depends on Phases 2
 (editing) and 18 (grid depth).
 
-Roadmap item: Phase 44 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md).
+Roadmap item: Phase 45 in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md).
 
 ## Decisions (to confirm before building)
 

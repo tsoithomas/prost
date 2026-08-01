@@ -102,5 +102,9 @@ export class UpdatePreferenceDto implements Partial<UserPreferenceDto> {
 
   @IsOptional()
   @IsBoolean()
+  hideFocusRing?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
   aiEnabled?: boolean;
 }

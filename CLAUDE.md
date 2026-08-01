@@ -12,13 +12,12 @@ implementation plans + status live in [`docs/plans/`](docs/plans/README.md). Dur
 architectural rules (read before making non-trivial changes — a violation is a defect
 even if it works): [`docs/architecture-principles.md`](docs/architecture-principles.md).
 
-**Current status**: All phases **0–33 complete** (see [`docs/plans/README.md`](docs/plans/README.md) for
-the authoritative status table); **phases 34–46 are planned** — a fourth "depth within the rails" wave
-(settings redesign, accessibility, ER diagram, column profiling, native-comment docs, data masking,
-on-demand perf/index advisor, schema diff, data generation, saved dashboards, grid conflict detection, AI
-query-rewrite, AI-assisted data editing), sequenced in
-[`docs/plans/roadmap-phase-34-46.md`](docs/plans/roadmap-phase-34-46.md). The prose below summarizes the
-shipped feature set through phase 24 and is not a full account of phases 25–33 (the README is). Login (JWT
+**Current status**: All phases **0–40 complete** (see [`docs/plans/README.md`](docs/plans/README.md) for
+the authoritative status table); **phases 41–47 are planned** — the rest of a fourth "depth within the
+rails" wave (on-demand perf/index advisor, schema diff, data generation, saved dashboards, grid conflict
+detection, AI query-rewrite, AI-assisted data editing), sequenced in
+[`docs/plans/roadmap-phase-34-47.md`](docs/plans/roadmap-phase-34-47.md). The prose below summarizes the
+shipped feature set through phase 24 and is not a full account of phases 25–40 (the README is). Login (JWT
 via `/auth/login`, guarded `/app/*`
 routes), connection CRUD + test (`/connections`), real schema tree
 (`/connections/:id/metadata`), paginated table rows via AG Grid's Infinite Row Model

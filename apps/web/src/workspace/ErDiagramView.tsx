@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { Key, Link2, ListTree, Maximize2, Table2, X, ZoomIn, ZoomOut } from 'lucide-react';
 import clsx from 'clsx';
-import { Badge, Button, IconButton } from '@prost/ui';
+import { Badge, Button, IconButton, Tooltip } from '@prost/ui';
 import { useMetadata, useSchemaForeignKeys } from '../api/metadata';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { buildErGraph, edgePath, graphBounds, layoutErGraph, type ErEdge, type ErNode } from './erLayout';
@@ -49,7 +49,10 @@ export function ErDiagramView({ connectionId, schema }: ErDiagramViewProps) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [transform, setTransform] = useState<Transform>({ x: FIT_PADDING, y: FIT_PADDING, scale: 1 });
 
-  const viewportRef = useRef<HTMLDivElement>(null);
+  // A state (not a plain ref) so effects that need to (re)attach once the node exists can depend on
+  // it directly — see the wheel-listener effect below for why a derived value like node count isn't
+  // a safe dependency for "has the viewport div actually mounted yet".
+  const [viewportEl, setViewportEl] = useState<HTMLDivElement | null>(null);
   // Active pointers on the canvas, for one-finger pan and two-finger pinch.
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const panRef = useRef<{ x: number; y: number; originX: number; originY: number; moved: boolean } | null>(null);
@@ -70,34 +73,64 @@ export function ErDiagramView({ connectionId, schema }: ErDiagramViewProps) {
   const nodesByKey = useMemo(() => new Map(graph.nodes.map((node) => [node.key, node])), [graph]);
   const selectedEdge = graph.edges.find((edge) => edge.id === selectedEdgeId) ?? null;
 
+  // Centers the diagram in the viewport at a given scale (anchored to the top-left padding instead
+  // of centered when the diagram is bigger than the viewport at that scale — pannable, not clipped
+  // symmetrically off both edges).
+  const applyScale = useCallback(
+    (rawScale: number) => {
+      const viewport = viewportEl;
+      if (!viewport) return;
+      const { width, height } = viewport.getBoundingClientRect();
+      if (width === 0 || height === 0) return;
+      const scale = clampScale(rawScale);
+      setTransform({
+        scale,
+        x: Math.max(FIT_PADDING, (width - bounds.width * scale) / 2),
+        y: Math.max(FIT_PADDING, (height - bounds.height * scale) / 2),
+      });
+    },
+    [bounds, viewportEl],
+  );
+
+  // The toolbar's explicit "Fit to view" action: shrinks (or grows, up to 100%) so the whole
+  // diagram is visible at once. This is the one place a low scale is the point — the user asked to
+  // see everything, so it isn't floored the way the on-open default below is.
   const fitToView = useCallback(() => {
-    const viewport = viewportRef.current;
-    if (!viewport || bounds.width === 0 || bounds.height === 0) return;
+    if (bounds.width === 0 || bounds.height === 0) return;
+    const viewport = viewportEl;
+    if (!viewport) return;
     const { width, height } = viewport.getBoundingClientRect();
     if (width === 0 || height === 0) return;
-    const scale = clampScale(
-      Math.min(1, (width - FIT_PADDING * 2) / bounds.width, (height - FIT_PADDING * 2) / bounds.height),
-    );
-    setTransform({
-      scale,
-      x: Math.max(FIT_PADDING, (width - bounds.width * scale) / 2),
-      y: Math.max(FIT_PADDING, (height - bounds.height * scale) / 2),
-    });
-  }, [bounds]);
+    applyScale(Math.min(1, (width - FIT_PADDING * 2) / bounds.width, (height - FIT_PADDING * 2) / bounds.height));
+  }, [bounds, viewportEl, applyScale]);
 
-  // Fit once per schema/connection, not on every column-toggle re-layout.
+  // On open / schema change / connection change, default to actual (100%) size rather than a
+  // computed "shrink to fit everything" scale — legible table labels matter more on first look than
+  // seeing the whole schema at once. The user can still hit "Fit to view" (or zoom out) for the
+  // full picture. `viewportEl` must be a dependency (not just node count): while foreign keys are
+  // still loading, this component renders a "Loading…" placeholder with no viewport div, but
+  // `graph.nodes.length` is already at its final value (nodes come from metadata alone, not FKs) —
+  // so once loading finishes and the div mounts, node count hasn't changed and wouldn't re-trigger
+  // this effect.
   useEffect(() => {
-    fitToView();
+    applyScale(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId, schema, graph.nodes.length]);
+  }, [connectionId, schema, graph.nodes.length, viewportEl]);
 
   // Wheel must be a non-passive native listener to stop the surrounding panel from scrolling.
+  // Deliberate (Phase 40): a plain wheel zooms at the pointer, not `Ctrl`+wheel — the canvas is
+  // `overflow-hidden` (no scroll position to preserve), panning is already covered by drag and
+  // two-finger pinch, and a trackpad pinch arrives as `ctrlKey`+wheel and zooms through this same
+  // path regardless. Do not gate this behind a modifier.
+  //
+  // Depends on `viewportEl` (the mounted DOM node itself), not `graph.nodes.length`: node count can
+  // be unchanged across the loading→loaded transition (see the fit-to-view effect above for why),
+  // which would leave this effect stuck on its first, no-op run against a still-null ref.
   useEffect(() => {
-    const viewport = viewportRef.current;
-    if (!viewport) return;
+    if (!viewportEl) return;
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
-      const rect = viewport.getBoundingClientRect();
+      const rect = viewportEl.getBoundingClientRect();
       const pointerX = event.clientX - rect.left;
       const pointerY = event.clientY - rect.top;
       setTransform((current) => {
@@ -106,10 +139,9 @@ export function ErDiagramView({ connectionId, schema }: ErDiagramViewProps) {
         return { scale, x: pointerX - (pointerX - current.x) * ratio, y: pointerY - (pointerY - current.y) * ratio };
       });
     };
-    viewport.addEventListener('wheel', onWheel, { passive: false });
-    return () => viewport.removeEventListener('wheel', onWheel);
-    // Re-attaches when the canvas first appears (it isn't rendered while loading or when empty).
-  }, [graph.nodes.length]);
+    viewportEl.addEventListener('wheel', onWheel, { passive: false });
+    return () => viewportEl.removeEventListener('wheel', onWheel);
+  }, [viewportEl]);
 
   function onPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -214,15 +246,21 @@ export function ErDiagramView({ connectionId, schema }: ErDiagramViewProps) {
             <ListTree size={13} />
             Relationships
           </Button>
-          <IconButton aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>
-            <ZoomOut size={13} />
-          </IconButton>
-          <IconButton aria-label="Zoom in" onClick={() => zoomBy(1.2)}>
-            <ZoomIn size={13} />
-          </IconButton>
-          <IconButton aria-label="Fit to view" onClick={fitToView}>
-            <Maximize2 size={13} />
-          </IconButton>
+          <Tooltip content="Zoom out">
+            <IconButton aria-label="Zoom out" onClick={() => zoomBy(1 / 1.2)}>
+              <ZoomOut size={13} />
+            </IconButton>
+          </Tooltip>
+          <Tooltip content="Zoom in">
+            <IconButton aria-label="Zoom in" onClick={() => zoomBy(1.2)}>
+              <ZoomIn size={13} />
+            </IconButton>
+          </Tooltip>
+          <Tooltip content="Fit to view">
+            <IconButton aria-label="Fit to view" onClick={fitToView}>
+              <Maximize2 size={13} />
+            </IconButton>
+          </Tooltip>
         </div>
       </div>
 
@@ -231,7 +269,7 @@ export function ErDiagramView({ connectionId, schema }: ErDiagramViewProps) {
       ) : (
         <div className="relative flex min-h-0 flex-1">
           <div
-            ref={viewportRef}
+            ref={setViewportEl}
             className="min-h-0 flex-1 overflow-hidden bg-surface-sunken"
             style={{ touchAction: 'none', cursor: 'grab' }}
             onPointerDown={onPointerDown}

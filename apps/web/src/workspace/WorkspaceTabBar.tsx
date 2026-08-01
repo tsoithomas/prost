@@ -189,6 +189,11 @@ export function WorkspaceTabBar({
             scrollRef.current?.querySelector<HTMLElement>(`#workspace-tab-${CSS.escape(nextId)}`)?.focus();
           });
         }}
+        // Double-click on the empty strip (not on a tab) opens a new query tab (Phase 40) —
+        // `e.target === e.currentTarget` excludes double-clicks that bubble up from a tab child.
+        onDoubleClick={(e) => {
+          if (e.target === e.currentTarget) onNewTab();
+        }}
         className="no-scrollbar flex flex-1 items-end gap-1 overflow-x-auto"
       >
         {tabs.map((tab) => {
@@ -215,6 +220,13 @@ export function WorkspaceTabBar({
               data-tab-id={tab.id}
               draggable
               onClick={() => onSelect(tab.id)}
+              // Middle-click closes the tab (Phase 40), matching browser-tab convention.
+              onAuxClick={(e) => {
+                if (e.button === 1 && canClose) {
+                  e.preventDefault();
+                  onClose(tab.id);
+                }
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();

@@ -1,4 +1,4 @@
-# Prost — Phase 46: AI-Assisted Data Editing with Preview
+# Prost — Phase 47: AI-Assisted Data Editing with Preview
 
 ## Context
 
@@ -10,7 +10,7 @@ write pipeline** — the model never executes, every candidate is server-validat
 SQL with an affected-row estimate before the user confirms. It composes Phases 25, 31, 33, and the Phase-45
 request-time suggestion pattern.
 
-Roadmap item: Phase 46 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md). Depends on 25, 31, 33, 45.
+Roadmap item: Phase 47 in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md). Depends on 25, 31, 33, 46.
 
 ## Decisions (to confirm before building)
 
@@ -80,4 +80,4 @@ Roadmap item: Phase 46 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md). 
 - Auto-applying any data change without the user's preview confirmation (never — §8).
 - Unbounded/multi-statement migrations or backfills; autonomous multi-step data edits without per-step
   confirmation.
-- Mixed schema+data change-sets in one suggestion (DDL suggestions stay Phase 33; rewrites stay Phase 45).
+- Mixed schema+data change-sets in one suggestion (DDL suggestions stay Phase 33; rewrites stay Phase 46).

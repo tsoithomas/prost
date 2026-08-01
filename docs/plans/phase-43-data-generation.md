@@ -1,4 +1,4 @@
-# Prost — Phase 42: Data Generation / Test-Data Seeding
+# Prost — Phase 43: Data Generation / Test-Data Seeding
 
 ## Context
 
@@ -9,7 +9,7 @@ Prost proposes type-appropriate fake values (respecting PKs, uniques, and FK ref
 through the **existing preview→confirm→batched-insert** seam. It is a DBA-depth slice depending on Phase 30
 (insert path) and Phase 25 (read-only guard).
 
-Roadmap item: Phase 42 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md).
+Roadmap item: Phase 43 in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md).
 
 ## Decisions (to confirm before building)
 

@@ -186,8 +186,14 @@ model UserPreference {
   radiusScale    String @default("normal")
 
   // Flat preference flags.
-  reduceMotion Boolean @default(false)
-  aiEnabled    Boolean @default(true)
+  reduceMotion  Boolean @default(false)
+  // The column-level default stays `false` (matching the migration that added it) — the actual
+  // app-level default is `true`, enforced by `PreferenceService.DEFAULTS` and its `create` fallback,
+  // not by this SQL default. Avoids a schema/DB-default mismatch that `prisma migrate dev` would try
+  // to reconcile the next time it runs (which, on this DB, also wants to drop an unrelated orphaned
+  // `sidebarWidth` column — pre-existing drift, out of scope here).
+  hideFocusRing Boolean @default(false)
+  aiEnabled     Boolean @default(true)
 
   // SQLite has no JSON type — these hold JSON-stringified structures (see @prost/shared-types):
   //   keybindings           -> KeybindingMap                          (actionId -> chord, overrides only)

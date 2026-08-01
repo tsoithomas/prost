@@ -1,8 +1,9 @@
 import { describe, expect, it, beforeAll, afterEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { axe } from 'vitest-axe';
 import * as axeMatchers from 'vitest-axe/matchers';
-import { Modal } from '@prost/ui';
+import { IconButton, Modal, Tooltip } from '@prost/ui';
+import { FocusModeExit } from '../layout/FocusModeExit';
 import { ShortcutsHelp } from '../layout/ShortcutsHelp';
 import { ErDiagramView } from '../workspace/ErDiagramView';
 import { WorkspaceTabBar, type WorkspaceTab } from '../workspace/WorkspaceTabBar';
@@ -104,5 +105,25 @@ describe('axe: no accessibility violations', () => {
     // The tabpanel that tabs reference lives in the Workspace shell, not here; scope axe to the bar.
     expect(await axe(container, { rules: { 'aria-valid-attr-value': { enabled: false } } })).toHaveNoViolations();
     expect(screen.getByRole('tablist')).toBeInTheDocument();
+  });
+
+  it('Tooltip, open (Phase 40)', async () => {
+    vi.useFakeTimers();
+    const { container } = render(
+      <Tooltip content="Refresh data" shortcut="Alt+R">
+        <IconButton aria-label="Refresh">R</IconButton>
+      </Tooltip>,
+    );
+    fireEvent.focus(screen.getByRole('button', { name: 'Refresh' }));
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    vi.useRealTimers();
+    expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it('FocusModeExit — the focus-mode shell\'s only chrome (Phase 40)', async () => {
+    const { container } = render(<FocusModeExit onExit={vi.fn()} />);
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

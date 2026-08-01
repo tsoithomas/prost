@@ -26,6 +26,7 @@ import {
   applyFontFamily,
   applyFontSize,
   applyGridDensity,
+  applyHideFocusRing,
   applyMonoFontFamily,
   applyRadiusScale,
   applyReduceMotion,
@@ -69,6 +70,8 @@ interface ThemeState {
   behavior: BehaviorPreferences;
   /** Disable UI transitions/animations. */
   reduceMotion: boolean;
+  /** Hide the visible keyboard-focus ring (an accessibility affordance) — off by default. */
+  hideFocusRing: boolean;
   /** Whether the AI assistant is available. */
   aiEnabled: boolean;
 
@@ -84,6 +87,7 @@ interface ThemeState {
   setGridPrefs: (prefs: GridDisplayPreferences) => void;
   setBehaviorPrefs: (prefs: BehaviorPreferences) => void;
   setReduceMotion: (on: boolean) => void;
+  setHideFocusRing: (on: boolean) => void;
   setAiEnabled: (on: boolean) => void;
   setCustomPalettes: (palettes: CustomPalette[]) => void;
   applyPalette: (name: string | null) => void;
@@ -198,6 +202,7 @@ export const useThemeStore = create<ThemeState>()(
       grid: {},
       behavior: {},
       reduceMotion: false,
+      hideFocusRing: true,
       aiEnabled: true,
 
       setColorMode: (mode) => {
@@ -254,6 +259,11 @@ export const useThemeStore = create<ThemeState>()(
       setReduceMotion: (on) => {
         applyReduceMotion(on);
         set({ reduceMotion: on });
+      },
+
+      setHideFocusRing: (on) => {
+        applyHideFocusRing(on);
+        set({ hideFocusRing: on });
       },
 
       setAiEnabled: (on) => set({ aiEnabled: on }),
@@ -335,6 +345,7 @@ export const useThemeStore = create<ThemeState>()(
         grid: state.grid,
         behavior: state.behavior,
         reduceMotion: state.reduceMotion,
+        hideFocusRing: state.hideFocusRing,
         aiEnabled: state.aiEnabled,
       }),
       onRehydrateStorage: () => (state) => {
@@ -347,6 +358,7 @@ export const useThemeStore = create<ThemeState>()(
         applyRadiusScale(state.radiusScale);
         applyDataColors(state.dataColors);
         applyReduceMotion(state.reduceMotion);
+        applyHideFocusRing(state.hideFocusRing);
       },
     },
   ),

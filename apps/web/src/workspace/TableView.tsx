@@ -10,12 +10,13 @@ import type {
   GridReadyEvent,
   IDatasource,
   IGetRowsParams,
+  IRowNode,
   SelectionChangedEvent,
 } from 'ag-grid-community';
-import { CopyPlus, Download, Eye, EyeOff, Filter, Plus, Redo2, RefreshCw, Save, Search, Trash2, Undo2, Upload, X } from 'lucide-react';
+import { Columns3, CopyPlus, Download, Eye, EyeOff, Filter, Plus, Redo2, RefreshCw, Save, Search, Trash2, Undo2, Upload, X } from 'lucide-react';
 import type { BulkRowEdit, ColumnMetadata, ColumnRenderMode, FilterOperator, GridResponse, RowConcurrency, RowFilter } from '@prost/shared-types';
 import { ROW_VERSION_KEY } from '@prost/shared-types';
-import { Badge, Button, GRID_DENSITY_ROW_HEIGHT, IconButton, Input, prostGridTheme, Toast } from '@prost/ui';
+import { Badge, Button, GRID_DENSITY_ROW_HEIGHT, IconButton, Input, SkeletonRows, Tooltip, prostGridTheme, Toast } from '@prost/ui';
 import { FilterPanel, operatorsForColumn } from './FilterPanel';
 import { ExportDialog } from './ExportDialog';
 import { ImportModal } from '../import/ImportModal';
@@ -26,12 +27,14 @@ import { useBulkUpdate, useDeleteRow, useInsertRow } from '../api/grid';
 import { useUpdatePreferences } from '../api/preferences';
 import { buildColumnDefs, type HeaderContextMenuArgs } from '../grid/columnDefs';
 import { CellContextMenu, type CellMenuItem, type CellMenuState } from '../grid/CellContextMenu';
+import { rowToJson, rowsToTsv } from '../grid/clipboard';
 import { buildFkNavTargets } from '../grid/fkNavigation';
 import { ColumnRenderMenu } from '../grid/ColumnRenderMenu';
 import { JsonCellPopup } from '../grid/JsonCellPopup';
 import { useEditBuffer } from '../grid/useEditBuffer';
 import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
+import { formatChord, matchesChord, resolveBinding } from '../keybindings';
 import { ApiError, apiErrorDetail, apiFetch } from '../lib/apiClient';
 import { useThemeStore } from '../stores/themeStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
@@ -100,12 +103,24 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const [jsonCell, setJsonCell] = useState<{ column: string; value: unknown } | null>(null);
   /** Per-session unmasking (Phase 39) — never persisted; a reload masks again. */
   const [revealed, setRevealed] = useState(false);
+  /** Drives the refresh icon's spin (Phase 40) — a minimum visible duration so an instant refresh still registers. */
+  const [refreshing, setRefreshing] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const longPressFired = useRef(false);
   const openTable = useWorkspaceStore((state) => state.openTable);
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const { confirm, dialog: confirmDialog } = useConfirm();
   const editBuffer = useEditBuffer();
+  const keybindings = useThemeStore((state) => state.keybindings);
+
+  // Mirrors this tab's dirty-edit state into the workspace store (Phase 40), so the tab bar can
+  // warn before discarding unsaved edits on close. Only the active tab's `TableView` is mounted, so
+  // this is always this tab's own state; cleared on unmount so a stale `true` never lingers.
+  const setActiveTabDirty = useWorkspaceStore((state) => state.setActiveTabDirty);
+  useEffect(() => {
+    setActiveTabDirty(editBuffer.dirtyCells > 0);
+  }, [editBuffer.dirtyCells, setActiveTabDirty]);
+  useEffect(() => () => setActiveTabDirty(false), [setActiveTabDirty]);
 
   // Per-column "render as" overrides for this table (server-backed, keyed connection → schema.table).
   const sourceTable = `${schema}.${table}`;
@@ -303,12 +318,57 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
     [renderMenu, columnsQuery.data],
   );
 
-  // Builds the FK relational-navigation actions for a cell (forward "open referenced row" + reverse
-  // "show referencing rows"); each compiles to a parameterized `and`/`eq` RowFilter — the same path
-  // Phase 14 validates — and opens the target table as a tab seeded with that filter.
+  // Sets a cell to NULL through the same staged-edit path a manual grid edit takes (Phase 40's cell
+  // menu "Set NULL" action) — it shows up in the dirty-cells count and undo stack like any edit.
+  const handleSetNull = useCallback(
+    (colId: string, row: Record<string, unknown>) => {
+      const key = rowKeyOf(row);
+      editBuffer.stage(key, identityOf(row), colId, row[colId], null);
+      gridApiRef.current?.getRowNode(key)?.setDataValue(colId, null);
+    },
+    [rowKeyOf, identityOf, editBuffer],
+  );
+
+  // Adds an `eq` filter on this cell's column + value (Phase 40's cell menu "Filter by this value").
+  const handleFilterByValue = useCallback(
+    (colId: string, value: unknown) => {
+      const column = columnsQuery.data?.columns.find((c) => c.name === colId);
+      const validOps = column ? operatorsForColumn(column) : (['eq'] as FilterOperator[]);
+      const operator: FilterOperator = validOps.includes('eq') ? 'eq' : (validOps[0] ?? 'eq');
+      const condition = { column: colId, operator, value };
+      setActiveFilter((prev) => {
+        const base = prev ?? { conditions: [], combinator: 'and' as const };
+        return { ...base, conditions: [...base.conditions, condition] };
+      });
+      setFilterOpen(true);
+    },
+    [columnsQuery.data],
+  );
+
+  // Builds the cell context menu (Phase 40): generic actions (copy/filter/set-null) always show, so
+  // every cell — not just FK ones — has a menu; FK relational-navigation targets (forward "open
+  // referenced row" + reverse "show referencing rows") follow after a separator when present. Each FK
+  // target compiles to a parameterized `and`/`eq` RowFilter — the same path Phase 14 validates — and
+  // opens the target table as a tab seeded with that filter.
   const buildCellMenuItems = useCallback(
-    (colId: string, row: Record<string, unknown>): CellMenuItem[] =>
-      buildFkNavTargets(
+    (colId: string, row: Record<string, unknown>): CellMenuItem[] => {
+      const columns = columnsQuery.data?.columns ?? [];
+      const columnNames = columns.map((c) => c.name);
+      const column = columns.find((c) => c.name === colId);
+      const isMasked = (columnsQuery.data?.maskedColumns ?? []).includes(colId);
+      const value = row[colId];
+
+      const generic: CellMenuItem[] = [
+        { kind: 'copy', label: 'Copy value', onSelect: () => void navigator.clipboard.writeText(String(value ?? '')) },
+        { kind: 'copy', label: 'Copy row (TSV)', onSelect: () => void navigator.clipboard.writeText(rowsToTsv([row], columnNames)) },
+        { kind: 'copy', label: 'Copy row (JSON)', onSelect: () => void navigator.clipboard.writeText(rowToJson(row, columnNames)) },
+        { kind: 'filter', label: 'Filter by this value', onSelect: () => handleFilterByValue(colId, value) },
+      ];
+      if (editable && !isMasked && column && !column.isPrimaryKey) {
+        generic.push({ kind: 'setNull', label: 'Set NULL', onSelect: () => handleSetNull(colId, row) });
+      }
+
+      const fkTargets = buildFkNavTargets(
         colId,
         row,
         columnsQuery.data?.foreignKeys ?? [],
@@ -316,12 +376,16 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         schema,
         // A masked cell holds a token, not the key — navigating on it would find nothing.
         new Set(columnsQuery.data?.maskedColumns ?? []),
-      ).map((target) => ({
+      ).map((target, i) => ({
         direction: target.direction,
         label: target.label,
+        separatorBefore: i === 0,
         onSelect: () => openTable(connectionId, target.schema, target.table, 'rows', { filter: target.filter }),
-      })),
-    [columnsQuery.data, openTable, schema, connectionId],
+      }));
+
+      return [...generic, ...fkTargets];
+    },
+    [columnsQuery.data, openTable, schema, connectionId, editable, handleFilterByValue, handleSetNull],
   );
 
   // AG Grid gives us the row + column reliably on right-click; open the FK menu on FK cells. The
@@ -496,6 +560,11 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         setRedoStack([]);
         editBuffer.clear();
         setLastEdit(null);
+        const flashedNodes = entries
+          .map(([rowKey]) => gridApiRef.current?.getRowNode(rowKey))
+          .filter((n): n is IRowNode => !!n);
+        gridApiRef.current?.flashCells({ rowNodes: flashedNodes });
+        pushToast('success', `Saved ${entries.length} edit${entries.length === 1 ? '' : 's'}.`);
       },
       onError: (error) => {
         const conflict = error instanceof ApiError && error.code === 'CONFLICT';
@@ -564,14 +633,70 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
     });
   }, [redoStack, runCompensating]);
 
+  // Refresh feedback (Phase 40): a minimum visible spin so an instant refresh still reads as
+  // "something happened", matching the `isFetching`-driven spin in SessionsPanel/AuditPanel.
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    gridApiRef.current?.refreshInfiniteCache();
+    window.setTimeout(() => setRefreshing(false), 500);
+  }, []);
+
+  // Command-palette view-action hand-off (Phase 40: "Refresh current view" / "Export current
+  // table"). Only the active tab's view is mounted, so no per-tab scoping is needed here.
+  const viewActionRequest = useWorkspaceStore((state) => state.viewActionRequest);
+  const clearViewActionRequest = useWorkspaceStore((state) => state.clearViewActionRequest);
+  useEffect(() => {
+    if (!viewActionRequest || viewMode !== 'rows') return;
+    if (viewActionRequest === 'refresh') handleRefresh();
+    else setExportOpen(true);
+    clearViewActionRequest();
+  }, [viewActionRequest, viewMode, handleRefresh, clearViewActionRequest]);
+
+  // `mod+c` (Phase 40): selected rows copy as TSV (with a header row); with no selection, the
+  // focused cell copies its bare value. AG Grid Community has no clipboard module of its own.
+  const handleCopy = useCallback(() => {
+    const columns = (columnsQuery.data?.columns ?? []).map((c) => c.name);
+    if (selectedRows.length > 0) {
+      void navigator.clipboard.writeText(rowsToTsv(selectedRows, columns));
+      pushToast('success', `Copied ${selectedRows.length} row${selectedRows.length === 1 ? '' : 's'}.`);
+      return;
+    }
+    const focused = gridApiRef.current?.getFocusedCell();
+    if (!focused) return;
+    const rowNode = gridApiRef.current?.getDisplayedRowAtIndex(focused.rowIndex);
+    const data = rowNode?.data as Record<string, unknown> | undefined;
+    if (!data) return;
+    void navigator.clipboard.writeText(String(data[focused.column.getColId()] ?? ''));
+    pushToast('success', 'Copied cell value.');
+  }, [columnsQuery.data, selectedRows, pushToast]);
+
   const onGridKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if (!editable || !(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'z') return;
-      event.preventDefault();
-      if (event.shiftKey) handleRedo();
-      else handleUndo();
+      const native = event.nativeEvent;
+      if (editable && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+        event.preventDefault();
+        if (event.shiftKey) handleRedo();
+        else handleUndo();
+        return;
+      }
+      if (matchesChord(native, resolveBinding('find-in-grid', keybindings))) {
+        event.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      if (matchesChord(native, resolveBinding('copy-cells', keybindings))) {
+        event.preventDefault();
+        handleCopy();
+        return;
+      }
+      if (editable && editBuffer.dirtyCells > 0 && matchesChord(native, resolveBinding('save-edits', keybindings))) {
+        event.preventDefault();
+        handleSave();
+      }
+      // `refresh-view` is handled globally (AppLayout), not here — refreshing shouldn't require
+      // focus to already be inside the grid, unlike the grid-scoped shortcuts above.
     },
-    [editable, handleRedo, handleUndo],
+    [editable, handleRedo, handleUndo, keybindings, handleCopy, editBuffer.dirtyCells, handleSave],
   );
 
   function handleAddRow() {
@@ -593,6 +718,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         onSuccess: () => {
           setPendingInsert(null);
           gridApiRef.current?.refreshInfiniteCache();
+          pushToast('success', 'Row inserted.');
         },
         onError: (error) => pushToast('danger', apiErrorDetail(error, 'Failed to insert row.')),
       },
@@ -618,6 +744,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
       }),
     ).then((results) => {
       const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      const succeeded = results.length - failed.length;
       if (failed.length > 0) {
         const message =
           failed.length === 1
@@ -625,6 +752,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
             : `Failed to delete ${failed.length} of ${selectedRows.length} rows.`;
         pushToast('danger', message);
       }
+      if (succeeded > 0) pushToast('success', `Deleted ${succeeded} row${succeeded === 1 ? '' : 's'}.`);
       gridApiRef.current?.deselectAll();
       gridApiRef.current?.refreshInfiniteCache();
     });
@@ -639,26 +767,25 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
       >
         {viewMode === 'rows' ? (
           <>
-            <IconButton
-              aria-label="Refresh rows"
-              onClick={() => gridApiRef.current?.refreshInfiniteCache()}
-              title="Refresh data"
-            >
-              <RefreshCw size={14} />
-            </IconButton>
-            <IconButton
-              aria-label="Filter rows"
-              onClick={() => setFilterOpen((open) => !open)}
-              title="Filter rows"
-              className="relative"
-            >
-              <Filter size={14} />
-              {(activeFilter?.conditions.length ?? 0) > 0 ? (
-                <Badge variant="neutral" className="absolute -right-1 -top-1 h-4 min-w-4 px-0.5 text-[10px] leading-none">
-                  {activeFilter!.conditions.length}
-                </Badge>
-              ) : null}
-            </IconButton>
+            <Tooltip content="Refresh data" shortcut={formatChord(resolveBinding('refresh-view', keybindings))}>
+              <IconButton aria-label="Refresh rows" onClick={handleRefresh}>
+                <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip content="Filter rows">
+              <IconButton
+                aria-label="Filter rows"
+                onClick={() => setFilterOpen((open) => !open)}
+                className="relative"
+              >
+                <Filter size={14} />
+                {(activeFilter?.conditions.length ?? 0) > 0 ? (
+                  <Badge variant="neutral" className="absolute -right-1 -top-1 h-4 min-w-4 px-0.5 text-[10px] leading-none">
+                    {activeFilter!.conditions.length}
+                  </Badge>
+                ) : null}
+              </IconButton>
+            </Tooltip>
             <div className="relative">
               <Search size={12} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-text-faint" />
               <Input
@@ -682,48 +809,72 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
               ) : null}
             </div>
             <div className="mx-1 h-4 w-px bg-border" />
-            <IconButton aria-label="Add row" onClick={handleAddRow} disabled={!editable || pendingInsert !== null}>
-              <Plus size={14} />
-            </IconButton>
-            <IconButton
-              aria-label="Delete selected rows"
-              onClick={handleDeleteSelected}
-              disabled={!editable || selectedRows.length === 0}
-            >
-              <Trash2 size={14} />
-            </IconButton>
+            <Tooltip content="Add row">
+              <IconButton aria-label="Add row" onClick={handleAddRow} disabled={!editable || pendingInsert !== null}>
+                <Plus size={14} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip content="Delete selected rows">
+              <IconButton
+                aria-label="Delete selected rows"
+                onClick={handleDeleteSelected}
+                disabled={!editable || selectedRows.length === 0}
+              >
+                <Trash2 size={14} />
+              </IconButton>
+            </Tooltip>
             {writable ? (
-              <IconButton aria-label="Import CSV" title="Import CSV into this table" onClick={() => setImportOpen(true)}>
-                <Upload size={14} />
-              </IconButton>
+              <Tooltip content="Import CSV into this table">
+                <IconButton aria-label="Import CSV" onClick={() => setImportOpen(true)}>
+                  <Upload size={14} />
+                </IconButton>
+              </Tooltip>
             ) : null}
-            <IconButton
-              aria-label="Save new row"
-              onClick={handleSaveInsert}
-              disabled={pendingInsert === null || insertRow.isPending}
-            >
-              <Save size={14} />
-            </IconButton>
-            {pendingInsert !== null ? (
-              <IconButton aria-label="Cancel new row" onClick={handleCancelInsert}>
-                <X size={14} />
+            <Tooltip content="Save new row">
+              <IconButton
+                aria-label="Save new row"
+                onClick={handleSaveInsert}
+                disabled={pendingInsert === null || insertRow.isPending}
+              >
+                <Save size={14} />
               </IconButton>
+            </Tooltip>
+            {pendingInsert !== null ? (
+              <Tooltip content="Cancel new row">
+                <IconButton aria-label="Cancel new row" onClick={handleCancelInsert}>
+                  <X size={14} />
+                </IconButton>
+              </Tooltip>
             ) : null}
             <div className="mx-1 h-4 w-px bg-border" />
-            <IconButton
-              aria-label="Apply last edit to selected rows"
-              title="Apply last edit to selected rows"
-              onClick={handleApplyToSelected}
-              disabled={!editable || lastEdit === null || selectedRows.length === 0}
-            >
-              <CopyPlus size={14} />
-            </IconButton>
-            <IconButton aria-label="Undo" title="Undo (⌘Z)" onClick={handleUndo} disabled={undoStack.length === 0}>
-              <Undo2 size={14} />
-            </IconButton>
-            <IconButton aria-label="Redo" title="Redo (⇧⌘Z)" onClick={handleRedo} disabled={redoStack.length === 0}>
-              <Redo2 size={14} />
-            </IconButton>
+            <Tooltip content="Apply last edit to selected rows">
+              <IconButton
+                aria-label="Apply last edit to selected rows"
+                onClick={handleApplyToSelected}
+                disabled={!editable || lastEdit === null || selectedRows.length === 0}
+              >
+                <CopyPlus size={14} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip content="Undo">
+              <IconButton aria-label="Undo" onClick={handleUndo} disabled={undoStack.length === 0}>
+                <Undo2 size={14} />
+              </IconButton>
+            </Tooltip>
+            <Tooltip content="Redo">
+              <IconButton aria-label="Redo" onClick={handleRedo} disabled={redoStack.length === 0}>
+                <Redo2 size={14} />
+              </IconButton>
+            </Tooltip>
+            <div className="mx-1 h-4 w-px bg-border" />
+            <Tooltip content="Auto-size columns">
+              <IconButton
+                aria-label="Auto-size columns"
+                onClick={() => gridApiRef.current?.autoSizeAllColumns()}
+              >
+                <Columns3 size={14} />
+              </IconButton>
+            </Tooltip>
             {editBuffer.dirtyCells > 0 ? (
               <div className="ml-1 flex items-center gap-1">
                 <Button type="button" variant="primary" size="sm" onClick={handleSave} disabled={bulkUpdate.isPending}>
@@ -738,19 +889,22 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         ) : null}
         <div className="ml-auto flex items-center gap-sm">
           {viewMode === 'rows' && hasMasked ? (
-            <IconButton
-              aria-label={revealed ? 'Hide masked columns' : 'Reveal masked columns'}
-              title={revealed ? 'Hide masked columns' : 'Reveal masked columns for this session'}
-              variant={revealed ? 'active' : 'ghost'}
-              onClick={() => void handleToggleReveal()}
-            >
-              {revealed ? <Eye size={14} /> : <EyeOff size={14} />}
-            </IconButton>
+            <Tooltip content={revealed ? 'Hide masked columns' : 'Reveal masked columns for this session'}>
+              <IconButton
+                aria-label={revealed ? 'Hide masked columns' : 'Reveal masked columns'}
+                variant={revealed ? 'active' : 'ghost'}
+                onClick={() => void handleToggleReveal()}
+              >
+                {revealed ? <Eye size={14} /> : <EyeOff size={14} />}
+              </IconButton>
+            </Tooltip>
           ) : null}
           {viewMode === 'rows' ? (
-            <IconButton aria-label="Export" title="Export table" onClick={() => setExportOpen(true)}>
-              <Download size={14} />
-            </IconButton>
+            <Tooltip content="Export table">
+              <IconButton aria-label="Export" onClick={() => setExportOpen(true)}>
+                <Download size={14} />
+              </IconButton>
+            </Tooltip>
           ) : null}
           {viewMode === 'rows' && countQuery.data ? (
             <span className="text-xs text-text-faint">
@@ -795,6 +949,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
           columns={columnsQuery.data?.columns ?? []}
           activeFilter={activeFilter}
           onChange={setActiveFilter}
+          onRequestClose={() => setFilterOpen(false)}
         />
       ) : null}
       <div className="min-h-0 flex-1" role="region" aria-label={`${schema}.${table} data`}>
@@ -803,7 +958,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         ) : viewMode === 'profile' ? (
           <TableProfilePanel connectionId={connectionId} schema={schema} table={table} />
         ) : columnsQuery.isLoading ? (
-          <div className="flex h-full items-center justify-center text-sm text-text-faint">Loading table…</div>
+          <SkeletonRows />
         ) : columnsQuery.isError ? (
           <div className="flex h-full items-center justify-center text-sm text-danger">Failed to load table.</div>
         ) : (
@@ -831,6 +986,8 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
               // AG Grid calls preventDefault on cell right-clicks, reliably suppressing the browser's
               // context menu so only our FK menu (opened in onCellContextMenu) shows.
               preventDefaultOnContextMenu
+              enableCellTextSelection
+              tooltipShowDelay={500}
               onGridReady={onGridReady}
               onSelectionChanged={onSelectionChanged}
               onCellValueChanged={onCellValueChanged}

@@ -499,6 +499,11 @@ export function buildColumnDefs(
         if (category === 'temporal' && display.dateFormat) return formatDateDisplay(params.value, display.dateFormat, display.timeZone);
         return String(params.value);
       },
+      // A truncated cell's full (formatted) value on hover (Phase 40). A masked cell's `value` is
+      // already the server-redacted token by the time it reaches the client, so this never leaks
+      // the real value. `valueFormatted` reflects `tooltipShowDelay` on the grid, not this getter.
+      tooltipValueGetter: (params) =>
+        params.value === null || params.value === undefined ? null : String(params.valueFormatted ?? params.value),
       // Color-code the date/time/zone parts; renders the plain value for non-date-shaped output.
       ...(rendersDate ? { cellRenderer: DateCell } : {}),
       resizable: true,

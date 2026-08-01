@@ -20,7 +20,15 @@ beforeEach(() => {
   mutate.mockClear();
   document.documentElement.removeAttribute('style');
   document.documentElement.removeAttribute('data-reduce-motion');
-  useThemeStore.setState({ editor: {}, grid: {}, behavior: {}, reduceMotion: false, aiEnabled: true });
+  document.documentElement.removeAttribute('data-hide-focus-ring');
+  useThemeStore.setState({
+    editor: {},
+    grid: {},
+    behavior: {},
+    reduceMotion: false,
+    hideFocusRing: false,
+    aiEnabled: true,
+  });
 });
 afterEach(() => {
   useSettingsStore.setState({ open: false });
@@ -102,6 +110,15 @@ describe('SettingsModal', () => {
 
     expect(document.documentElement.hasAttribute('data-reduce-motion')).toBe(true);
     expect(mutate).toHaveBeenCalledWith({ reduceMotion: true }, expect.anything());
+  });
+
+  it('hides the focus ring and persists it', () => {
+    open('appearance');
+    render(<SettingsModal />);
+    fireEvent.click(screen.getByRole('checkbox', { name: /hide focus ring/i }));
+
+    expect(document.documentElement.hasAttribute('data-hide-focus-ring')).toBe(true);
+    expect(mutate).toHaveBeenCalledWith({ hideFocusRing: true }, expect.anything());
   });
 
   it('closes on Escape (Modal focus trap)', () => {

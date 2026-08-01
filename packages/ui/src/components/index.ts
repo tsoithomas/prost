@@ -8,4 +8,6 @@ export * from './Checkbox.js';
 export * from './Switch.js';
 export * from './Surface.js';
 export * from './Badge.js';
+export * from './Skeleton.js';
 export * from './Toast.js';
+export * from './Tooltip.js';

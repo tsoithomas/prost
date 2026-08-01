@@ -36,11 +36,14 @@ export interface SidebarProps {
 
 export function Sidebar({ onNewConnection }: SidebarProps) {
   const [activeTab, setActiveTab] = useState<SidebarTab>('explorer');
-  const [collapsed, setCollapsed] = useState(false);
   const [connMenuOpen, setConnMenuOpen] = useState(false);
   const connMenuRef = useRef<HTMLDivElement>(null);
   const sidebarWidth = useLayoutStore((state) => state.leftSidebarWidth);
   const setSidebarWidth = useLayoutStore((state) => state.setLeftSidebarWidth);
+  // Persisted (Phase 40) so the collapsed state survives reload and can be driven by the
+  // `toggle-left-sidebar` global shortcut in `AppLayout`.
+  const collapsed = useLayoutStore((state) => state.leftSidebarCollapsed);
+  const setCollapsed = useLayoutStore((state) => state.setLeftSidebarCollapsed);
   const { isResizing, onPointerDown } = useResizableWidth({
     width: sidebarWidth,
     min: MIN_SIDEBAR_WIDTH,
@@ -139,7 +142,7 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
           schemas={schemas ?? []}
           selectedTable={selectedTable}
           selectedObject={selectedObject}
-          onSelectTable={(table) => openTable(activeConnectionId, table.schema, table.name, 'rows')}
+          onSelectTable={(table) => openTable(activeConnectionId, table.schema, table.name)}
           onOpenStructure={(table) => openTable(activeConnectionId, table.schema, table.name, 'structure')}
           onSelectObject={(object) => openSchemaObject({ openTable, openObject }, activeConnectionId, object)}
           onNewTable={(schema) => setCreateTableState({ open: true, schema })}

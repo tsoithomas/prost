@@ -179,6 +179,18 @@ export const KEYBINDING_ACTIONS: KeybindingAction[] = [
   { id: 'new-query-tab', label: 'New query tab', defaultChord: 'alt+t' },
   { id: 'close-tab', label: 'Close current tab', defaultChord: 'alt+w' },
   { id: 'show-shortcuts', label: 'Show keyboard shortcuts', defaultChord: 'shift+alt+h' },
+  // Phase 40 (usability & interaction polish).
+  { id: 'find-in-grid', label: 'Find in grid', defaultChord: 'mod+f' },
+  { id: 'copy-cells', label: 'Copy selected cell(s)', defaultChord: 'mod+c' },
+  { id: 'save-edits', label: 'Save staged edits', defaultChord: 'mod+s' },
+  { id: 'next-tab', label: 'Next tab', defaultChord: 'alt+pagedown' },
+  { id: 'prev-tab', label: 'Previous tab', defaultChord: 'alt+pageup' },
+  { id: 'focus-editor', label: 'Focus SQL editor', defaultChord: 'alt+1' },
+  { id: 'focus-results', label: 'Focus results grid', defaultChord: 'alt+2' },
+  { id: 'toggle-left-sidebar', label: 'Toggle left sidebar', defaultChord: 'alt+b' },
+  { id: 'toggle-ai-sidebar', label: 'Toggle AI sidebar', defaultChord: 'alt+j' },
+  { id: 'toggle-focus-mode', label: 'Toggle focus mode', defaultChord: 'alt+enter' },
+  { id: 'refresh-view', label: 'Refresh current view', defaultChord: 'alt+r' },
 ];
 
 /** actionId → chord. Holds **overrides only**; consumers merge over `KEYBINDING_ACTIONS` defaults. */
@@ -251,6 +263,12 @@ export interface UserPreferenceDto {
   behavior?: BehaviorPreferences;
   /** Disable UI transitions/animations. */
   reduceMotion?: boolean;
+  /**
+   * Hide the visible keyboard-focus ring (Phase 35's `:focus-visible` outline). Omitted/true = hidden
+   * (the default). This is an opt-out of an accessibility affordance for keyboard/screen-reader
+   * users — turn it back on (set to `false`) if you rely on seeing keyboard focus.
+   */
+  hideFocusRing?: boolean;
   /** Whether the AI assistant is available; omitted/true = enabled. */
   aiEnabled?: boolean;
 }

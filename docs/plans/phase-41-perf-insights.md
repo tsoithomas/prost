@@ -1,4 +1,4 @@
-# Prost — Phase 40: On-Demand Query-Performance Insights & Index Advisor
+# Prost — Phase 41: On-Demand Query-Performance Insights & Index Advisor
 
 ## Context
 
@@ -10,7 +10,7 @@ the **existing Phase-33 DDL-suggestion pipeline**. It is a DBA-depth slice depen
 Crucially it stays **on-demand** — a snapshot the user pulls — so it introduces no background collection
 and remains inside §13.
 
-Roadmap item: Phase 40 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md).
+Roadmap item: Phase 41 in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md).
 
 ## Decisions (to confirm before building)
 

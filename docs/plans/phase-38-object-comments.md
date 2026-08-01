@@ -10,7 +10,7 @@ optional AI-drafted first pass. Because comments live in the **target DB**, this
 app-DB documentation store. It is a DBA-depth slice depending on Phase 24 (object browsing) and Phases 8/9
 (DDL pipeline).
 
-Roadmap item: Phase 38 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md).
+Roadmap item: Phase 38 in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md).
 
 ## Decisions (to confirm before building)
 

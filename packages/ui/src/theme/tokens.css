@@ -159,6 +159,26 @@ summary:focus-visible,
   border-radius: var(--radius-sm);
 }
 
+/*
+ * Opt-out of the focus ring above (Settings › Appearance › "Hide focus ring", set via
+ * `applyHideFocusRing`). On by default (the ring is hidden out of the box) — this suppresses an
+ * accessibility affordance, so re-enabling the ring (toggling this off) is the deliberate choice.
+ */
+[data-hide-focus-ring] a:focus-visible,
+[data-hide-focus-ring] button:focus-visible,
+[data-hide-focus-ring] [role='button']:focus-visible,
+[data-hide-focus-ring] [role='tab']:focus-visible,
+[data-hide-focus-ring] [role='option']:focus-visible,
+[data-hide-focus-ring] [role='menuitem']:focus-visible,
+[data-hide-focus-ring] [role='treeitem']:focus-visible,
+[data-hide-focus-ring] input:focus-visible,
+[data-hide-focus-ring] select:focus-visible,
+[data-hide-focus-ring] textarea:focus-visible,
+[data-hide-focus-ring] summary:focus-visible,
+[data-hide-focus-ring] [tabindex]:not([tabindex='-1']):focus-visible {
+  outline: none;
+}
+
 /* Themed scrollbars — colors come from the active theme's tokens (light + .dark). */
 * {
   scrollbar-width: thin;
@@ -221,6 +241,30 @@ summary:focus-visible,
 .ag-large-text-input textarea {
   resize: both;
   min-height: 8rem;
+}
+
+/*
+ * Skeleton loading shimmer (Phase 40, used by `Skeleton` in packages/ui). A moving highlight band
+ * over a token-colored base — automatically neutralized by the `[data-reduce-motion]` rule below
+ * (its `animation-duration: 0.01ms !important` wins over this keyframe's duration).
+ */
+@keyframes prost-skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+.prost-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-sunken) 25%,
+    var(--color-surface-hover) 50%,
+    var(--color-surface-sunken) 75%
+  );
+  background-size: 200% 100%;
+  animation: prost-skeleton-shimmer 1.5s ease-in-out infinite;
 }
 
 /*

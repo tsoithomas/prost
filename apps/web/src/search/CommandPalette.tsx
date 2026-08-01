@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Code, Columns3, History, Search, Table, X } from 'lucide-react';
+import { Code, Columns3, History, Search, SquareTerminal, Table, X } from 'lucide-react';
 import clsx from 'clsx';
 import { IconButton, Input, Surface } from '@prost/ui';
 import { useMetadata } from '../api/metadata';
@@ -10,8 +10,10 @@ import { useIsMobile } from '../hooks/useMediaQuery';
 import { useCommandPaletteStore } from '../stores/commandPaletteStore';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { useCommands } from './commands';
 import {
   buildMetadataItems,
+  createCommandFuse,
   createMetadataFuse,
   createSnippetFuse,
   flattenResults,
@@ -21,6 +23,7 @@ import {
 } from './searchIndex';
 
 const SECTION_META = [
+  { key: 'commands', title: 'Commands', icon: SquareTerminal },
   { key: 'tables', title: 'Tables', icon: Table },
   { key: 'columns', title: 'Columns', icon: Columns3 },
   { key: 'snippets', title: 'Snippets', icon: Code },
@@ -28,9 +31,11 @@ const SECTION_META = [
 ] as const;
 
 /**
- * ⌘K global search overlay. Fuzzy-searches cached metadata + snippets and server-paged history,
- * grouped and bounded, then navigates (table/column) or loads SQL (snippet/history) into the active
- * query tab — never auto-runs (principles §4/§8). Open/close is driven by `commandPaletteStore`.
+ * ⌘K global search + command overlay. Fuzzy-searches cached metadata + snippets and server-paged
+ * history, grouped and bounded, then navigates (table/column) or loads SQL (snippet/history) into
+ * the active query tab — never auto-runs (principles §4/§8). Commands (Phase 40) are app
+ * navigation/UI actions from `useCommands`, shown even on an empty query, and never execute SQL or
+ * mutate data. Open/close is driven by `commandPaletteStore`.
  */
 export function CommandPalette() {
   const open = useCommandPaletteStore((s) => s.open);
@@ -54,12 +59,18 @@ export function CommandPalette() {
     search: debounced,
     enabled: open && debounced.trim() !== '',
   });
+  const commands = useCommands();
 
   const metadataFuse = useMemo(() => createMetadataFuse(buildMetadataItems(schemas ?? [])), [schemas]);
   const snippetFuse = useMemo(() => createSnippetFuse(snippets ?? []), [snippets]);
+  const commandItems = useMemo<SearchItem[]>(
+    () => commands.map((c) => ({ type: 'command', id: c.id, label: c.label, shortcut: c.shortcut }) satisfies SearchItem),
+    [commands],
+  );
+  const commandFuse = useMemo(() => createCommandFuse(commandItems), [commandItems]);
   const groups: GroupedResults = useMemo(
-    () => search(debounced, metadataFuse, snippetFuse, history ?? []),
-    [debounced, metadataFuse, snippetFuse, history],
+    () => search(debounced, metadataFuse, snippetFuse, history ?? [], commandItems, commandFuse),
+    [debounced, metadataFuse, snippetFuse, history, commandItems, commandFuse],
   );
   const flat = useMemo(() => flattenResults(groups), [groups]);
 
@@ -82,7 +93,7 @@ export function CommandPalette() {
   function handleSelect(item: SearchItem) {
     switch (item.type) {
       case 'table':
-        if (activeConnectionId) openTable(activeConnectionId, item.schema, item.table, 'rows');
+        if (activeConnectionId) openTable(activeConnectionId, item.schema, item.table);
         break;
       case 'column':
         if (activeConnectionId) revealTableColumn(activeConnectionId, item.schema, item.table, item.column);
@@ -92,6 +103,9 @@ export function CommandPalette() {
         break;
       case 'history':
         loadQuery(item.sql);
+        break;
+      case 'command':
+        commands.find((c) => c.id === item.id)?.run();
         break;
     }
     closePalette();
@@ -133,7 +147,7 @@ export function CommandPalette() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Search tables, columns, snippets, history…"
+          placeholder="Search or run a command…"
           aria-label="Search"
           role="combobox"
           aria-expanded={flat.length > 0}
@@ -157,12 +171,10 @@ export function CommandPalette() {
         aria-label="Search results"
         className="min-h-0 flex-1 overflow-y-auto p-xs"
       >
-        {isEmptyQuery ? (
+        {flat.length === 0 ? (
           <p className="px-md py-6 text-center text-xs italic text-text-faint">
-            Type to search tables, columns, snippets, and query history.
+            {isEmptyQuery ? 'No commands available.' : 'No results.'}
           </p>
-        ) : flat.length === 0 ? (
-          <p className="px-md py-6 text-center text-xs italic text-text-faint">No results.</p>
         ) : (
           SECTION_META.map(({ key, title, icon: Icon }) => {
             const items = groups[key];
@@ -267,5 +279,7 @@ function rowText(item: SearchItem): { title: string; subtitle: string } {
       return { title: item.name, subtitle: item.body };
     case 'history':
       return { title: item.label ?? item.sql, subtitle: item.label ? item.sql : item.connectionName };
+    case 'command':
+      return { title: item.label, subtitle: item.shortcut ?? '' };
   }
 }

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import type { ColumnMetadata, ColumnFilter, FilterOperator, RowFilter } from '@prost/shared-types';
 import { Button, IconButton, Input } from '@prost/ui';
@@ -6,6 +7,8 @@ export interface FilterPanelProps {
   columns: ColumnMetadata[];
   activeFilter: RowFilter | null;
   onChange: (filter: RowFilter | null) => void;
+  /** Closes the panel (Phase 40: `Escape` support, matching the grid's other hand-rolled overlays). */
+  onRequestClose?: () => void;
 }
 
 type TypeFamily = 'text' | 'numeric' | 'datetime' | 'boolean' | 'other';
@@ -76,8 +79,17 @@ function firstOperatorForColumn(col: ColumnMetadata): FilterOperator {
   return operatorsForColumn(col)[0] ?? 'eq';
 }
 
-export function FilterPanel({ columns, activeFilter, onChange }: FilterPanelProps) {
+export function FilterPanel({ columns, activeFilter, onChange, onRequestClose }: FilterPanelProps) {
   const filter = activeFilter ?? defaultFilter();
+
+  useEffect(() => {
+    if (!onRequestClose) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') onRequestClose!();
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onRequestClose]);
 
   function emit(updated: RowFilter) {
     onChange(updated.conditions.length === 0 ? null : updated);

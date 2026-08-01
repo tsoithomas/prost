@@ -148,7 +148,7 @@ export function DatabaseOverview({ connectionId, schema, writable = true }: Data
                     <td className={`${cell} text-left`}>
                       <button
                         type="button"
-                        onClick={() => openTable(connectionId, schema, table.name, 'rows')}
+                        onClick={() => openTable(connectionId, schema, table.name)}
                         className="font-medium text-accent hover:underline"
                       >
                         {table.name}

@@ -1,4 +1,4 @@
-# Prost — Roadmap: Phases 34–46 (Fourth Wave — Depth Within the Rails)
+# Prost — Roadmap: Phases 34–47 (Fourth Wave — Depth Within the Rails)
 
 Phases 0–33 are complete — the MVP (0–5), the first post-MVP wave (6–10), the second wave (11–22), and
 the third wave (23–33, three tracks: DBA depth, production safety/ops, AI depth). Both the planned backlog
@@ -13,7 +13,8 @@ pre-existing backlog:
   **on-demand/interactive** and rides an existing seam.
 - **Mix new features with strengthening.** New capability (ER diagram, schema diff, perf/index advisor,
   data masking, data generation, saved dashboards, AI data editing) sits alongside hardening of shipped
-  features (a redesigned settings experience, accessibility, grid concurrency, richer AI advice).
+  features (a redesigned settings experience, accessibility, usability/interaction polish, grid
+  concurrency, richer AI advice).
 - **Amend `architecture-principles.md` §13 first, item-by-item**, only where a feature needs it — a
   dedicated docs change, per §13's own change rule.
 
@@ -51,13 +52,14 @@ stored-procedure/trigger **editing or execution**.
 | [37](./phase-37-column-profiling.md) | Column profiling & table data statistics | A · DBA depth | M | 7, 24 |
 | [38](./phase-38-object-comments.md) | Table & column documentation (native comments) | A · DBA depth | M | 24, 8, 9 |
 | [39](./phase-39-data-masking.md) | Data masking / sensitive-column redaction | B · Safety/ops | M | 30 |
-| [40](./phase-40-perf-insights.md) | On-demand query-performance insights & index advisor | A · DBA depth | L | 26, 27, 33 |
-| [41](./phase-41-schema-diff.md) | Schema comparison & migration diff (live-vs-live) | A · DBA depth | L | 24, 8, 9, 33 |
-| [42](./phase-42-data-generation.md) | Data generation / test-data seeding | A · DBA depth | M | 30, 25 |
-| [43](./phase-43-saved-dashboards.md) | Saved dashboards / pinned result charts | A · DBA depth | M | 29, 13 |
-| [44](./phase-44-grid-conflict-detection.md) | Grid concurrency: optimistic-conflict detection | Strengthening | M | 2, 18 |
-| [45](./phase-45-ai-query-rewrite.md) | AI query-optimization & rewrite advisor | C · AI depth | M | 26, 31, 33 |
-| [46](./phase-46-ai-data-editing.md) | AI-assisted data editing with preview | C · AI depth | L | 25, 31, 33, 45 |
+| [40](./phase-40-usability-polish.md) | Usability & interaction polish (shortcuts, tooltips, feedback, focus mode) | Strengthening | XL | 34, 35 |
+| [41](./phase-41-perf-insights.md) | On-demand query-performance insights & index advisor | A · DBA depth | L | 26, 27, 33 |
+| [42](./phase-42-schema-diff.md) | Schema comparison & migration diff (live-vs-live) | A · DBA depth | L | 24, 8, 9, 33 |
+| [43](./phase-43-data-generation.md) | Data generation / test-data seeding | A · DBA depth | M | 30, 25 |
+| [44](./phase-44-saved-dashboards.md) | Saved dashboards / pinned result charts | A · DBA depth | M | 29, 13 |
+| [45](./phase-45-grid-conflict-detection.md) | Grid concurrency: optimistic-conflict detection | Strengthening | M | 2, 18 |
+| [46](./phase-46-ai-query-rewrite.md) | AI query-optimization & rewrite advisor | C · AI depth | M | 26, 31, 33 |
+| [47](./phase-47-ai-data-editing.md) | AI-assisted data editing with preview | C · AI depth | L | 25, 31, 33, 46 |
 
 *(Optional, unscheduled)* **E2E / headless-browser test harness (Playwright)** — functional flows against
 the demo DBs, complementing the Phase 12 unit harness. A worthwhile candidate, not a numbered phase in
@@ -67,8 +69,9 @@ infra needed).
 ## Recommended order & rationale
 
 The phases are **numbered in implementation order** — build them in ascending order and every
-`Depends on` is satisfied. All hard dependencies land on **already-complete** phases (0–33); the only
-intra-wave dependency is 46→45. The numbering encodes:
+`Depends on` is satisfied. All hard dependencies land on **already-complete** phases (0–33) except
+Phase 40, which depends on 34/35 (both already complete by the time 40 is scheduled); the only
+intra-wave dependency beyond that is 47→46. The numbering encodes:
 
 1. **§13 amendment first.** A short docs change that unblocks Phase 36 (ER diagram). Cheap, and the
    principles doc requires it before the code.
@@ -78,11 +81,17 @@ intra-wave dependency is 46→45. The numbering encodes:
    across every later phase's UI.
 3. **Independent DBA/ops slices — Phases 36, 37, 38, 39 — scheduled by appetite.** None block each other;
    each is a self-contained slice with visible payoff (diagram, profiling, docs, masking).
-4. **Composed slices — Phases 40, 41, 42, 43.** Each reuses an earlier *pattern* (40/41 reuse Phase 33's
-   suggestion→preview routing; 42 reuses Phase 30's batched insert; 43 reuses Phase 29 charts + Phase 13
+4. **Usability & interaction polish — Phase 40.** A strengthening slice (no new data capability) that
+   closes gaps Phase 35 didn't cover — a fuller keyboard-shortcut registry, a `Tooltip` primitive,
+   command-palette actions, visible feedback/animation, and a focus mode. It sits after 34/35 because it
+   reuses their `Modal`/keybinding/a11y foundations, and before the remaining DBA/AI slices so their new
+   UI (diagram toolbars, dashboards, suggestion cards) inherits the polish rather than needing a
+   follow-up pass.
+5. **Composed slices — Phases 41, 42, 43, 44.** Each reuses an earlier *pattern* (41/42 reuse Phase 33's
+   suggestion→preview routing; 43 reuses Phase 30's batched insert; 44 reuses Phase 29 charts + Phase 13
    persistence), so they sit after their (already-shipped) pattern sources and after the simpler siblings.
-5. **Grid strengthening — Phase 44** — hardens the edit path the AI-data phase leans on.
-6. **AI depth last — Phases 45 then 46.** 45 establishes request-time AI-write *suggestion*; 46 (the
+6. **Grid strengthening — Phase 45** — hardens the edit path the AI-data phase leans on.
+7. **AI depth last — Phases 46 then 47.** 46 establishes request-time AI-write *suggestion*; 47 (the
    capstone) reuses it and the whole confirm-gated write pipeline to propose *data* changes.
 
 Tracks A/B/C + strengthening can be resourced in parallel; they converge only on shared types in

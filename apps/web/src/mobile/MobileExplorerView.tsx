@@ -72,7 +72,7 @@ export function MobileExplorerView({ onSelectTable }: MobileExplorerViewProps) {
             selectedTable={selectedTable}
             selectedObject={selectedObject}
             onSelectTable={(table) => {
-              openTable(activeConnectionId, table.schema, table.name, 'rows');
+              openTable(activeConnectionId, table.schema, table.name);
               onSelectTable?.();
             }}
             onOpenStructure={(table) => {

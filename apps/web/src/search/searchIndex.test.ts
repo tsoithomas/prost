@@ -3,10 +3,12 @@ import type { SchemaMetadata, SnippetDto } from '@prost/shared-types';
 import {
   PER_GROUP_LIMIT,
   buildMetadataItems,
+  createCommandFuse,
   createMetadataFuse,
   createSnippetFuse,
   flattenResults,
   search,
+  type SearchItem,
 } from './searchIndex';
 
 function column(name: string) {
@@ -64,5 +66,36 @@ describe('search', () => {
     const fuse = createMetadataFuse(buildMetadataItems(many));
     const groups = search('table', fuse, snippetFuse, []);
     expect(groups.tables.length).toBe(PER_GROUP_LIMIT);
+  });
+});
+
+describe('search — commands (Phase 40)', () => {
+  const metadataFuse = createMetadataFuse(buildMetadataItems(schemas));
+  const snippetFuse = createSnippetFuse([] as SnippetDto[]);
+  const commandItems: SearchItem[] = [
+    { type: 'command', id: 'new-query-tab', label: 'New query tab', shortcut: 'Alt+T' },
+    { type: 'command', id: 'toggle-focus-mode', label: 'Toggle focus mode' },
+  ];
+  const commandFuse = createCommandFuse(commandItems);
+
+  it('lists all commands on a blank query — the palette\'s discoverable action surface', () => {
+    const groups = search('', metadataFuse, snippetFuse, [], commandItems, commandFuse);
+    expect(groups.commands).toEqual(commandItems);
+  });
+
+  it('filters commands by fuzzy label match once a query is typed', () => {
+    const groups = search('focus', metadataFuse, snippetFuse, [], commandItems, commandFuse);
+    expect(groups.commands).toEqual([commandItems[1]]);
+  });
+
+  it('commands come first in the flattened keyboard-navigation order', () => {
+    const groups = search('', metadataFuse, snippetFuse, [], commandItems, commandFuse);
+    const flat = flattenResults(groups);
+    expect(flat[0]).toEqual(commandItems[0]);
+  });
+
+  it('omitting commands entirely (older call sites) yields no command group', () => {
+    const groups = search('', metadataFuse, snippetFuse, []);
+    expect(groups.commands).toEqual([]);
   });
 });

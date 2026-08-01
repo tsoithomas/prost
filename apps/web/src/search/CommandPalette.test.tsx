@@ -42,8 +42,19 @@ vi.mock('../stores/commandPaletteStore', () => ({
     selector({ open: true, openPalette: vi.fn(), closePalette: mockClose, toggle: vi.fn() }),
 }));
 vi.mock('../stores/workspaceStore', () => ({
-  useWorkspaceStore: (selector: (s: unknown) => unknown) =>
-    selector({ openTable: mockOpenTable, revealTableColumn: mockReveal, loadQuery: mockLoadQuery }),
+  useWorkspaceStore: Object.assign(
+    (selector: (s: unknown) => unknown) =>
+      selector({
+        openTable: mockOpenTable,
+        revealTableColumn: mockReveal,
+        loadQuery: mockLoadQuery,
+        // `useCommands` (Phase 40) reads these; an empty/single-tab shape keeps its extra
+        // tab-scoped commands out of this test's fixture, matching pre-Phase-40 assertions.
+        tabs: [{ id: 'query-1', label: 'Query 1', kind: 'query' }],
+        activeTabId: 'query-1',
+      }),
+    { getState: () => ({ requestViewAction: vi.fn(), newQueryTab: vi.fn(), closeTab: vi.fn(), selectTab: vi.fn() }) },
+  ),
 }));
 vi.mock('../stores/connectionStore', () => ({
   useConnectionStore: (selector: (s: unknown) => unknown) => selector({ activeConnectionId: 'conn-1' }),
@@ -69,7 +80,8 @@ describe('CommandPalette', () => {
     renderWithProviders(<CommandPalette />);
     await userEvent.type(screen.getByLabelText('Search'), 'ord');
     await userEvent.click(screen.getByText('orders', { exact: true }));
-    expect(mockOpenTable).toHaveBeenCalledWith('conn-1', 'public', 'orders', 'rows');
+    // No explicit viewMode: the store resolves 'rows' or a remembered last mode (Phase 40).
+    expect(mockOpenTable).toHaveBeenCalledWith('conn-1', 'public', 'orders');
     expect(mockClose).toHaveBeenCalled();
   });
 
@@ -97,11 +109,32 @@ describe('CommandPalette', () => {
   it('Enter selects the active result; Escape closes', async () => {
     renderWithProviders(<CommandPalette />);
     const input = screen.getByLabelText('Search');
-    await userEvent.type(input, 'ord');
+    // A full, distinctive term so no command's label fuzzy-matches ahead of the table (commands are
+    // listed first in the flattened, keyboard-navigable order — see the dedicated command tests below).
+    await userEvent.type(input, 'orders');
     await userEvent.keyboard('{Enter}');
-    expect(mockOpenTable).toHaveBeenCalledWith('conn-1', 'public', 'orders', 'rows');
+    expect(mockOpenTable).toHaveBeenCalledWith('conn-1', 'public', 'orders');
 
     await userEvent.keyboard('{Escape}');
     expect(mockClose).toHaveBeenCalled();
+  });
+
+  it('shows commands on an empty query (Phase 40)', () => {
+    renderWithProviders(<CommandPalette />);
+    expect(screen.getByText('Commands')).toBeInTheDocument();
+    expect(screen.getByText('New query tab')).toBeInTheDocument();
+  });
+
+  it('running a command via click executes it and closes the palette', async () => {
+    renderWithProviders(<CommandPalette />);
+    await userEvent.click(screen.getByText('New query tab'));
+    expect(mockClose).toHaveBeenCalled();
+  });
+
+  it('arrow-key navigation reaches commands and typing filters them', async () => {
+    renderWithProviders(<CommandPalette />);
+    await userEvent.type(screen.getByLabelText('Search'), 'shortcuts');
+    expect(screen.getByText('Show keyboard shortcuts')).toBeInTheDocument();
+    expect(screen.queryByText('New query tab')).not.toBeInTheDocument();
   });
 });

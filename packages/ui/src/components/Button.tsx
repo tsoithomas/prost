@@ -1,5 +1,6 @@
 import { forwardRef } from 'react';
 import type { ButtonHTMLAttributes } from 'react';
+import { Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
@@ -8,6 +9,8 @@ export type ButtonSize = 'sm' | 'md';
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** Shows a spinner in place of the leading content and disables the button (Phase 40). */
+  loading?: boolean;
 }
 
 const variantClasses: Record<ButtonVariant, string> = {
@@ -22,12 +25,14 @@ const sizeClasses: Record<ButtonSize, string> = {
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = 'secondary', size = 'sm', className, ...props },
+  { variant = 'secondary', size = 'sm', className, loading = false, disabled, children, ...props },
   ref,
 ) {
   return (
     <button
       ref={ref}
+      aria-busy={loading || undefined}
+      disabled={disabled || loading}
       className={clsx(
         'inline-flex items-center justify-center rounded-sm font-medium transition-colors',
         'disabled:opacity-50 disabled:cursor-not-allowed',
@@ -36,6 +41,9 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
         className,
       )}
       {...props}
-    />
+    >
+      {loading ? <Loader2 size={13} className="animate-spin" /> : null}
+      {children}
+    </button>
   );
 });

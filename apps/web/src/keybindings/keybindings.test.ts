@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chordFromEvent, findKeybindingConflicts, matchesChord, resolveBinding } from './index';
+import { chordFromEvent, findKeybindingConflicts, formatChord, matchesChord, resolveBinding } from './index';
 
 describe('resolveBinding', () => {
   it('returns the default chord when no override exists', () => {
@@ -52,6 +52,15 @@ describe('chordFromEvent', () => {
   it('returns null for a bare modifier press', () => {
     expect(chordFromEvent(keydown({ key: 'Shift', shiftKey: true }))).toBeNull();
   });
+
+  it('accepts named multi-character keys (Phase 40: tab navigation)', () => {
+    expect(chordFromEvent(keydown({ key: 'PageDown', altKey: true }))).toBe('alt+pagedown');
+    expect(chordFromEvent(keydown({ key: 'PageUp', altKey: true }))).toBe('alt+pageup');
+  });
+
+  it('still rejects other multi-character keys (no allow-listed name)', () => {
+    expect(chordFromEvent(keydown({ key: 'ArrowDown', altKey: true }))).toBeNull();
+  });
 });
 
 describe('findKeybindingConflicts', () => {
@@ -63,5 +72,12 @@ describe('findKeybindingConflicts', () => {
     const conflicts = findKeybindingConflicts({ 'run-statement': 'mod+k' });
     expect(conflicts).toHaveLength(1);
     expect(conflicts[0]!.actionIds).toEqual(expect.arrayContaining(['command-palette', 'run-statement']));
+  });
+});
+
+describe('formatChord (Phase 40: named keys)', () => {
+  it('renders page navigation chords readably', () => {
+    expect(formatChord('alt+pagedown')).toMatch(/Page Down/);
+    expect(formatChord('alt+pageup')).toMatch(/Page Up/);
   });
 });

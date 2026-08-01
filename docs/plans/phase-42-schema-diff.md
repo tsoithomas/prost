@@ -1,4 +1,4 @@
-# Prost — Phase 41: Schema Comparison & Migration Diff (Live-vs-Live)
+# Prost — Phase 42: Schema Comparison & Migration Diff (Live-vs-Live)
 
 ## Context
 
@@ -10,7 +10,7 @@ nullability, indexes, FKs — and generates a **DDL change-set** to reconcile th
 (metadata), Phases 8/9 (DDL), and Phase 33 (typed change-request routing). Comparison is **live-vs-live in
 memory** so no target schema is persisted to the app DB (§1).
 
-Roadmap item: Phase 41 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md).
+Roadmap item: Phase 42 in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md).
 
 ## Decisions (to confirm before building)
 

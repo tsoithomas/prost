@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { AppLayout } from './AppLayout';
+import { useLayoutStore } from '../stores/layoutStore';
 import { useThemeStore } from '../stores/themeStore';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 
 // Mock all heavy sub-components so the test focuses on shell-selection and hydration logic.
 vi.mock('./TopBar', () => ({ TopBar: () => <div data-testid="top-bar" /> }));
@@ -36,6 +38,8 @@ afterEach(() => {
   vi.mocked(useIsMobile).mockReturnValue(false);
   vi.mocked(usePreferences).mockReturnValue({ data: undefined } as ReturnType<typeof usePreferences>);
   useThemeStore.setState({ colorMode: 'system' });
+  useLayoutStore.setState({ focusMode: false });
+  useWorkspaceStore.setState({ viewActionRequest: null });
   document.documentElement.classList.remove('dark');
   localStorage.clear();
 });
@@ -98,5 +102,57 @@ describe('AppLayout — server preference hydration', () => {
     await waitFor(() => {
       expect(useThemeStore.getState().colorMode).toBe('light');
     });
+  });
+});
+
+describe('AppLayout — focus mode (Phase 40)', () => {
+  it('hides the top bar, sidebar, and status bar while active, and shows a restore button', () => {
+    useLayoutStore.setState({ focusMode: true });
+    render(<AppLayout><div data-testid="content" /></AppLayout>);
+
+    expect(screen.queryByTestId('top-bar')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('sidebar')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('status-bar')).not.toBeInTheDocument();
+    expect(screen.getByTestId('content')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exit focus mode' })).toBeInTheDocument();
+  });
+
+  it('the restore button exits focus mode', () => {
+    useLayoutStore.setState({ focusMode: true });
+    render(<AppLayout><div data-testid="content" /></AppLayout>);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Exit focus mode' }));
+    expect(useLayoutStore.getState().focusMode).toBe(false);
+    expect(screen.getByTestId('top-bar')).toBeInTheDocument();
+  });
+
+  it('Escape exits focus mode', () => {
+    useLayoutStore.setState({ focusMode: true });
+    render(<AppLayout><div data-testid="content" /></AppLayout>);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(useLayoutStore.getState().focusMode).toBe(false);
+  });
+
+  it('toggle-focus-mode shortcut (Alt+Enter) enters focus mode', () => {
+    render(<AppLayout><div data-testid="content" /></AppLayout>);
+    expect(useLayoutStore.getState().focusMode).toBe(false);
+
+    fireEvent.keyDown(window, { key: 'Enter', altKey: true });
+    expect(useLayoutStore.getState().focusMode).toBe(true);
+  });
+});
+
+describe('AppLayout — refresh-view shortcut (regression)', () => {
+  it('Alt+R requests a view refresh globally, regardless of where focus is', () => {
+    // refresh-view previously only fired from inside TableView's grid-scoped onGridKeyDown, which
+    // required focus to already be somewhere inside the grid — pressing it from anywhere else (the
+    // sidebar, an input, the page body) silently did nothing. It's global now, dispatched the same
+    // way the command palette's "Refresh current view" already works.
+    render(<AppLayout><div data-testid="content" /></AppLayout>);
+    expect(useWorkspaceStore.getState().viewActionRequest).toBeNull();
+
+    fireEvent.keyDown(window, { key: 'r', altKey: true });
+    expect(useWorkspaceStore.getState().viewActionRequest).toBe('refresh');
   });
 });

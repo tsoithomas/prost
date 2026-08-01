@@ -1,5 +1,5 @@
 import { Settings } from 'lucide-react';
-import { IconButton } from '@prost/ui';
+import { IconButton, Tooltip } from '@prost/ui';
 import logo from '../assets/logo.svg';
 import { useSettingsStore } from '../stores/settingsStore';
 
@@ -13,9 +13,11 @@ export function TopBar() {
         Prost
       </span>
       <div className="flex items-center gap-xs">
-        <IconButton aria-label="Settings" variant="ghost" onClick={() => openSettings()}>
-          <Settings size={16} />
-        </IconButton>
+        <Tooltip content="Settings">
+          <IconButton aria-label="Settings" variant="ghost" onClick={() => openSettings()}>
+            <Settings size={16} />
+          </IconButton>
+        </Tooltip>
       </div>
     </header>
   );

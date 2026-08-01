@@ -9,7 +9,7 @@ shape**: how many rows, how many nulls, how many distinct values, the range, the
 seam — giving a quick data-quality/selectivity read (and useful grounding for the Phase-40 index advisor).
 It is a DBA-depth slice depending on the existing metadata path (Phases 7/24).
 
-Roadmap item: Phase 37 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md).
+Roadmap item: Phase 37 in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md).
 
 ## Decisions (to confirm before building)
 

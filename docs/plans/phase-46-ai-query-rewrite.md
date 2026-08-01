@@ -1,4 +1,4 @@
-# Prost — Phase 45: AI Query-Optimization & Rewrite Advisor
+# Prost — Phase 46: AI Query-Optimization & Rewrite Advisor
 
 ## Context
 
@@ -9,7 +9,7 @@ a **candidate loaded into the editor** — never auto-run. This composes Phases 
 and 33 (suggestion pipeline + plan sanitization), and inherits every AI guardrail. It depends on 26, 31,
 33.
 
-Roadmap item: Phase 45 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md).
+Roadmap item: Phase 46 in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md).
 
 ## Decisions (to confirm before building)
 
@@ -71,4 +71,4 @@ Roadmap item: Phase 45 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md).
 
 - Auto-applying or auto-running rewrites (never — §8); formal semantic-equivalence proofs.
 - Workload-wide tuning / multi-query optimization (per-statement, interactive only — §13).
-- Rewriting DDL or data-mutation statements (read-query rewrites only; data edits are Phase 46).
+- Rewriting DDL or data-mutation statements (read-query rewrites only; data edits are Phase 47).

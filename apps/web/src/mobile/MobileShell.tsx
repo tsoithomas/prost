@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ChatPanel } from '../ai/ChatPanel';
+import { FocusModeExit } from '../layout/FocusModeExit';
 import { useAiStore } from '../stores/aiStore';
 import { useConnectionStore } from '../stores/connectionStore';
+import { useLayoutStore } from '../stores/layoutStore';
 import { useThemeStore } from '../stores/themeStore';
 import { Workspace } from '../workspace/Workspace';
 import { MobileBottomNav } from './MobileBottomNav';
@@ -20,6 +22,9 @@ export function MobileShell({ onOpenConnections }: MobileShellProps) {
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
   const pendingChatPrompt = useAiStore((state) => state.pendingChatPrompt);
   const aiEnabled = useThemeStore((state) => state.aiEnabled);
+  // Focus mode (Phase 40): hides the top bar and bottom nav, keeping only the active tab's content.
+  const focusMode = useLayoutStore((s) => s.focusMode);
+  const setFocusMode = useLayoutStore((s) => s.setFocusMode);
 
   // "Fix/Explain with AI" queues a chat prompt via aiStore (which opens the desktop right sidebar).
   // On mobile there's no sidebar — switch to the AI tab so the queued prompt is visible + auto-sent.
@@ -33,8 +38,8 @@ export function MobileShell({ onOpenConnections }: MobileShellProps) {
   }, [aiEnabled, activeTab]);
 
   return (
-    <div className="flex h-screen flex-col bg-bg text-text">
-      <MobileTopBar onOpenConnections={onOpenConnections} />
+    <div className="relative flex h-screen flex-col bg-bg text-text">
+      {focusMode ? null : <MobileTopBar onOpenConnections={onOpenConnections} />}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
         {activeTab === 'explorer' ? <MobileExplorerView onSelectTable={() => setActiveTab('editor')} /> : null}
         {activeTab === 'editor' ? <Workspace /> : null}
@@ -57,7 +62,8 @@ export function MobileShell({ onOpenConnections }: MobileShellProps) {
           />
         ) : null}
       </main>
-      <MobileBottomNav active={activeTab} onChange={setActiveTab} />
+      {focusMode ? null : <MobileBottomNav active={activeTab} onChange={setActiveTab} />}
+      {focusMode ? <FocusModeExit onExit={() => setFocusMode(false)} /> : null}
     </div>
   );
 }

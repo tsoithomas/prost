@@ -23,12 +23,12 @@ and links back to its source for full context where one exists.
 > under [`plans/`](./plans/). The sections below are kept as **provenance** for the 6–22 wave; they
 > no longer represent open work.
 >
-> **A fourth wave — Phases 34–46 — is now planned** (a "depth within the rails" set: settings redesign,
-> accessibility, ER diagram, column profiling, native-comment docs, data masking, on-demand perf/index
-> advisor, schema diff, data generation, saved dashboards, grid conflict detection, AI query-rewrite, and
-> AI-assisted data editing). It too is backlog-independent — this file fed nothing into it — and stays
-> single-user/self-hosted (no team/RBAC/new-engines/background-jobs). See
-> [`plans/roadmap-phase-34-46.md`](./plans/roadmap-phase-34-46.md).
+> **A fourth wave — Phases 34–47 — is now planned** (a "depth within the rails" set: settings redesign,
+> accessibility, ER diagram, column profiling, native-comment docs, data masking, usability & interaction
+> polish, on-demand perf/index advisor, schema diff, data generation, saved dashboards, grid conflict
+> detection, AI query-rewrite, and AI-assisted data editing). It too is backlog-independent — this file fed
+> nothing into it — and stays single-user/self-hosted (no team/RBAC/new-engines/background-jobs). See
+> [`plans/roadmap-phase-34-47.md`](./plans/roadmap-phase-34-47.md).
 
 ---
 

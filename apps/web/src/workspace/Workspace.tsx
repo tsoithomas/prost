@@ -10,14 +10,18 @@ import { SessionsPanel } from './SessionsPanel';
 import { AuditPanel } from './AuditPanel';
 import { useConnection } from '../api/connections';
 import { useEngineDescriptor } from '../api/databaseEngines';
+import { useConfirm } from '../hooks/useConfirm';
 import { useConnectionStore } from '../stores/connectionStore';
+import { useTableViewModeStore } from '../stores/tableViewModeStore';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 
 export function Workspace() {
   const tabs = useWorkspaceStore((state) => state.tabs);
   const activeTabId = useWorkspaceStore((state) => state.activeTabId);
+  const activeTabDirty = useWorkspaceStore((state) => state.activeTabDirty);
   const selectTab = useWorkspaceStore((state) => state.selectTab);
   const closeTab = useWorkspaceStore((state) => state.closeTab);
+  const { confirm, dialog: confirmDialog } = useConfirm();
   const closeOtherTabs = useWorkspaceStore((state) => state.closeOtherTabs);
   const closeTabsToLeft = useWorkspaceStore((state) => state.closeTabsToLeft);
   const closeTabsToRight = useWorkspaceStore((state) => state.closeTabsToRight);
@@ -25,6 +29,7 @@ export function Workspace() {
   const reorderTab = useWorkspaceStore((state) => state.reorderTab);
   const newQueryTab = useWorkspaceStore((state) => state.newQueryTab);
   const setTabViewMode = useWorkspaceStore((state) => state.setTabViewMode);
+  const setTableViewMode = useTableViewModeStore((state) => state.set);
   const openSessions = useWorkspaceStore((state) => state.openSessions);
   const openAudit = useWorkspaceStore((state) => state.openAudit);
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
@@ -70,6 +75,21 @@ export function Workspace() {
     </div>
   ) : null;
 
+  // Unsaved-edit guard (Phase 40): only the active tab can be dirty (it's the only mounted
+  // `TableView`), so closing any other tab id never needs to ask.
+  async function handleClose(id: string) {
+    if (id === activeTabId && activeTabDirty) {
+      const confirmed = await confirm({
+        title: 'Discard unsaved edits?',
+        description: 'This tab has staged edits that haven’t been saved. Closing it will discard them.',
+        confirmLabel: 'Discard',
+        danger: true,
+      });
+      if (!confirmed) return;
+    }
+    closeTab(id);
+  }
+
   return (
     <>
       <Breadcrumbs segments={breadcrumbSegments} actions={workspaceActions} />
@@ -77,7 +97,7 @@ export function Workspace() {
         tabs={tabs}
         activeTabId={activeTabId}
         onSelect={selectTab}
-        onClose={closeTab}
+        onClose={(id) => void handleClose(id)}
         onNewTab={newQueryTab}
         onReorder={reorderTab}
         onCloseOthers={closeOtherTabs}
@@ -85,6 +105,7 @@ export function Workspace() {
         onCloseToRight={closeTabsToRight}
         onCloseAllTables={closeAllTableTabs}
       />
+      {confirmDialog}
       <div
         id="workspace-tabpanel"
         role="tabpanel"
@@ -97,7 +118,11 @@ export function Workspace() {
           schema={activeTab.schema}
           table={activeTab.table}
           viewMode={activeTab.viewMode ?? 'rows'}
-          onViewModeChange={(vm) => setTabViewMode(activeTab.id, vm)}
+          onViewModeChange={(vm) => {
+            setTabViewMode(activeTab.id, vm);
+            // Remembers the mode for next time this table is opened (Phase 40).
+            setTableViewMode(activeTab.connectionId!, `${activeTab.schema}.${activeTab.table}`, vm);
+          }}
         />
       ) : null}
       {activeTab?.kind === 'overview' && activeTab.schema && activeTab.connectionId ? (

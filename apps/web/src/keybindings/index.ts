@@ -83,6 +83,10 @@ export function findKeybindingConflicts(overrides: KeybindingMap): KeybindingCon
     .map(([chord, actionIds]) => ({ chord, actionIds }));
 }
 
+// Named (multi-character) keys admitted alongside single characters — each must match
+// `CHORD_PATTERN`'s trailing `[a-z0-9]+` and `event.key`'s lowercased form exactly.
+const NAMED_KEYS = new Set(['enter', 'pageup', 'pagedown']);
+
 /** Builds a chord string from a keydown event (for the "press a key" capture in the editor). */
 export function chordFromEvent(event: KeyboardEvent): string | null {
   const key = event.key.toLowerCase();
@@ -94,7 +98,7 @@ export function chordFromEvent(event: KeyboardEvent): string | null {
   // Require at least one modifier: a bare key (e.g. "a") would bind globally and is rejected by
   // the server's CHORD_PATTERN. Returning null lets the recorder keep listening for a real chord.
   if (mods.length === 0) return null;
-  const normalizedKey = key === 'enter' ? 'enter' : key.length === 1 ? key : null;
+  const normalizedKey = NAMED_KEYS.has(key) ? key : key.length === 1 ? key : null;
   if (!normalizedKey) return null;
   return [...mods, normalizedKey].join('+');
 }
@@ -115,6 +119,10 @@ export function formatChord(chord: string): string {
         return isMac ? '⇧' : 'Shift';
       case 'alt':
         return isMac ? '⌥' : 'Alt';
+      case 'pageup':
+        return 'Page Up';
+      case 'pagedown':
+        return 'Page Down';
       default:
         return t.length === 1 ? t.toUpperCase() : t.charAt(0).toUpperCase() + t.slice(1);
     }

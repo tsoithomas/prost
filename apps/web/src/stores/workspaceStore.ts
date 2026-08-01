@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ExecuteQueryResponse, RowFilter, SchemaObjectKind } from '@prost/shared-types';
+import { useTableViewModeStore } from './tableViewModeStore';
 
 export interface WorkspaceTab {
   id: string;
@@ -64,6 +65,13 @@ interface WorkspaceState {
   cursorPosition: CursorPosition | null;
   /** A column the structure panel should scroll to + highlight (set by global search). */
   revealColumn: RevealColumnTarget | null;
+  /**
+   * Whether the active tab's grid has staged (unsaved) edits (Phase 40) — only the active tab's
+   * `TableView` is mounted, so this always reflects *its* `useEditBuffer`, never a background tab's.
+   * Read before closing the active tab to warn before discarding.
+   */
+  activeTabDirty: boolean;
+  setActiveTabDirty: (dirty: boolean) => void;
   openTable: (
     connectionId: string,
     schema: string,
@@ -109,6 +117,20 @@ interface WorkspaceState {
   loadQuery: (sql: string) => void;
   clearPendingQuerySql: () => void;
   setCursorPosition: (position: CursorPosition) => void;
+  /**
+   * One-shot focus hand-off (Phase 40: `focus-editor`/`focus-results` shortcuts): whichever view is
+   * mounted for the active tab (`SqlEditorView` or `TableView`) consumes it and clears it.
+   */
+  focusRequest: 'editor' | 'results' | null;
+  requestFocus: (target: 'editor' | 'results') => void;
+  clearFocusRequest: () => void;
+  /**
+   * One-shot view-action hand-off (Phase 40: command-palette "Refresh current view" / "Export
+   * current table"): whichever view is mounted for the active tab consumes it and clears it.
+   */
+  viewActionRequest: 'refresh' | 'export' | null;
+  requestViewAction: (action: 'refresh' | 'export') => void;
+  clearViewActionRequest: () => void;
 }
 
 export const INITIAL_SQL =
@@ -148,8 +170,11 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   transactionalDefault: false,
   cursorPosition: null,
   revealColumn: null,
+  focusRequest: null,
+  viewActionRequest: null,
+  activeTabDirty: false,
 
-  openTable: (connectionId, schema, table, viewMode = 'rows', opts) => {
+  openTable: (connectionId, schema, table, viewMode, opts) => {
     const id = `table:${connectionId}:${schema}.${table}`;
     const search = opts?.search;
     const filter = opts?.filter;
@@ -157,15 +182,21 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       ...(search !== undefined ? { search } : {}),
       ...(filter !== undefined ? { presetFilter: filter } : {}),
     };
+    // No explicit mode requested (a plain "open this table" action, not "show structure" or a
+    // filtered navigation): resume the mode the user last left this table in (Phase 40).
+    const resolvedViewMode = viewMode ?? useTableViewModeStore.getState().get(connectionId, `${schema}.${table}`) ?? 'rows';
     set((state) => {
       if (state.tabs.some((tab) => tab.id === id)) {
         return {
           activeTabId: id,
-          tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode, ...handoff } : tab)),
+          tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode: resolvedViewMode, ...handoff } : tab)),
         };
       }
       return {
-        tabs: [...state.tabs, { id, label: table, kind: 'table', connectionId, schema, table, viewMode, ...handoff }],
+        tabs: [
+          ...state.tabs,
+          { id, label: table, kind: 'table', connectionId, schema, table, viewMode: resolvedViewMode, ...handoff },
+        ],
         activeTabId: id,
       };
     });
@@ -371,6 +402,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
   clearPendingQuerySql: () => set({ pendingQuerySql: null }),
 
   setCursorPosition: (position) => set({ cursorPosition: position }),
+
+  requestFocus: (target) => set({ focusRequest: target }),
+  clearFocusRequest: () => set({ focusRequest: null }),
+
+  requestViewAction: (action) => set({ viewActionRequest: action }),
+  clearViewActionRequest: () => set({ viewActionRequest: null }),
+
+  setActiveTabDirty: (dirty) => set({ activeTabDirty: dirty }),
     }),
     {
       name: 'prost-workspace',

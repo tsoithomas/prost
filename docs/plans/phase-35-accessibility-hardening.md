@@ -10,7 +10,7 @@ that audits and closes the gaps, generalizing the accessible-modal pattern estab
 `SettingsModal`, and adds an automated `axe-core` check to the existing Vitest+RTL harness so regressions
 are caught. It depends on nothing (and reads best after Phase 34, which lands the shared `Modal`).
 
-Roadmap item: Phase 35 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md).
+Roadmap item: Phase 35 in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md).
 
 ## Decisions (to confirm before building)
 

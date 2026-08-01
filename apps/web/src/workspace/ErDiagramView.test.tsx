@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { SchemaForeignKey, SchemaMetadata } from '@prost/shared-types';
 import { renderWithProviders } from '../test/renderWithProviders';
@@ -161,6 +161,81 @@ describe('ErDiagramView', () => {
     renderWithProviders(<ErDiagramView connectionId="c1" schema="empty" />);
 
     expect(screen.getByText('No tables in this schema.')).toBeInTheDocument();
+  });
+
+  it('zooms at the pointer on a plain wheel — deliberate, not gated behind Ctrl (Phase 40)', () => {
+    const { container } = renderDiagram();
+    // The transformed canvas (has `scale()`) is the div right below the wheel listener's target
+    // (`.origin-top-left`, not `<svg>` — the diagram's icons are also `svg`s, so `container.querySelector('svg')`
+    // would grab a header icon instead).
+    const canvas = container.querySelector('.origin-top-left') as HTMLElement;
+    const viewport = canvas.parentElement!;
+
+    const scaleOf = (transform: string) => Number(/scale\(([\d.]+)\)/.exec(transform)?.[1] ?? '1');
+    const before = scaleOf(canvas.style.transform);
+
+    // clientX/clientY must be set — jsdom's zero-size layout means an unset pointer position
+    // resolves to NaN, which poisons the whole `transform` string and jsdom silently keeps the
+    // last valid value (masking the scale change this test is actually checking).
+    fireEvent.wheel(viewport, { deltaY: -100, clientX: 50, clientY: 50 });
+
+    expect(scaleOf(canvas.style.transform)).toBeGreaterThan(before);
+  });
+
+  it('opens at 100% scale regardless of viewport size — labels stay legible, never auto-shrunk', () => {
+    // A viewport far smaller than the diagram's natural bounds would, if this auto-fit a "shrink to
+    // show everything" scale, render table labels illegibly small on first open. It doesn't: opening
+    // always starts at 100%, panned into a top-left-anchored view instead of zoomed out.
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ width: 100, height: 80, top: 0, left: 0, right: 100, bottom: 80, x: 0, y: 0, toJSON: () => {} } as DOMRect);
+
+    const { container } = renderDiagram();
+    const canvas = container.querySelector('.origin-top-left') as HTMLElement;
+    const scaleOf = (transform: string) => Number(/scale\(([\d.]+)\)/.exec(transform)?.[1] ?? '1');
+
+    expect(scaleOf(canvas.style.transform)).toBeCloseTo(1);
+
+    rectSpy.mockRestore();
+  });
+
+  it('"Fit to view" still shrinks to show the whole diagram on demand', async () => {
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({ width: 100, height: 80, top: 0, left: 0, right: 100, bottom: 80, x: 0, y: 0, toJSON: () => {} } as DOMRect);
+
+    const { container } = renderDiagram();
+    const canvas = container.querySelector('.origin-top-left') as HTMLElement;
+    const scaleOf = (transform: string) => Number(/scale\(([\d.]+)\)/.exec(transform)?.[1] ?? '1');
+    expect(scaleOf(canvas.style.transform)).toBeCloseTo(1);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Fit to view' }));
+    expect(scaleOf(canvas.style.transform)).toBeLessThan(1);
+
+    rectSpy.mockRestore();
+  });
+
+  it('re-attaches the wheel listener once the FK query finishes loading (regression)', () => {
+    // Reproduces a real bug: table nodes come from metadata alone, so node count can be identical
+    // before and after the FK query resolves. An effect keyed on node count would see an unchanged
+    // dependency across that transition and never re-run to pick up the now-mounted viewport div —
+    // the listener would attach to nothing and wheel zoom would silently do nothing on first load
+    // (only working after switching tabs away and back, which remounts fresh with warm caches).
+    mockForeignKeys.mockReturnValue({ data: undefined, isLoading: true, isError: false });
+    const { container, rerender } = renderDiagram();
+    expect(container.textContent).toContain('Loading diagram…');
+
+    mockForeignKeys.mockReturnValue(loaded(FKS));
+    rerender(<ErDiagramView connectionId="c1" schema="public" />);
+
+    const canvas = container.querySelector('.origin-top-left') as HTMLElement;
+    const viewport = canvas.parentElement!;
+    const scaleOf = (transform: string) => Number(/scale\(([\d.]+)\)/.exec(transform)?.[1] ?? '1');
+    const before = scaleOf(canvas.style.transform);
+
+    fireEvent.wheel(viewport, { deltaY: -100, clientX: 50, clientY: 50 });
+
+    expect(scaleOf(canvas.style.transform)).toBeGreaterThan(before);
   });
 
   it('surfaces loading and error states', () => {

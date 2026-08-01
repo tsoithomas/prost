@@ -41,6 +41,7 @@ const DEFAULTS: UserPreferenceDto = {
   grid: {},
   behavior: {},
   reduceMotion: false,
+  hideFocusRing: true,
   aiEnabled: true,
 };
 
@@ -65,6 +66,10 @@ export class PreferenceService {
         fontSize: dto.fontSize ?? DEFAULTS.fontSize,
         gridDensity: dto.gridDensity ?? DEFAULTS.gridDensity,
         radiusScale: dto.radiusScale ?? DEFAULTS.radiusScale,
+        // Explicit (not left to the column's SQL default, which stays `false` — see schema.prisma):
+        // the app's actual default is `true`, and this is the one `create` path that would
+        // otherwise silently fall through to the SQL default when a fresh row's first write omits it.
+        hideFocusRing: dto.hideFocusRing ?? DEFAULTS.hideFocusRing,
         ...data,
       },
       update: data,
@@ -94,7 +99,7 @@ type PreferenceRowData = Partial<
     | 'behavior',
     string
   >
-> & { reduceMotion?: boolean; aiEnabled?: boolean };
+> & { reduceMotion?: boolean; hideFocusRing?: boolean; aiEnabled?: boolean };
 
 /** Maps a partial update DTO to the Prisma row shape, JSON-stringifying (and validating) the
  *  structured fields. Only keys present on the DTO are included, preserving PATCH semantics. */
@@ -125,6 +130,7 @@ function toRowData(dto: UpdatePreferenceDto): PreferenceRowData {
   if (dto.grid !== undefined) data.grid = JSON.stringify(validateGridPrefs(dto.grid));
   if (dto.behavior !== undefined) data.behavior = JSON.stringify(validateBehaviorPrefs(dto.behavior));
   if (dto.reduceMotion !== undefined) data.reduceMotion = dto.reduceMotion;
+  if (dto.hideFocusRing !== undefined) data.hideFocusRing = dto.hideFocusRing;
   if (dto.aiEnabled !== undefined) data.aiEnabled = dto.aiEnabled;
   return data;
 }
@@ -156,6 +162,7 @@ export function toUserPreferenceDto(row: UserPreference): UserPreferenceDto {
     grid: parseJson<GridDisplayPreferences>(row.grid, {}),
     behavior: parseJson<BehaviorPreferences>(row.behavior, {}),
     reduceMotion: row.reduceMotion,
+    hideFocusRing: row.hideFocusRing,
     aiEnabled: row.aiEnabled,
   };
 }

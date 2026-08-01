@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Editor, { type Monaco, type OnMount } from '@monaco-editor/react';
 import { AgGridReact } from 'ag-grid-react';
+import clsx from 'clsx';
 import type {
   CellClickedEvent,
   CellValueChangedEvent,
@@ -11,7 +12,7 @@ import type {
   IDatasource,
   SelectionChangedEvent,
 } from 'ag-grid-community';
-import { Bookmark, Download, Play, Plus, Save, Trash2, WandSparkles, X } from 'lucide-react';
+import { Bookmark, Download, Maximize2, Minimize2, Play, Plus, Save, Trash2, WandSparkles, X } from 'lucide-react';
 import { format } from 'sql-formatter';
 import type { ColumnRenderMode, DbEngineDescriptor, ExecuteQueryResponse, QueryPlanResult } from '@prost/shared-types';
 import {
@@ -25,6 +26,7 @@ import {
   PROST_DARK_THEME,
   PROST_LIGHT_THEME,
   Toast,
+  Tooltip,
   defineFreshProstMonacoTheme,
   defineProstMonacoThemes,
   prostGridTheme,
@@ -41,10 +43,13 @@ import { buildColumnDefs, type HeaderContextMenuArgs, type RenderModeMap } from 
 import { ColumnRenderMenu } from '../grid/ColumnRenderMenu';
 import { JsonCellPopup } from '../grid/JsonCellPopup';
 import { useConfirm } from '../hooks/useConfirm';
+import { useIsMobile } from '../hooks/useMediaQuery';
+import { useResizablePane } from '../hooks/useResizablePane';
 import { useToasts } from '../hooks/useToasts';
 import { matchesChord, resolveBinding } from '../keybindings';
 import { ApiError, apiErrorDetail, apiErrorMessage } from '../lib/apiClient';
 import { useConnectionStore } from '../stores/connectionStore';
+import { MAX_SQL_EDITOR_HEIGHT, MIN_SQL_EDITOR_HEIGHT, useLayoutStore } from '../stores/layoutStore';
 import { useThemeStore } from '../stores/themeStore';
 import { INITIAL_SQL, useWorkspaceStore } from '../stores/workspaceStore';
 import { createCursorDatasource } from './cursorDatasource';
@@ -84,6 +89,20 @@ export function SqlEditorView() {
   const connectionId = useConnectionStore((state) => state.activeConnectionId);
   const activeConnection = useActiveConnection();
   const descriptor = useEngineDescriptor(connectionId);
+  const isMobile = useIsMobile();
+  // Editor/results split (Phase 40): desktop-only drag + maximize; mobile keeps its fixed
+  // Tailwind-class split (there's no room to spare, and focus mode already covers full-screen).
+  const [paneMode, setPaneMode] = useState<'split' | 'editor' | 'results'>('split');
+  const sqlEditorHeight = useLayoutStore((s) => s.sqlEditorHeight);
+  const setSqlEditorHeight = useLayoutStore((s) => s.setSqlEditorHeight);
+  const { isResizing: isSplitResizing, onPointerDown: onSplitPointerDown } = useResizablePane({
+    size: sqlEditorHeight,
+    min: MIN_SQL_EDITOR_HEIGHT,
+    max: MAX_SQL_EDITOR_HEIGHT,
+    onResize: setSqlEditorHeight,
+    axis: 'vertical',
+    side: 'top',
+  });
   const colorMode = useThemeStore((state) => state.colorMode);
   const accentColor = useThemeStore((state) => state.accentColor);
   // Palettes recolor the editor's CSS vars without touching colorMode/accentColor, so the Monaco
@@ -150,6 +169,16 @@ export function SqlEditorView() {
 
   const executeQuery = useExecuteQuery(connectionId ?? '');
   const explainQuery = useExplainQuery(connectionId ?? '');
+  // Live elapsed-time counter while a query runs (Phase 40) — purely a UI affordance, no bearing on
+  // the recorded `executionTimeMs` the server returns.
+  const [elapsedMs, setElapsedMs] = useState(0);
+  useEffect(() => {
+    if (!executeQuery.isPending) return;
+    const start = Date.now();
+    setElapsedMs(0);
+    const timer = window.setInterval(() => setElapsedMs(Date.now() - start), 100);
+    return () => window.clearInterval(timer);
+  }, [executeQuery.isPending]);
   const suggest = useSchemaSuggestions(connectionId);
   // Stable reference, so `runExplain` can depend on it honestly (a fresh plan clears stale advice).
   const resetSuggestions = suggest.reset;
@@ -446,6 +475,33 @@ export function SqlEditorView() {
     gridApiRef.current = event.api;
   }, []);
 
+  // One-shot focus hand-off (Phase 40: `focus-editor`/`focus-results` shortcuts). Only the active
+  // tab's view is mounted (see `Workspace.tsx`), so no per-tab scoping is needed here.
+  const focusRequest = useWorkspaceStore((state) => state.focusRequest);
+  const clearFocusRequest = useWorkspaceStore((state) => state.clearFocusRequest);
+  useEffect(() => {
+    if (!focusRequest) return;
+    if (focusRequest === 'editor') {
+      editorRef.current?.focus();
+    } else {
+      const firstField = columnDefs[0]?.field;
+      if (firstField) gridApiRef.current?.setFocusedCell(0, firstField);
+    }
+    clearFocusRequest();
+  }, [focusRequest, clearFocusRequest, columnDefs]);
+
+  // Command-palette view-action hand-off (Phase 40): "Refresh" re-runs the current buffer's SQL;
+  // "Export" opens the export dialog for the last rows result. Only meaningful once a rows result
+  // exists — a query tab with nothing run yet has nothing to refresh or export.
+  const viewActionRequest = useWorkspaceStore((state) => state.viewActionRequest);
+  const clearViewActionRequest = useWorkspaceStore((state) => state.clearViewActionRequest);
+  useEffect(() => {
+    if (!viewActionRequest || !isGridResult) return;
+    if (viewActionRequest === 'refresh') void runSql(sql);
+    else setExportOpen(true);
+    clearViewActionRequest();
+  }, [viewActionRequest, isGridResult, runSql, sql, clearViewActionRequest]);
+
   const onSelectionChanged = useCallback((event: SelectionChangedEvent) => {
     setSelectedRows(event.api.getSelectedRows() as Record<string, unknown>[]);
   }, []);
@@ -553,59 +609,94 @@ export function SqlEditorView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="h-1/2 min-h-0 border-b border-border max-md:h-2/5">
-        <Editor
-          height="100%"
-          defaultLanguage="sql"
-          value={sql}
-          onChange={(value) => setTabSql(activeTabId, value ?? '')}
-          theme={monacoThemeName}
-          beforeMount={defineProstMonacoThemes}
-          onMount={(editor, monaco) => {
-            editorRef.current = editor;
-            setMonacoInstance(monaco);
-            // Run/format shortcuts are bound in a keybindings-aware effect (see above) so they
-            // stay remappable; the formatting provider below supplies the actual format edits.
-            monaco.languages.registerDocumentFormattingEditProvider('sql', {
-              provideDocumentFormattingEdits(model) {
-                const formatted = format(model.getValue(), {
-                  language: formatterDialectRef.current,
-                  tabWidth: 2,
-                  keywordCase: 'upper',
-                });
-                return [{ range: model.getFullModelRange(), text: formatted }];
-              },
-            });
-            const position = editor.getPosition();
-            if (position) setCursorPosition({ line: position.lineNumber, column: position.column });
-            editor.onDidChangeCursorPosition((event) => {
-              setCursorPosition({ line: event.position.lineNumber, column: event.position.column });
-            });
-          }}
-          options={{
-            fontSize: EDITOR_FONT_PX[editorPrefs.fontSize ?? 'md'],
-            fontFamily: monoFontFamily ? MONO_FONT_FAMILY_STACK[monoFontFamily] : 'JetBrains Mono, monospace',
-            tabSize: editorPrefs.tabSize ?? 2,
-            insertSpaces: editorPrefs.insertSpaces ?? true,
-            wordWrap: editorPrefs.wordWrap ? 'on' : 'off',
-            lineNumbers: editorPrefs.lineNumbers ?? 'on',
-            minimap: { enabled: editorPrefs.minimap ?? false },
-            padding: { top: 8 },
-          }}
+      {paneMode !== 'results' ? (
+        <div
+          className={clsx(
+            'relative min-h-0 border-b border-border',
+            isMobile ? 'h-2/5' : paneMode === 'editor' ? 'flex-1' : 'shrink-0',
+          )}
+          style={!isMobile && paneMode === 'split' ? { height: sqlEditorHeight } : undefined}
+        >
+          {!isMobile ? (
+            <div className="absolute right-2 top-2 z-10">
+              <Tooltip content={paneMode === 'editor' ? 'Restore split view' : 'Maximize editor'}>
+                <IconButton
+                  aria-label={paneMode === 'editor' ? 'Restore split view' : 'Maximize editor'}
+                  variant="solid"
+                  onClick={() => setPaneMode((mode) => (mode === 'editor' ? 'split' : 'editor'))}
+                >
+                  {paneMode === 'editor' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                </IconButton>
+              </Tooltip>
+            </div>
+          ) : null}
+          <Editor
+            height="100%"
+            defaultLanguage="sql"
+            value={sql}
+            onChange={(value) => setTabSql(activeTabId, value ?? '')}
+            theme={monacoThemeName}
+            beforeMount={defineProstMonacoThemes}
+            onMount={(editor, monaco) => {
+              editorRef.current = editor;
+              setMonacoInstance(monaco);
+              // Run/format shortcuts are bound in a keybindings-aware effect (see above) so they
+              // stay remappable; the formatting provider below supplies the actual format edits.
+              monaco.languages.registerDocumentFormattingEditProvider('sql', {
+                provideDocumentFormattingEdits(model) {
+                  const formatted = format(model.getValue(), {
+                    language: formatterDialectRef.current,
+                    tabWidth: 2,
+                    keywordCase: 'upper',
+                  });
+                  return [{ range: model.getFullModelRange(), text: formatted }];
+                },
+              });
+              const position = editor.getPosition();
+              if (position) setCursorPosition({ line: position.lineNumber, column: position.column });
+              editor.onDidChangeCursorPosition((event) => {
+                setCursorPosition({ line: event.position.lineNumber, column: event.position.column });
+              });
+            }}
+            options={{
+              fontSize: EDITOR_FONT_PX[editorPrefs.fontSize ?? 'md'],
+              fontFamily: monoFontFamily ? MONO_FONT_FAMILY_STACK[monoFontFamily] : 'JetBrains Mono, monospace',
+              tabSize: editorPrefs.tabSize ?? 2,
+              insertSpaces: editorPrefs.insertSpaces ?? true,
+              wordWrap: editorPrefs.wordWrap ? 'on' : 'off',
+              lineNumbers: editorPrefs.lineNumbers ?? 'on',
+              minimap: { enabled: editorPrefs.minimap ?? false },
+              padding: { top: 8 },
+            }}
+          />
+        </div>
+      ) : null}
+      {!isMobile && paneMode === 'split' ? (
+        <div
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize SQL editor"
+          onPointerDown={onSplitPointerDown}
+          className={clsx(
+            'h-1 shrink-0 cursor-row-resize hover:bg-accent/50',
+            isSplitResizing && 'bg-accent/50',
+          )}
         />
-      </div>
-      <div className="flex h-1/2 min-h-0 flex-col overflow-hidden max-md:h-3/5">
+      ) : null}
+      {paneMode !== 'editor' ? (
+      <div className={clsx('flex min-h-0 flex-col overflow-hidden', isMobile ? 'h-3/5' : 'flex-1')}>
         <div className="flex h-8 max-md:h-11 shrink-0 items-center gap-sm overflow-x-auto border-b border-border bg-surface px-sm [&>*]:shrink-0">
           <Button
             variant="primary"
             size="sm"
+            loading={executeQuery.isPending}
             onClick={runActiveStatement}
             disabled={!connectionId || !sql.trim() || executeQuery.isPending}
             className="shrink-0"
             title="Run the selected text, or the statement under the cursor (Cmd/Ctrl+Enter). Cmd/Ctrl+Shift+Enter runs all."
           >
-            <Play size={12} />
-            {executeQuery.isPending ? 'Running…' : 'Run'}
+            {executeQuery.isPending ? null : <Play size={12} />}
+            {executeQuery.isPending ? `Running… ${(elapsedMs / 1000).toFixed(1)}s` : 'Run'}
           </Button>
           {descriptor?.supportsQueryPlan ? (
             <Button
@@ -761,6 +852,16 @@ export function SqlEditorView() {
             ) : null}
             {!planResult && single?.kind === 'error' ? <Badge variant="danger">{single.code ?? 'SQL_ERROR'}</Badge> : null}
           </div>
+          {!isMobile ? (
+            <Tooltip content={paneMode === 'results' ? 'Restore split view' : 'Maximize results'}>
+              <IconButton
+                aria-label={paneMode === 'results' ? 'Restore split view' : 'Maximize results'}
+                onClick={() => setPaneMode((mode) => (mode === 'results' ? 'split' : 'results'))}
+              >
+                {paneMode === 'results' ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </IconButton>
+            </Tooltip>
+          ) : null}
         </div>
         <div className="min-h-0 flex-1">
           {planResult ? (
@@ -830,6 +931,8 @@ export function SqlEditorView() {
                   getRowId={getRowId}
                   pinnedTopRowData={pinnedTopRowData}
                   rowSelection={editable ? { mode: 'multiRow', checkboxes: true, headerCheckbox: false } : undefined}
+                  enableCellTextSelection
+                  tooltipShowDelay={500}
                   onGridReady={onGridReady}
                   onSelectionChanged={onSelectionChanged}
                   onCellValueChanged={onCellValueChanged}
@@ -874,6 +977,7 @@ export function SqlEditorView() {
           )}
         </div>
       </div>
+      ) : null}
       <ColumnRenderMenu
         state={renderMenu}
         currentMode={renderMenu ? renderOverrides?.[renderMenu.field] : undefined}

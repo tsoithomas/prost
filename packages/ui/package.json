@@ -13,6 +13,7 @@
     "@prost/shared-types": "workspace:*",
     "ag-grid-community": "^33",
     "clsx": "^2",
+    "lucide-react": "*",
     "recharts": "^2.15.0"
   },
   "peerDependencies": {

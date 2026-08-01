@@ -9,7 +9,8 @@ export type SearchItem =
   | { type: 'table'; schema: string; table: string; label: string }
   | { type: 'column'; schema: string; table: string; column: string; dataType: string; label: string }
   | { type: 'snippet'; id: string; name: string; body: string }
-  | { type: 'history'; id: string; sql: string; label?: string; connectionName: string };
+  | { type: 'history'; id: string; sql: string; label?: string; connectionName: string }
+  | { type: 'command'; id: string; label: string; shortcut?: string };
 
 /** Flatten cached metadata into searchable table + column items. */
 export function buildMetadataItems(schemas: SchemaMetadata[]): SearchItem[] {
@@ -46,6 +47,13 @@ const snippetFuseOptions: IFuseOptions<SnippetDto> = {
   keys: ['name', 'body'],
 };
 
+const commandFuseOptions: IFuseOptions<SearchItem> = {
+  includeScore: true,
+  threshold: 0.4,
+  ignoreLocation: true,
+  keys: ['label'],
+};
+
 export function createMetadataFuse(items: SearchItem[]): Fuse<SearchItem> {
   return new Fuse(items, metadataFuseOptions);
 }
@@ -54,7 +62,12 @@ export function createSnippetFuse(snippets: SnippetDto[]): Fuse<SnippetDto> {
   return new Fuse(snippets, snippetFuseOptions);
 }
 
+export function createCommandFuse(items: SearchItem[]): Fuse<SearchItem> {
+  return new Fuse(items, commandFuseOptions);
+}
+
 export interface GroupedResults {
+  commands: SearchItem[];
   tables: SearchItem[];
   columns: SearchItem[];
   snippets: SearchItem[];
@@ -63,21 +76,27 @@ export interface GroupedResults {
 
 /**
  * Runs the fuzzy matchers and assembles the bounded, grouped result set. History arrives already
- * filtered by the server (Phase 19), so it's only mapped + capped here.
+ * filtered by the server (Phase 19), so it's only mapped + capped here. Commands are the one group
+ * shown on an empty query too — they're the palette's discoverable action surface (Phase 40), not
+ * just a search result.
  */
 export function search(
   query: string,
   metadataFuse: Fuse<SearchItem>,
   snippetFuse: Fuse<SnippetDto>,
   history: QueryHistoryDto[],
+  commands: SearchItem[] = [],
+  commandFuse?: Fuse<SearchItem>,
 ): GroupedResults {
   const trimmed = query.trim();
   const metaHits = trimmed ? metadataFuse.search(trimmed).map((r) => r.item) : [];
   const snippetHits = trimmed
     ? snippetFuse.search(trimmed).map((r) => r.item)
     : [];
+  const commandHits = !trimmed ? commands : (commandFuse?.search(trimmed).map((r) => r.item) ?? []);
 
   return {
+    commands: commandHits.slice(0, PER_GROUP_LIMIT),
     tables: metaHits.filter((i) => i.type === 'table').slice(0, PER_GROUP_LIMIT),
     columns: metaHits.filter((i) => i.type === 'column').slice(0, PER_GROUP_LIMIT),
     snippets: snippetHits
@@ -98,5 +117,5 @@ export function search(
 
 /** Flatten grouped results into the linear order used for keyboard navigation. */
 export function flattenResults(groups: GroupedResults): SearchItem[] {
-  return [...groups.tables, ...groups.columns, ...groups.snippets, ...groups.history];
+  return [...groups.commands, ...groups.tables, ...groups.columns, ...groups.snippets, ...groups.history];
 }

@@ -19,11 +19,13 @@ export function AppearanceSection({ save, query }: SectionProps) {
   const fontFamily = useThemeStore((s) => s.fontFamily);
   const radiusScale = useThemeStore((s) => s.radiusScale);
   const reduceMotion = useThemeStore((s) => s.reduceMotion);
+  const hideFocusRing = useThemeStore((s) => s.hideFocusRing);
   const aiEnabled = useThemeStore((s) => s.aiEnabled);
   const setFontSize = useThemeStore((s) => s.setFontSize);
   const setFontFamily = useThemeStore((s) => s.setFontFamily);
   const setRadiusScale = useThemeStore((s) => s.setRadiusScale);
   const setReduceMotion = useThemeStore((s) => s.setReduceMotion);
+  const setHideFocusRing = useThemeStore((s) => s.setHideFocusRing);
   const setAiEnabled = useThemeStore((s) => s.setAiEnabled);
 
   function handleFontSize(size: FontSize) {
@@ -76,6 +78,17 @@ export function AppearanceSection({ save, query }: SectionProps) {
           onChange={(on) => {
             setReduceMotion(on);
             save({ reduceMotion: on });
+          }}
+        />
+      ) : null}
+      {match('Hide keyboard focus ring outline', query) ? (
+        <SettingSwitch
+          label="Hide focus ring"
+          description="Hide the outline shown around the focused element when navigating with a keyboard. On by default — turn it off if you rely on seeing keyboard focus."
+          checked={hideFocusRing}
+          onChange={(on) => {
+            setHideFocusRing(on);
+            save({ hideFocusRing: on });
           }}
         />
       ) : null}

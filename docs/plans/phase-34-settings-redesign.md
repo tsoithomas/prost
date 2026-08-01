@@ -19,7 +19,7 @@ write-through rather than adding a persistence path, and along the way extracts 
 primitives the app currently hand-rolls in ~10 places. It is a strengthening phase in the theming lineage
 of Phases 5 and 21, and depends on nothing.
 
-Roadmap item: Phase 34 in [`roadmap-phase-34-46.md`](./roadmap-phase-34-46.md).
+Roadmap item: Phase 34 in [`roadmap-phase-34-47.md`](./roadmap-phase-34-47.md).
 
 ## Decisions (to confirm before building)
 
