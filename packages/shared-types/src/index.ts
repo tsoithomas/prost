@@ -12,3 +12,4 @@ export * from './ai.js';
 export * from './snippets.js';
 export * from './filter.js';
 export * from './datatransfer.js';
+export * from './schema-diff.js';

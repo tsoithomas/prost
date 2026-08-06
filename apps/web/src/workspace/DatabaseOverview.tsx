@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, Eraser, Rows3, Search, StretchHorizontal, Table2, Trash2, Waypoints } from 'lucide-react';
+import { Download, Eraser, GitCompare, Rows3, Search, StretchHorizontal, Table2, Trash2, Waypoints } from 'lucide-react';
 import type { TableOverview } from '@prost/shared-types';
 import { Button, IconButton, Toast } from '@prost/ui';
 import { useDropTable, useTruncateTable } from '../api/ddl';
@@ -9,6 +9,7 @@ import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
 import { apiErrorDetail } from '../lib/apiClient';
 import { useWorkspaceStore } from '../stores/workspaceStore';
+import { CompareSchemaModal } from './CompareSchemaModal';
 import { SchemaExportDialog } from './SchemaExportDialog';
 
 export interface DatabaseOverviewProps {
@@ -44,12 +45,14 @@ export function DatabaseOverview({ connectionId, schema, writable = true }: Data
   const openTable = useWorkspaceStore((state) => state.openTable);
   const closeTableTab = useWorkspaceStore((state) => state.closeTableTab);
   const openErDiagram = useWorkspaceStore((state) => state.openErDiagram);
+  const openSchemaDiff = useWorkspaceStore((state) => state.openSchemaDiff);
 
   const dropTable = useDropTable(connectionId);
   const truncateTable = useTruncateTable(connectionId);
   const { confirm, dialog: confirmDialog } = useConfirm();
   const { toasts, push: pushToast, dismiss: dismissToast } = useToasts();
   const [exportOpen, setExportOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
 
   async function handleEmpty(name: string) {
     const ok = await confirm({
@@ -112,6 +115,10 @@ export function DatabaseOverview({ connectionId, schema, writable = true }: Data
               <Button variant="secondary" size="sm" onClick={() => openErDiagram(connectionId, schema)}>
                 <Waypoints size={13} />
                 Diagram
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => setCompareOpen(true)}>
+                <GitCompare size={13} />
+                Compare
               </Button>
               <Button variant="secondary" size="sm" onClick={() => setExportOpen(true)}>
                 <Download size={13} />
@@ -214,6 +221,14 @@ export function DatabaseOverview({ connectionId, schema, writable = true }: Data
       </div>
 
       <SchemaExportDialog open={exportOpen} onClose={() => setExportOpen(false)} connectionId={connectionId} schema={schema} />
+
+      <CompareSchemaModal
+        open={compareOpen}
+        onClose={() => setCompareOpen(false)}
+        connectionId={connectionId}
+        schema={schema}
+        onCompare={(compareConnectionId, compareSchema) => openSchemaDiff(connectionId, schema, compareConnectionId, compareSchema)}
+      />
 
       <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-sm p-md sm:items-end">
         {toasts.map((toast) => (

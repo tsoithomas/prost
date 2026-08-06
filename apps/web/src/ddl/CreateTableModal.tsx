@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
+import type { NewColumn } from '@prost/shared-types';
 import { Button, Checkbox, IconButton, Input, Modal, Surface } from '@prost/ui';
 import { useEngineDescriptor } from '../api/databaseEngines';
 import { useCreateTable } from '../api/ddl';
@@ -37,6 +38,18 @@ function newRow(): ColumnRow {
   };
 }
 
+function columnToRow(column: NewColumn): ColumnRow {
+  return {
+    id: crypto.randomUUID(),
+    name: column.name,
+    type: column.type,
+    nullable: column.nullable,
+    isPrimaryKey: column.isPrimaryKey,
+    autoIncrement: column.autoIncrement ?? false,
+    default: column.default ?? '',
+  };
+}
+
 export interface CreateTableModalProps {
   open: boolean;
   onClose: () => void;
@@ -44,6 +57,9 @@ export interface CreateTableModalProps {
   connectionId: string;
   initialSchema: string;
   schemas: string[];
+  /** Seed the form when opened from outside (e.g. a schema-diff migration change — Phase 42). */
+  initialTable?: string;
+  initialColumns?: NewColumn[];
 }
 
 export function CreateTableModal({
@@ -53,10 +69,14 @@ export function CreateTableModal({
   connectionId,
   initialSchema,
   schemas,
+  initialTable,
+  initialColumns,
 }: CreateTableModalProps) {
   const [schema, setSchema] = useState(initialSchema);
-  const [tableName, setTableName] = useState('');
-  const [columns, setColumns] = useState<ColumnRow[]>([newRow()]);
+  const [tableName, setTableName] = useState(initialTable ?? '');
+  const [columns, setColumns] = useState<ColumnRow[]>(() =>
+    initialColumns && initialColumns.length > 0 ? initialColumns.map(columnToRow) : [newRow()],
+  );
   const [formError, setFormError] = useState<string | null>(null);
 
   const descriptor = useEngineDescriptor(connectionId);
@@ -84,19 +104,23 @@ export function CreateTableModal({
     : null;
   const { sql: previewSql } = useDdlPreview(connectionId, previewBody);
 
+  // Seed from `initialTable`/`initialColumns` on open (both undefined for the normal "New table" flow,
+  // so this reduces to the same blank form), reset on close. Keyed on the serialized value — same idiom
+  // as `AddColumnModal` — so a caller re-creating the array each render can't stomp the user's edits.
+  const initialColumnsKey = JSON.stringify(initialColumns ?? null);
   useEffect(() => {
+    setSchema(initialSchema);
     if (!open) {
-      setSchema(initialSchema);
       setTableName('');
       setColumns([newRow()]);
       setFormError(null);
       createTable.reset();
+      return;
     }
-  }, [open]);
-
-  useEffect(() => {
-    if (open) setSchema(initialSchema);
-  }, [initialSchema, open]);
+    setTableName(initialTable ?? '');
+    const seedColumns = (JSON.parse(initialColumnsKey) as NewColumn[] | null) ?? [];
+    setColumns(seedColumns.length > 0 ? seedColumns.map(columnToRow) : [newRow()]);
+  }, [open, initialSchema, initialTable, initialColumnsKey]);
 
 
   function updateColumn(id: string, patch: Partial<ColumnRow>) {

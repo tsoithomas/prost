@@ -88,4 +88,45 @@ describe('AddForeignKeyModal', () => {
     const last = mockPreview.mock.calls.at(-1)![0] as { kind: string; request: { kind: string } } | null;
     expect(last).toMatchObject({ kind: 'alterTable', request: { kind: 'addForeignKey', referencedTable: 'users' } });
   });
+
+  it('seeds every field from initialOperation (a schema-diff migration change) and submits it unmodified', async () => {
+    renderWithProviders(
+      <AddForeignKeyModal
+        open
+        onClose={vi.fn()}
+        connectionId="c1"
+        schema="public"
+        table="orders"
+        availableColumns={localColumns}
+        initialOperation={{
+          kind: 'addForeignKey',
+          columns: ['user_id'],
+          referencedSchema: 'public',
+          referencedTable: 'users',
+          referencedColumns: ['id'],
+          onDelete: 'CASCADE',
+          onUpdate: 'SET NULL',
+          constraintName: 'orders_user_id_fkey',
+        }}
+      />,
+    );
+
+    expect(screen.getByLabelText('user_id')).toBeChecked();
+    expect(screen.getByLabelText('Referenced table')).toHaveValue('public users');
+    expect(screen.getByLabelText('id')).toBeChecked();
+    expect(screen.getByLabelText('On delete')).toHaveValue('CASCADE');
+    expect(screen.getByLabelText('On update')).toHaveValue('SET NULL');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add Foreign Key' }));
+    expect(mockMutate.mock.calls[0]![0]).toEqual({
+      kind: 'addForeignKey',
+      columns: ['user_id'],
+      referencedSchema: 'public',
+      referencedTable: 'users',
+      referencedColumns: ['id'],
+      onDelete: 'CASCADE',
+      onUpdate: 'SET NULL',
+      constraintName: 'orders_user_id_fkey',
+    });
+  });
 });

@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Code,
   FileText,
+  GitCompare,
   LayoutGrid,
   Plus,
   ScrollText,
@@ -26,7 +27,8 @@ export interface WorkspaceTab {
     | 'erDiagram'
     | 'sessions'
     | 'performance'
-    | 'audit';
+    | 'audit'
+    | 'schemaDiff';
 }
 
 export interface WorkspaceTabBarProps {
@@ -241,7 +243,9 @@ export function WorkspaceTabBar({
                         ? ChartNoAxesCombined
                         : tab.kind === 'audit'
                           ? ScrollText
-                          : Code;
+                          : tab.kind === 'schemaDiff'
+                            ? GitCompare
+                            : Code;
           const canClose = tab.kind !== 'query' || queryTabCount > 1;
           const isDropTarget = dragOverId === tab.id && draggedId !== null && draggedId !== tab.id;
           return (

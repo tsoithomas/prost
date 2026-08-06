@@ -9,6 +9,7 @@ import { ErDiagramView } from './ErDiagramView';
 import { SessionsPanel } from './SessionsPanel';
 import { AuditPanel } from './AuditPanel';
 import { PerformancePanel } from './PerformancePanel';
+import { SchemaDiffView } from './SchemaDiffView';
 import { useConnection } from '../api/connections';
 import { useEngineDescriptor } from '../api/databaseEngines';
 import { useConfirm } from '../hooks/useConfirm';
@@ -54,7 +55,9 @@ export function Workspace() {
       ? [connectionLabel, activeTab.schema, activeTab.label]
       : (activeTab?.kind === 'overview' || activeTab?.kind === 'erDiagram') && activeTab.schema
         ? [connectionLabel, activeTab.schema]
-        : [connectionLabel];
+        : activeTab?.kind === 'schemaDiff' && activeTab.schema
+          ? [connectionLabel, activeTab.schema, 'Compare']
+          : [connectionLabel];
 
   const actionButtonClass =
     'flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-text-muted transition-colors hover:bg-surface-hover hover:text-text';
@@ -179,6 +182,18 @@ export function Workspace() {
         ) : null}
         {activeTab?.kind === 'performance' && activeTab.connectionId ? (
           <PerformancePanel connectionId={activeTab.connectionId} writable={writable} />
+        ) : null}
+        {activeTab?.kind === 'schemaDiff' &&
+        activeTab.connectionId &&
+        activeTab.schema &&
+        activeTab.compareConnectionId &&
+        activeTab.compareSchema ? (
+          <SchemaDiffView
+            connectionId={activeTab.connectionId}
+            schema={activeTab.schema}
+            compareConnectionId={activeTab.compareConnectionId}
+            compareSchema={activeTab.compareSchema}
+          />
         ) : null}
         {activeTab?.kind === 'audit' ? <AuditPanel /> : null}
         {activeTab?.kind === 'query' ? <SqlEditorView /> : null}

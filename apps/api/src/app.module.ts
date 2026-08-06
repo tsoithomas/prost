@@ -22,6 +22,7 @@ import { AuditModule } from './audit/audit.module';
 import { ExportModule } from './export/export.module';
 import { ImportModule } from './import/import.module';
 import { PerformanceModule } from './performance/performance.module';
+import { SchemaDiffModule } from './schema-diff/schema-diff.module';
 
 const globalThrottleGuard: Provider = { provide: APP_GUARD, useClass: ThrottlerGuard };
 
@@ -60,6 +61,7 @@ const globalThrottleGuard: Provider = { provide: APP_GUARD, useClass: ThrottlerG
     ExportModule,
     ImportModule,
     PerformanceModule,
+    SchemaDiffModule,
   ],
   controllers: [AppController],
   providers: [globalThrottleGuard],

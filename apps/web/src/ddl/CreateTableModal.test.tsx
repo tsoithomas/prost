@@ -198,4 +198,31 @@ describe('CreateTableModal', () => {
       columns: [expect.objectContaining({ autoIncrement: true })],
     });
   });
+
+  it('seeds table name and columns from initialTable/initialColumns (a schema-diff migration change)', async () => {
+    renderWithProviders(
+      <CreateTableModal
+        {...DEFAULT_PROPS}
+        initialTable="orders"
+        initialColumns={[
+          { name: 'id', type: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false },
+          { name: 'total', type: 'numeric', nullable: true, isPrimaryKey: false, autoIncrement: false, default: '0' },
+        ]}
+      />,
+    );
+
+    expect(screen.getByPlaceholderText('my_table')).toHaveValue('orders');
+    expect(screen.getAllByPlaceholderText('column_name').map((el) => (el as HTMLInputElement).value)).toEqual(['id', 'total']);
+    expect(mockPreview).toHaveBeenLastCalledWith('conn-1', {
+      kind: 'createTable',
+      request: {
+        schema: 'public',
+        table: 'orders',
+        columns: [
+          { name: 'id', type: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false, default: undefined },
+          { name: 'total', type: 'numeric', nullable: true, isPrimaryKey: false, autoIncrement: false, default: '0' },
+        ],
+      },
+    });
+  });
 });

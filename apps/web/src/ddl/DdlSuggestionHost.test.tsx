@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen } from '@testing-library/react';
-import type { SchemaSuggestionChange } from '@prost/shared-types';
+import type { SchemaDiffChange } from '@prost/shared-types';
 import { renderWithProviders } from '../test/renderWithProviders';
 import { useDdlStore } from '../stores/ddlStore';
 import { DdlSuggestionHost } from './DdlSuggestionHost';
@@ -19,9 +19,19 @@ vi.mock('./CreateIndexModal', () => ({
     <div data-testid="create-index" data-props={JSON.stringify(props)} />
   ),
 }));
+vi.mock('./CreateTableModal', () => ({
+  CreateTableModal: (props: Record<string, unknown>) => (
+    <div data-testid="create-table" data-props={JSON.stringify(props)} />
+  ),
+}));
 vi.mock('./AddColumnModal', () => ({
   AddColumnModal: (props: Record<string, unknown>) => (
     <div data-testid="add-column" data-props={JSON.stringify(props)} />
+  ),
+}));
+vi.mock('./AddForeignKeyModal', () => ({
+  AddForeignKeyModal: (props: Record<string, unknown>) => (
+    <div data-testid="add-foreign-key" data-props={JSON.stringify(props)} />
   ),
 }));
 vi.mock('./EditColumnModal', () => ({
@@ -30,7 +40,7 @@ vi.mock('./EditColumnModal', () => ({
   ),
 }));
 
-function open(change: SchemaSuggestionChange) {
+function open(change: SchemaDiffChange) {
   useDdlStore.getState().openDdl({
     connectionId: 'conn-1',
     schema: 'public',
@@ -97,7 +107,7 @@ describe('DdlSuggestionHost', () => {
       open({
         kind: 'alterTable',
         request: { schema: 'public', table: 'orders', operation },
-      } as SchemaSuggestionChange);
+      } as SchemaDiffChange);
       renderWithProviders(<DdlSuggestionHost />);
 
       const props = propsOf('edit-column');
@@ -112,6 +122,44 @@ describe('DdlSuggestionHost', () => {
       kind: 'alterTable',
       request: { schema: 'public', table: 'orders', operation: { kind: 'setNotNull', column: 'user_id', notNull: true } },
     });
+    const { container } = renderWithProviders(<DdlSuggestionHost />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('routes createTable to CreateTableModal, pre-filled (a schema-diff migration change)', () => {
+    const columns = [{ name: 'id', type: 'integer', nullable: false, isPrimaryKey: true, autoIncrement: false }];
+    open({ kind: 'createTable', request: { schema: 'public', table: 'orders', columns } });
+    renderWithProviders(<DdlSuggestionHost />);
+
+    const props = propsOf('create-table');
+    expect(props['initialSchema']).toBe('public');
+    expect(props['schemas']).toEqual(['public']);
+    expect(props['initialTable']).toBe('orders');
+    expect(props['initialColumns']).toEqual(columns);
+  });
+
+  it('routes an addForeignKey operation to AddForeignKeyModal, pre-filled (a schema-diff migration change)', () => {
+    const operation = {
+      kind: 'addForeignKey' as const,
+      columns: ['user_id'],
+      referencedSchema: 'public',
+      referencedTable: 'users',
+      referencedColumns: ['id'],
+    };
+    open({ kind: 'alterTable', request: { schema: 'public', table: 'orders', operation } });
+    renderWithProviders(<DdlSuggestionHost />);
+
+    const props = propsOf('add-foreign-key');
+    expect(props['initialOperation']).toEqual(operation);
+    expect(props['availableColumns']).toEqual(COLUMNS);
+  });
+
+  it.each(['dropTable', 'dropIndex'] as const)('renders nothing for a %s change — applied directly, never routed here', (kind) => {
+    open(
+      kind === 'dropTable'
+        ? { kind: 'dropTable', request: { schema: 'public', table: 'orders' } }
+        : { kind: 'dropIndex', request: { schema: 'public', table: 'orders', index: 'orders_idx' } },
+    );
     const { container } = renderWithProviders(<DdlSuggestionHost />);
     expect(container).toBeEmptyDOMElement();
   });

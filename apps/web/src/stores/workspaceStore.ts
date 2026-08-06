@@ -14,7 +14,8 @@ export interface WorkspaceTab {
     | 'erDiagram'
     | 'sessions'
     | 'performance'
-    | 'audit';
+    | 'audit'
+    | 'schemaDiff';
   /**
    * The connection a data tab is bound to (table/overview/object/erDiagram/sessions tabs). A tab always
    * loads from this connection, independent of which connection is currently active — so switching
@@ -48,6 +49,9 @@ export interface WorkspaceTab {
    * the AuditPanel initializes its connection filter to this id, then clears it via `clearAuditPreset`.
    */
   presetConnectionId?: string;
+  /** The comparison's other side (schemaDiff tabs only) — `connectionId`/`schema` hold the first side. */
+  compareConnectionId?: string;
+  compareSchema?: string;
 }
 
 export interface CursorPosition {
@@ -96,6 +100,8 @@ interface WorkspaceState {
   openSessions: (connectionId: string) => void;
   /** Open a connection's pull-only statement-performance snapshot (Phase 41). */
   openPerformance: (connectionId: string) => void;
+  /** Open a live-vs-live schema comparison between two connection/schema refs (Phase 42). */
+  openSchemaDiff: (connectionId: string, schema: string, compareConnectionId: string, compareSchema: string) => void;
   /**
    * Open the mutation & DDL audit trail viewer (Phase 28). Pass a `connectionId` to seed its filter
    * to that connection (per-connection breadcrumb launch); omit it for the global all-connections view.
@@ -276,6 +282,22 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           }
           return {
             tabs: [...state.tabs, { id, label: 'Performance', kind: 'performance', connectionId }],
+            activeTabId: id,
+          };
+        });
+      },
+
+      openSchemaDiff: (connectionId, schema, compareConnectionId, compareSchema) => {
+        const id = `schema-diff:${connectionId}:${schema}:${compareConnectionId}:${compareSchema}`;
+        set((state) => {
+          if (state.tabs.some((tab) => tab.id === id)) {
+            return { activeTabId: id };
+          }
+          return {
+            tabs: [
+              ...state.tabs,
+              { id, label: `${schema} vs ${compareSchema}`, kind: 'schemaDiff', connectionId, schema, compareConnectionId, compareSchema },
+            ],
             activeTabId: id,
           };
         });

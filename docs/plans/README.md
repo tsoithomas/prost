@@ -55,7 +55,7 @@ passes **and** it violates none of the architecture principles.
 | [39](./phase-39-data-masking.md)             | Data masking / sensitive-column redaction                                         | ✅ Complete |
 | [40](./phase-40-usability-polish.md)         | Usability & interaction polish (shortcuts, tooltips, feedback, focus mode)        | ✅ Complete |
 | [41](./phase-41-perf-insights.md)            | On-demand query-performance insights & index advisor                              | ✅ Complete |
-| [42](./phase-42-schema-diff.md)              | Schema comparison & migration diff (live-vs-live)                                 | 🔲 Planned  |
+| [42](./phase-42-schema-diff.md)              | Schema comparison & migration diff (live-vs-live)                                 | ✅ Complete |
 | [43](./phase-43-data-generation.md)          | Data generation / test-data seeding                                               | 🔲 Planned  |
 | [44](./phase-44-saved-dashboards.md)         | Saved dashboards / pinned result charts                                           | 🔲 Planned  |
 | [45](./phase-45-grid-conflict-detection.md)  | Grid concurrency: optimistic-conflict detection                                   | 🔲 Planned  |
@@ -116,7 +116,16 @@ entries; and small wins (middle-click/double-click tab-bar gestures, an unsaved-
 per-table `tableViewModeStore` remembering each table's last view mode). **Phase 41 is complete** — a
 capability-gated, pull-only top-statement snapshot for PostgreSQL/MySQL, with sortable workspace/mobile
 UI and index-only advice composed through the existing EXPLAIN → Phase-33 suggestion → DDL preview and
-confirm flow. **Phases 42–47 are planned**.
+confirm flow. **Phase 42 is complete** — live-vs-live schema comparison: a pure `buildSchemaDiff`/
+`buildMigrationCandidates` (`apps/api/src/schema-diff/diff.util.ts`) diffs two connections' tables/
+columns/indexes/FKs read fresh via `MetadataService` (nothing persisted), a `SchemaDiffService` exposed
+through `POST :id/schema-diff/compare` and `.../migration` re-validates every reconciling candidate
+through the *existing* `DdlService.preview` (mirroring Phase 33's suggestion pipeline) and flags drops as
+`destructive`, and a `SchemaDiffView` workspace tab (opened via a "Compare" button on `DatabaseOverview`)
+renders the delta plus a change-set checklist — destructive rows start unchecked, editable changes route
+through the extended `ddlStore`/`DdlSuggestionHost` (now also handling `createTable`/`addForeignKey`),
+and drop-only changes apply directly behind their own `useConfirm` danger gate. **Phases 43–47 are
+planned**.
 
 ## Sequencing notes
 
