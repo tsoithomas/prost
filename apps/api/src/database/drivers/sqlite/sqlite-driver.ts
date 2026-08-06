@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Database from 'better-sqlite3';
 import type {
@@ -8,13 +14,27 @@ import type {
   CreateTableRequest,
   DbEngineDescriptor,
   KillSessionMode,
+  PerfInsightsUnavailableReason,
   QueryPlanNode,
   SchemaObjectKind,
   TableStructure,
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
-  ConnectionParams, DbCapabilities, DriverCursor, DriverQueryFn, DriverResult, NativePool, ProfileColumnSpec, ProfileSamplePlan, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
+  ConnectionParams,
+  DbCapabilities,
+  DriverCursor,
+  DriverQueryFn,
+  DriverResult,
+  NativePool,
+  ProfileColumnSpec,
+  ProfileSamplePlan,
+  RowUpdateGuard,
+  SelectRowsOptions,
+  SqlFragment,
+  TableRef,
+  TestConnectionResult,
+  WhereDialect,
 } from '../../types';
 import { sqliteBuildExplain, sqliteParseExplain } from '../explain-plan';
 import * as sql from './sqlite-sql';
@@ -52,6 +72,7 @@ export class SqliteDriver implements DbDriver {
     supportsQueryPlan: true,
     supportsExplainAnalyze: false,
     supportsSessionMonitoring: false,
+    supportsPerfInsights: false,
     ddl: {
       columnTypes: ['INTEGER', 'TEXT', 'REAL', 'BLOB', 'NUMERIC'],
       defaultExamples: ['0', "''", 'CURRENT_TIMESTAMP', 'null'],
@@ -63,11 +84,22 @@ export class SqliteDriver implements DbDriver {
       supportsObjectComments: false,
     },
     objects: {
-      views: true, materializedViews: false, sequences: false,
-      functions: false, procedures: false, triggers: true, enums: false,
+      views: true,
+      materializedViews: false,
+      sequences: false,
+      functions: false,
+      procedures: false,
+      triggers: true,
+      enums: false,
     },
   };
-  readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: false, parserDialect: 'sqlite', concurrency: 'preimage', supportsCursors: true };
+  readonly capabilities: DbCapabilities = {
+    supportsReturning: true,
+    supportsSchemas: false,
+    parserDialect: 'sqlite',
+    concurrency: 'preimage',
+    supportsCursors: true,
+  };
 
   private readonly busyTimeoutMs: number;
 
@@ -99,7 +131,9 @@ export class SqliteDriver implements DbDriver {
 
     if (stmt.reader) {
       const rows = stmt.all(...params) as DriverResult['rows'];
-      const fields = stmt.columns().map((c) => ({ name: c.name, dataTypeID: 0, dataTypeName: c.type ?? undefined }));
+      const fields = stmt
+        .columns()
+        .map((c) => ({ name: c.name, dataTypeID: 0, dataTypeName: c.type ?? undefined }));
       return { rows, fields, rowCount: rows.length, command };
     }
 
@@ -148,7 +182,10 @@ export class SqliteDriver implements DbDriver {
    * turned off (always reset in `finally`). SQLite has no per-transaction read-only mode, and the pool is
    * a single shared handle, so this is the equivalent guard.
    */
-  async withReadOnlyTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+  async withReadOnlyTransaction<T>(
+    pool: NativePool,
+    fn: (q: DriverQueryFn) => Promise<T>,
+  ): Promise<T> {
     const db = pool as Db;
     const query: DriverQueryFn = (frag) => this.query(db, frag);
     db.prepare('PRAGMA query_only = ON').run();
@@ -169,7 +206,9 @@ export class SqliteDriver implements DbDriver {
       throw new UnprocessableEntityException('Only SELECT statements can be streamed');
     }
     const params = frag.params.map(normalizeBind);
-    const fields = stmt.columns().map((c) => ({ name: c.name, dataTypeID: 0, dataTypeName: c.type ?? undefined }));
+    const fields = stmt
+      .columns()
+      .map((c) => ({ name: c.name, dataTypeID: 0, dataTypeName: c.type ?? undefined }));
     const iter = stmt.iterate(...params) as IterableIterator<Record<string, unknown>>;
     let closed = false;
 
@@ -232,24 +271,35 @@ export class SqliteDriver implements DbDriver {
   buildListIndexes = (ref: TableRef) => sql.sqliteBuildListIndexes(ref);
   buildTableComment = (ref: TableRef) => sql.sqliteBuildTableComment(ref);
   buildListForeignKeys = (ref: TableRef) => sql.sqliteBuildListForeignKeys(ref);
-  buildListReferencingForeignKeys = (ref: TableRef) => sql.sqliteBuildListReferencingForeignKeys(ref);
+  buildListReferencingForeignKeys = (ref: TableRef) =>
+    sql.sqliteBuildListReferencingForeignKeys(ref);
   // SQLite has a single namespace, so the whole database *is* the schema graph.
   buildListSchemaForeignKeys = (_namespace: string) => sql.sqliteBuildListSchemaForeignKeys();
   buildListAllSchemaObjects = () => sql.sqliteBuildListAllSchemaObjects();
-  buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.sqliteBuildObjectDefinition(kind, ref);
+  buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) =>
+    sql.sqliteBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.sqliteBuildSchemaTableStats(namespace);
-  planProfileSample = (rowEstimate: number, exact: boolean) => sql.sqlitePlanProfileSample(rowEstimate, exact);
+  planProfileSample = (rowEstimate: number, exact: boolean) =>
+    sql.sqlitePlanProfileSample(rowEstimate, exact);
   buildColumnProfile = (ref: TableRef, columns: ProfileColumnSpec[], plan: ProfileSamplePlan) =>
     sql.sqliteBuildColumnProfile(ref, columns, plan);
   buildColumnTopValues = (ref: TableRef, column: string, plan: ProfileSamplePlan, limit: number) =>
     sql.sqliteBuildColumnTopValues(ref, column, plan, limit);
-  buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.sqliteBuildSelectRows(ref, opts);
-  buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) => sql.sqliteBuildFilteredRowCount(ref, w, p);
+  buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) =>
+    sql.sqliteBuildSelectRows(ref, opts);
+  buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) =>
+    sql.sqliteBuildFilteredRowCount(ref, w, p);
   buildRowCountEstimate = (ref: TableRef) => sql.sqliteBuildRowCountEstimate(ref);
   buildInsertRow = (ref: TableRef, e: [string, unknown][]) => sql.sqliteBuildInsertRow(ref, e);
-  buildUpdateRow = (ref: TableRef, c: string, v: unknown, pk: string[], pv: unknown[]) => sql.sqliteBuildUpdateRow(ref, c, v, pk, pv);
-  buildUpdateRowGuarded = (ref: TableRef, e: [string, unknown][], pk: string[], pv: unknown[], g: RowUpdateGuard) =>
-    sql.sqliteBuildUpdateRowGuarded(ref, e, pk, pv, g);
+  buildUpdateRow = (ref: TableRef, c: string, v: unknown, pk: string[], pv: unknown[]) =>
+    sql.sqliteBuildUpdateRow(ref, c, v, pk, pv);
+  buildUpdateRowGuarded = (
+    ref: TableRef,
+    e: [string, unknown][],
+    pk: string[],
+    pv: unknown[],
+    g: RowUpdateGuard,
+  ) => sql.sqliteBuildUpdateRowGuarded(ref, e, pk, pv, g);
   async insertRow(
     q: DriverQueryFn,
     ref: TableRef,
@@ -270,29 +320,39 @@ export class SqliteDriver implements DbDriver {
   ): Promise<Record<string, unknown>> {
     const r = await q(sql.sqliteBuildUpdateRow(ref, column, value, primaryKey, primaryKeyValues));
     if (r.rowCount !== 1) {
-      throw new NotFoundException(`Row in "${ref.namespace ?? ''}.${ref.name}" no longer exists — it may have been changed or deleted`);
+      throw new NotFoundException(
+        `Row in "${ref.namespace ?? ''}.${ref.name}" no longer exists — it may have been changed or deleted`,
+      );
     }
     return r.rows[0] as Record<string, unknown>;
   }
 
-  buildDeleteRow = (ref: TableRef, pk: string[], pv: unknown[]) => sql.sqliteBuildDeleteRow(ref, pk, pv);
-  normalizeCreateTable = (req: CreateTableRequest) => sql.sqliteNormalizeCreateTable(req, this.descriptor.ddl.columnTypes);
+  buildDeleteRow = (ref: TableRef, pk: string[], pv: unknown[]) =>
+    sql.sqliteBuildDeleteRow(ref, pk, pv);
+  normalizeCreateTable = (req: CreateTableRequest) =>
+    sql.sqliteNormalizeCreateTable(req, this.descriptor.ddl.columnTypes);
   normalizeAlterTable = (ref: TableRef, op: AlterTableOperation, columns: ColumnMetadata[]) =>
     sql.sqliteNormalizeAlterTable(ref, op, columns, this.descriptor.ddl.columnTypes);
   normalizeCreateIndex = (req: CreateIndexRequest) => sql.sqliteNormalizeCreateIndex(req);
   buildCreateTable = (req: CreateTableRequest) => sql.sqliteBuildCreateTable(req);
   buildAlterTable = (ref: TableRef, op: AlterTableOperation) => sql.sqliteBuildAlterTable(ref, op);
-  buildCreateIndex = (req: CreateIndexRequest, name: string, method: string) => sql.sqliteBuildCreateIndex(req, name, method);
+  buildCreateIndex = (req: CreateIndexRequest, name: string, method: string) =>
+    sql.sqliteBuildCreateIndex(req, name, method);
   buildDropIndex = (ref: TableRef, indexName: string) => sql.sqliteBuildDropIndex(ref, indexName);
   buildDropTable = (ref: TableRef) => sql.sqliteBuildDropTable(ref);
   buildTruncateTable = (ref: TableRef) => sql.sqliteBuildTruncateTable(ref);
 
   // --- SQL export (Phase 30.1) ---
   qualifyTable = (ref: TableRef) => sql.sqliteQualifyTable(ref);
-  formatLiteral = (value: unknown, column: ColumnMetadata) => sql.sqliteFormatLiteral(value, column);
+  formatLiteral = (value: unknown, column: ColumnMetadata) =>
+    sql.sqliteFormatLiteral(value, column);
 
   /** SQLite's `sqlite_master.sql` is the faithful original DDL; `structure` is unused. */
-  async buildTableDdl(q: DriverQueryFn, ref: TableRef, _structure: TableStructure): Promise<string> {
+  async buildTableDdl(
+    q: DriverQueryFn,
+    ref: TableRef,
+    _structure: TableStructure,
+  ): Promise<string> {
     const { rows } = await q(sql.sqliteBuildTableDdlSource(ref));
     const statements = rows
       .map((r) => (r as Record<string, unknown>).sql)
@@ -342,6 +402,24 @@ export class SqliteDriver implements DbDriver {
     throw new BadRequestException('Session monitoring is not supported for SQLite');
   }
 
+  buildPerfInsightsStatus(): SqlFragment {
+    throw new BadRequestException('Performance insights are not supported for SQLite');
+  }
+
+  buildListTopStatements(_limit: number): SqlFragment {
+    throw new BadRequestException('Performance insights are not supported for SQLite');
+  }
+
+  buildPerfInsightsWindow(): SqlFragment {
+    throw new BadRequestException('Performance insights are not supported for SQLite');
+  }
+
+  classifyPerfInsightsError(
+    _error: unknown,
+  ): { reason: PerfInsightsUnavailableReason; message: string } | null {
+    return null;
+  }
+
   mapError(error: unknown, ctx: DriverErrorContext): void {
     const message = (error as { message?: string } | undefined)?.message ?? '';
     if (ctx.operation === 'createTable' && /already exists/i.test(message)) {
@@ -355,7 +433,8 @@ export class SqliteDriver implements DbDriver {
     }
     if (ctx.operation === 'alterTable') {
       if (/duplicate column/i.test(message)) throw new ConflictException('Column already exists');
-      if (/no such column/i.test(message)) throw new UnprocessableEntityException('Column does not exist');
+      if (/no such column/i.test(message))
+        throw new UnprocessableEntityException('Column does not exist');
     }
   }
 }

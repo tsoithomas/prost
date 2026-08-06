@@ -16,9 +16,21 @@ vi.mock('../api/ddlPreview', () => ({ useDdlPreview: mockPreview }));
 vi.mock('../api/databaseEngines', () => ({ useEngineDescriptor: () => descriptor.current }));
 
 const BASE: DbEngineDescriptor = {
-  engine: 'postgres', label: 'PostgreSQL', connectionMode: 'network', defaultPort: 5432,
-  uriSchemes: ['postgresql'], parserDialect: 'postgresql', formatterDialect: 'postgresql',
-  namespaceLabel: 'Schema', supportsSsl: true, sslEnabledByDefault: false, supportsCursors: true, supportsQueryPlan: true, supportsExplainAnalyze: true, supportsSessionMonitoring: true,
+  engine: 'postgres',
+  label: 'PostgreSQL',
+  connectionMode: 'network',
+  defaultPort: 5432,
+  uriSchemes: ['postgresql'],
+  parserDialect: 'postgresql',
+  formatterDialect: 'postgresql',
+  namespaceLabel: 'Schema',
+  supportsSsl: true,
+  sslEnabledByDefault: false,
+  supportsCursors: true,
+  supportsQueryPlan: true,
+  supportsExplainAnalyze: true,
+  supportsSessionMonitoring: true,
+  supportsPerfInsights: true,
   ddl: {
     columnTypes: ['integer', 'text'],
     defaultExamples: ['now()'],
@@ -28,17 +40,34 @@ const BASE: DbEngineDescriptor = {
     supportsForeignKeyDdl: true,
     supportsObjectComments: true,
   },
-  objects: { views: true, materializedViews: true, sequences: true, functions: true, procedures: true, triggers: true, enums: true },
+  objects: {
+    views: true,
+    materializedViews: true,
+    sequences: true,
+    functions: true,
+    procedures: true,
+    triggers: true,
+    enums: true,
+  },
 };
 const COLUMN = {
-  name: 'total', dataType: 'integer', nullable: true, isPrimaryKey: false,
-  autoIncrement: false, defaultValue: null,
+  name: 'total',
+  dataType: 'integer',
+  nullable: true,
+  isPrimaryKey: false,
+  autoIncrement: false,
+  defaultValue: null,
 };
 
 function renderModal() {
   return renderWithProviders(
     <EditColumnModal
-      open onClose={vi.fn()} col={COLUMN} connectionId="conn-1" schema="public" table="orders"
+      open
+      onClose={vi.fn()}
+      col={COLUMN}
+      connectionId="conn-1"
+      schema="public"
+      table="orders"
     />,
   );
 }
@@ -90,7 +119,12 @@ describe('EditColumnModal — seeded from a suggestion', () => {
   it('seeds the new type from a changeType suggestion and previews it unprompted', () => {
     renderWithProviders(
       <EditColumnModal
-        open onClose={vi.fn()} col={COLUMN} connectionId="conn-1" schema="public" table="orders"
+        open
+        onClose={vi.fn()}
+        col={COLUMN}
+        connectionId="conn-1"
+        schema="public"
+        table="orders"
         initialOperation={{ kind: 'changeType', column: 'total', type: 'text' }}
       />,
     );
@@ -98,8 +132,12 @@ describe('EditColumnModal — seeded from a suggestion', () => {
     expect(mockPreview).toHaveBeenLastCalledWith('conn-1', {
       kind: 'alterTable',
       request: {
-        kind: 'changeType', schema: 'public', table: 'orders',
-        columnName: 'total', type: 'text', using: undefined,
+        kind: 'changeType',
+        schema: 'public',
+        table: 'orders',
+        columnName: 'total',
+        type: 'text',
+        using: undefined,
       },
     });
   });
@@ -107,7 +145,12 @@ describe('EditColumnModal — seeded from a suggestion', () => {
   it('seeds the default value from a setDefault suggestion', () => {
     renderWithProviders(
       <EditColumnModal
-        open onClose={vi.fn()} col={COLUMN} connectionId="conn-1" schema="public" table="orders"
+        open
+        onClose={vi.fn()}
+        col={COLUMN}
+        connectionId="conn-1"
+        schema="public"
+        table="orders"
         initialOperation={{ kind: 'setDefault', column: 'total', default: '0' }}
       />,
     );
@@ -118,7 +161,12 @@ describe('EditColumnModal — seeded from a suggestion', () => {
   it('flips the nullable checkbox for a setNotNull suggestion', () => {
     renderWithProviders(
       <EditColumnModal
-        open onClose={vi.fn()} col={COLUMN} connectionId="conn-1" schema="public" table="orders"
+        open
+        onClose={vi.fn()}
+        col={COLUMN}
+        connectionId="conn-1"
+        schema="public"
+        table="orders"
         initialOperation={{ kind: 'setNotNull', column: 'total', notNull: true }}
       />,
     );
@@ -127,10 +175,15 @@ describe('EditColumnModal — seeded from a suggestion', () => {
     expect(screen.getByRole('checkbox', { name: 'Nullable' })).not.toBeChecked();
   });
 
-  it('falls back to the column\'s own values when no suggestion is given', () => {
+  it("falls back to the column's own values when no suggestion is given", () => {
     renderWithProviders(
       <EditColumnModal
-        open onClose={vi.fn()} col={COLUMN} connectionId="conn-1" schema="public" table="orders"
+        open
+        onClose={vi.fn()}
+        col={COLUMN}
+        connectionId="conn-1"
+        schema="public"
+        table="orders"
       />,
     );
 
@@ -138,8 +191,12 @@ describe('EditColumnModal — seeded from a suggestion', () => {
     expect(mockPreview).toHaveBeenLastCalledWith('conn-1', {
       kind: 'alterTable',
       request: {
-        kind: 'changeType', schema: 'public', table: 'orders',
-        columnName: 'total', type: 'integer', using: undefined,
+        kind: 'changeType',
+        schema: 'public',
+        table: 'orders',
+        columnName: 'total',
+        type: 'integer',
+        using: undefined,
       },
     });
   });

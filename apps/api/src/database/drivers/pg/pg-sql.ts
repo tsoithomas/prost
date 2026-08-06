@@ -20,7 +20,11 @@ import type {
   SqlFragment,
   TableRef,
 } from '../../types';
-import { buildAddForeignKeyClause, normalizeAddForeignKey, normalizeDropForeignKey } from '../fk-ddl';
+import {
+  buildAddForeignKeyClause,
+  normalizeAddForeignKey,
+  normalizeDropForeignKey,
+} from '../fk-ddl';
 import {
   buildProfileSql,
   buildTopValuesSql,
@@ -30,18 +34,34 @@ import {
 import { formatLiteral, standardQuoteString } from '../literal';
 
 const ALLOWED_TYPES = new Set([
-  'integer', 'bigint', 'smallint', 'serial', 'bigserial',
-  'boolean', 'text', 'varchar', 'char',
-  'real', 'double precision', 'numeric',
-  'date', 'time', 'timestamp', 'timestamptz',
-  'uuid', 'json', 'jsonb', 'bytea',
+  'integer',
+  'bigint',
+  'smallint',
+  'serial',
+  'bigserial',
+  'boolean',
+  'text',
+  'varchar',
+  'char',
+  'real',
+  'double precision',
+  'numeric',
+  'date',
+  'time',
+  'timestamp',
+  'timestamptz',
+  'uuid',
+  'json',
+  'jsonb',
+  'bytea',
 ]);
 
 const PARAMETERIZED_TYPES = new Set(['varchar', 'char', 'numeric']);
 
 const TYPE_PATTERN = /^([a-z]+(?: [a-z]+)*)(\(\s*\d+\s*(?:,\s*\d+\s*)?\))?$/;
 
-const SAFE_DEFAULT_PATTERN = /^(\d+|true|false|null|now\(\)|current_timestamp|gen_random_uuid\(\))$/i;
+const SAFE_DEFAULT_PATTERN =
+  /^(\d+|true|false|null|now\(\)|current_timestamp|gen_random_uuid\(\))$/i;
 
 const ALLOWED_INDEX_METHODS = new Set(['btree', 'hash', 'gin', 'gist', 'brin']);
 
@@ -58,7 +78,9 @@ function validateType(type: string): string {
     );
   }
   if (params && !PARAMETERIZED_TYPES.has(base)) {
-    throw new UnprocessableEntityException(`Type "${base}" does not accept a length/precision parameter`);
+    throw new UnprocessableEntityException(
+      `Type "${base}" does not accept a length/precision parameter`,
+    );
   }
   return `${base}${params ? params.replace(/\s+/g, '') : ''}`;
 }
@@ -148,7 +170,9 @@ export function pgNormalizeAlterTable(
       if (op.default !== null) {
         canonDefault = validateDefault(op.default);
         if (canonDefault === null) {
-          throw new UnprocessableEntityException('Default value cannot be empty; pass null to drop the default');
+          throw new UnprocessableEntityException(
+            'Default value cannot be empty; pass null to drop the default',
+          );
         }
       }
       return { ...op, default: canonDefault };
@@ -168,7 +192,12 @@ export function pgNormalizeAlterTable(
         }
         using = trimmed.toLowerCase();
       }
-      return { kind: 'changeType', column: op.column, type, ...(using !== undefined ? { using } : {}) };
+      return {
+        kind: 'changeType',
+        column: op.column,
+        type,
+        ...(using !== undefined ? { using } : {}),
+      };
     }
     case 'setComment': {
       if (op.column !== undefined && !colNames.has(op.column)) {
@@ -181,9 +210,11 @@ export function pgNormalizeAlterTable(
   }
 }
 
-export function pgNormalizeCreateIndex(
-  req: CreateIndexRequest,
-): { request: CreateIndexRequest; name: string; method: string } {
+export function pgNormalizeCreateIndex(req: CreateIndexRequest): {
+  request: CreateIndexRequest;
+  name: string;
+  method: string;
+} {
   const method = (req.method ?? 'btree').toLowerCase();
   if (!ALLOWED_INDEX_METHODS.has(method)) {
     throw new UnprocessableEntityException(
@@ -503,8 +534,15 @@ export function pgBuildSelectRows(ref: TableRef, opts: SelectRowsOptions): SqlFr
   return { sql, params: [...opts.whereParams, opts.limit, opts.offset] };
 }
 
-export function pgBuildFilteredRowCount(ref: TableRef, whereClause: string, whereParams: unknown[]): SqlFragment {
-  return { sql: `SELECT COUNT(*) AS count FROM ${qualify(ref)} ${whereClause}`, params: whereParams };
+export function pgBuildFilteredRowCount(
+  ref: TableRef,
+  whereClause: string,
+  whereParams: unknown[],
+): SqlFragment {
+  return {
+    sql: `SELECT COUNT(*) AS count FROM ${qualify(ref)} ${whereClause}`,
+    params: whereParams,
+  };
 }
 
 export function pgBuildRowCountEstimate(ref: TableRef): SqlFragment {
@@ -534,7 +572,10 @@ const pgProfileDialect: ProfileDialect = {
     if (plan.kind === 'random') {
       // `TABLESAMPLE`'s argument is evaluated at query start and can't be bound as a parameter, so
       // this percentage is inlined. It is server-computed and clamped, never user input.
-      return { sql: `FROM ${qualify(ref)} TABLESAMPLE SYSTEM (${plan.percent.toFixed(4)})`, params: [] };
+      return {
+        sql: `FROM ${qualify(ref)} TABLESAMPLE SYSTEM (${plan.percent.toFixed(4)})`,
+        params: [],
+      };
     }
     if (plan.kind === 'firstRows') {
       return {
@@ -546,7 +587,11 @@ const pgProfileDialect: ProfileDialect = {
   },
 };
 
-export function pgBuildColumnProfile(ref: TableRef, columns: ProfileColumnSpec[], plan: ProfileSamplePlan): SqlFragment {
+export function pgBuildColumnProfile(
+  ref: TableRef,
+  columns: ProfileColumnSpec[],
+  plan: ProfileSamplePlan,
+): SqlFragment {
   return buildProfileSql(pgProfileDialect, ref, columns, plan);
 }
 
@@ -593,13 +638,27 @@ export function pgBuildInsertRow(ref: TableRef, entries: [string, unknown][]): S
   }
   const cols = entries.map(([c]) => pgQuoteIdent(c)).join(', ');
   const vals = entries.map((_, i) => pgPlaceholder(i + 1)).join(', ');
-  return { sql: `INSERT INTO ${qualify(ref)} (${cols}) VALUES (${vals}) RETURNING *`, params: entries.map(([, v]) => v) };
+  return {
+    sql: `INSERT INTO ${qualify(ref)} (${cols}) VALUES (${vals}) RETURNING *`,
+    params: entries.map(([, v]) => v),
+  };
 }
 
-export function pgBuildUpdateRow(ref: TableRef, column: string, value: unknown, pkColumns: string[], pkValues: unknown[]): SqlFragment {
+export function pgBuildUpdateRow(
+  ref: TableRef,
+  column: string,
+  value: unknown,
+  pkColumns: string[],
+  pkValues: unknown[],
+): SqlFragment {
   const setClause = `${pgQuoteIdent(column)} = ${pgPlaceholder(1)}`;
-  const whereClause = pkColumns.map((c, i) => `${pgQuoteIdent(c)} = ${pgPlaceholder(i + 2)}`).join(' AND ');
-  return { sql: `UPDATE ${qualify(ref)} SET ${setClause} WHERE ${whereClause} RETURNING *`, params: [value, ...pkValues] };
+  const whereClause = pkColumns
+    .map((c, i) => `${pgQuoteIdent(c)} = ${pgPlaceholder(i + 2)}`)
+    .join(' AND ');
+  return {
+    sql: `UPDATE ${qualify(ref)} SET ${setClause} WHERE ${whereClause} RETURNING *`,
+    params: [value, ...pkValues],
+  };
 }
 
 export function pgBuildUpdateRowGuarded(
@@ -620,7 +679,9 @@ export function pgBuildUpdateRowGuarded(
   if (guard.kind === 'version') {
     where.push(`xmin = ${next(guard.value)}::xid`);
   } else {
-    guard.columns.forEach((c, i) => where.push(`${pgQuoteIdent(c)} IS NOT DISTINCT FROM ${next(guard.values[i])}`));
+    guard.columns.forEach((c, i) =>
+      where.push(`${pgQuoteIdent(c)} IS NOT DISTINCT FROM ${next(guard.values[i])}`),
+    );
   }
 
   return {
@@ -629,8 +690,14 @@ export function pgBuildUpdateRowGuarded(
   };
 }
 
-export function pgBuildDeleteRow(ref: TableRef, pkColumns: string[], pkValues: unknown[]): SqlFragment {
-  const whereClause = pkColumns.map((c, i) => `${pgQuoteIdent(c)} = ${pgPlaceholder(i + 1)}`).join(' AND ');
+export function pgBuildDeleteRow(
+  ref: TableRef,
+  pkColumns: string[],
+  pkValues: unknown[],
+): SqlFragment {
+  const whereClause = pkColumns
+    .map((c, i) => `${pgQuoteIdent(c)} = ${pgPlaceholder(i + 1)}`)
+    .join(' AND ');
   return { sql: `DELETE FROM ${qualify(ref)} WHERE ${whereClause}`, params: pkValues };
 }
 
@@ -737,7 +804,10 @@ export function pgBuildCreateTable(req: CreateTableRequest): SqlFragment {
   if (pkColumns.length > 0) {
     colDefs.push(`  PRIMARY KEY (${pkColumns.map(pgQuoteIdent).join(', ')})`);
   }
-  return { sql: `CREATE TABLE ${pgQuoteIdent(req.schema)}.${pgQuoteIdent(req.table)} (\n${colDefs.join(',\n')}\n)`, params: [] };
+  return {
+    sql: `CREATE TABLE ${pgQuoteIdent(req.schema)}.${pgQuoteIdent(req.table)} (\n${colDefs.join(',\n')}\n)`,
+    params: [],
+  };
 }
 
 export function pgBuildAlterTable(ref: TableRef, op: AlterTableOperation): SqlFragment {
@@ -754,10 +824,16 @@ export function pgBuildAlterTable(ref: TableRef, op: AlterTableOperation): SqlFr
     case 'dropColumn':
       return { sql: `${prefix} DROP COLUMN ${pgQuoteIdent(op.column)}`, params: [] };
     case 'setNotNull':
-      return { sql: `${prefix} ALTER COLUMN ${pgQuoteIdent(op.column)} ${op.notNull ? 'SET' : 'DROP'} NOT NULL`, params: [] };
+      return {
+        sql: `${prefix} ALTER COLUMN ${pgQuoteIdent(op.column)} ${op.notNull ? 'SET' : 'DROP'} NOT NULL`,
+        params: [],
+      };
     case 'setDefault':
       return op.default !== null
-        ? { sql: `${prefix} ALTER COLUMN ${pgQuoteIdent(op.column)} SET DEFAULT ${op.default}`, params: [] }
+        ? {
+            sql: `${prefix} ALTER COLUMN ${pgQuoteIdent(op.column)} SET DEFAULT ${op.default}`,
+            params: [],
+          }
         : { sql: `${prefix} ALTER COLUMN ${pgQuoteIdent(op.column)} DROP DEFAULT`, params: [] };
     case 'changeType': {
       let sql = `${prefix} ALTER COLUMN ${pgQuoteIdent(op.column)} TYPE ${op.type}`;
@@ -773,16 +849,21 @@ export function pgBuildAlterTable(ref: TableRef, op: AlterTableOperation): SqlFr
     case 'setComment': {
       // `COMMENT ON` is a utility statement: PostgreSQL doesn't accept parameters in one, so the text
       // is escaped as a literal by the same helper the SQL export uses.
-      const target = op.column === undefined
-        ? `TABLE ${qualify(ref)}`
-        : `COLUMN ${qualify(ref)}.${pgQuoteIdent(op.column)}`;
+      const target =
+        op.column === undefined
+          ? `TABLE ${qualify(ref)}`
+          : `COLUMN ${qualify(ref)}.${pgQuoteIdent(op.column)}`;
       const value = op.comment === null ? 'NULL' : standardQuoteString(op.comment);
       return { sql: `COMMENT ON ${target} IS ${value}`, params: [] };
     }
   }
 }
 
-export function pgBuildCreateIndex(req: CreateIndexRequest, name: string, method: string): SqlFragment {
+export function pgBuildCreateIndex(
+  req: CreateIndexRequest,
+  name: string,
+  method: string,
+): SqlFragment {
   const colList = req.columns.map(pgQuoteIdent).join(', ');
   return {
     sql: `CREATE ${req.unique ? 'UNIQUE ' : ''}INDEX ${pgQuoteIdent(name)} ON ${pgQuoteIdent(req.schema)}.${pgQuoteIdent(req.table)} USING ${method} (${colList})`,
@@ -792,7 +873,10 @@ export function pgBuildCreateIndex(req: CreateIndexRequest, name: string, method
 
 /** `ref.name` is the index name, `ref.namespace` the schema. */
 export function pgBuildDropIndex(ref: TableRef, indexName: string): SqlFragment {
-  return { sql: `DROP INDEX ${pgQuoteIdent(ref.namespace!)}.${pgQuoteIdent(indexName)}`, params: [] };
+  return {
+    sql: `DROP INDEX ${pgQuoteIdent(ref.namespace!)}.${pgQuoteIdent(indexName)}`,
+    params: [],
+  };
 }
 
 export function pgBuildResolveTypeNames(oids: number[]): SqlFragment {
@@ -820,6 +904,64 @@ export function pgBuildListSessions(): SqlFragment {
 export function pgBuildKillSession(id: number, mode: KillSessionMode): SqlFragment {
   const fn = mode === 'terminate' ? 'pg_terminate_backend' : 'pg_cancel_backend';
   return { sql: `SELECT ${fn}($1)`, params: [id] };
+}
+
+// ─── On-demand performance insights (Phase 41) ────────────────────────────────────────────────
+
+/** Detect both halves of pg_stat_statements setup without referencing the optional view. */
+export function pgBuildPerfInsightsStatus(): SqlFragment {
+  return {
+    sql: `WITH status AS (
+            SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements') AS installed,
+                   position('pg_stat_statements' in current_setting('shared_preload_libraries', true)) > 0 AS preloaded
+          )
+          SELECT installed AND preloaded AS available,
+                 CASE WHEN NOT installed THEN 'not_configured'
+                      WHEN NOT preloaded THEN 'collection_disabled'
+                      ELSE NULL END AS unavailable_reason,
+                 CASE WHEN NOT installed THEN 'pg_stat_statements is not installed in this database.'
+                      WHEN NOT preloaded THEN 'pg_stat_statements must be enabled in shared_preload_libraries.'
+                      ELSE NULL END AS unavailable_message
+          FROM status`,
+    params: [],
+  };
+}
+
+/**
+ * Top normalized statements for the current database. `to_jsonb` keeps this compatible with
+ * PostgreSQL 12 (`total_time`) and 13+ (`total_exec_time`) without referencing a missing column.
+ */
+export function pgBuildListTopStatements(limit: number): SqlFragment {
+  return {
+    sql: `WITH normalized AS (
+            SELECT query,
+                   calls::double precision AS calls,
+                   COALESCE((to_jsonb(s)->>'total_exec_time')::double precision,
+                            (to_jsonb(s)->>'total_time')::double precision, 0) AS total_time_ms,
+                   rows::double precision AS rows
+            FROM pg_stat_statements s
+            WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+              AND query IS NOT NULL AND btrim(query) <> ''
+          )
+          SELECT query,
+                 SUM(calls) AS calls,
+                 SUM(total_time_ms) AS total_time_ms,
+                 CASE WHEN SUM(calls) > 0 THEN SUM(total_time_ms) / SUM(calls) ELSE 0 END AS mean_time_ms,
+                 SUM(rows) AS rows
+          FROM normalized
+          GROUP BY query
+          ORDER BY total_time_ms DESC
+          LIMIT $1`,
+    params: [limit],
+  };
+}
+
+/** Exact reset time on pg_stat_statements versions that expose the supplementary info view. */
+export function pgBuildPerfInsightsWindow(): SqlFragment {
+  return {
+    sql: 'SELECT stats_reset AS statistics_since, false AS approximate FROM pg_stat_statements_info',
+    params: [],
+  };
 }
 
 export { qualify as pgQualify };

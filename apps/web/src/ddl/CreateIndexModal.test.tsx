@@ -15,9 +15,21 @@ vi.mock('../api/ddl', () => ({
 vi.mock('../api/ddlPreview', () => ({ useDdlPreview: mockPreview }));
 
 const MYSQL: DbEngineDescriptor = {
-  engine: 'mysql', label: 'MySQL', connectionMode: 'network', defaultPort: 3306,
-  uriSchemes: ['mysql'], parserDialect: 'mysql', formatterDialect: 'mysql',
-  namespaceLabel: 'Database', supportsSsl: true, sslEnabledByDefault: false, supportsCursors: true, supportsQueryPlan: true, supportsExplainAnalyze: true, supportsSessionMonitoring: true,
+  engine: 'mysql',
+  label: 'MySQL',
+  connectionMode: 'network',
+  defaultPort: 3306,
+  uriSchemes: ['mysql'],
+  parserDialect: 'mysql',
+  formatterDialect: 'mysql',
+  namespaceLabel: 'Database',
+  supportsSsl: true,
+  sslEnabledByDefault: false,
+  supportsCursors: true,
+  supportsQueryPlan: true,
+  supportsExplainAnalyze: true,
+  supportsSessionMonitoring: true,
+  supportsPerfInsights: true,
   ddl: {
     columnTypes: ['int'],
     defaultExamples: ['CURRENT_TIMESTAMP'],
@@ -27,7 +39,15 @@ const MYSQL: DbEngineDescriptor = {
     supportsForeignKeyDdl: true,
     supportsObjectComments: true,
   },
-  objects: { views: true, materializedViews: false, sequences: false, functions: true, procedures: true, triggers: true, enums: false },
+  objects: {
+    views: true,
+    materializedViews: false,
+    sequences: false,
+    functions: true,
+    procedures: true,
+    triggers: true,
+    enums: false,
+  },
 };
 
 vi.mock('../api/databaseEngines', () => ({ useEngineDescriptor: () => MYSQL }));
@@ -41,10 +61,16 @@ describe('CreateIndexModal', () => {
         connectionId="conn-1"
         schema="shop"
         table="items"
-        availableColumns={[{
-          name: 'id', dataType: 'int', nullable: false, isPrimaryKey: true,
-          autoIncrement: true, defaultValue: null,
-        }]}
+        availableColumns={[
+          {
+            name: 'id',
+            dataType: 'int',
+            nullable: false,
+            isPrimaryKey: true,
+            autoIncrement: true,
+            defaultValue: null,
+          },
+        ]}
       />,
     );
 
@@ -72,10 +98,16 @@ describe('CreateIndexModal', () => {
         connectionId="conn-1"
         schema="shop"
         table="items"
-        availableColumns={[{
-          name: 'id', dataType: 'int', nullable: false, isPrimaryKey: true,
-          autoIncrement: true, defaultValue: null,
-        }]}
+        availableColumns={[
+          {
+            name: 'id',
+            dataType: 'int',
+            nullable: false,
+            isPrimaryKey: true,
+            autoIncrement: true,
+            defaultValue: null,
+          },
+        ]}
         initialColumns={['id']}
         initialUnique
         initialName="items_id_idx"

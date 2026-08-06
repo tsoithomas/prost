@@ -18,9 +18,21 @@ vi.mock('../api/ddlPreview', () => ({ useDdlPreview: mockPreview }));
 vi.mock('../api/databaseEngines', () => ({ useEngineDescriptor: () => descriptor.current }));
 
 const MYSQL: DbEngineDescriptor = {
-  engine: 'mysql', label: 'MySQL', connectionMode: 'network', defaultPort: 3306,
-  uriSchemes: ['mysql'], parserDialect: 'mysql', formatterDialect: 'mysql',
-  namespaceLabel: 'Database', supportsSsl: true, sslEnabledByDefault: false, supportsCursors: true, supportsQueryPlan: true, supportsExplainAnalyze: true, supportsSessionMonitoring: true,
+  engine: 'mysql',
+  label: 'MySQL',
+  connectionMode: 'network',
+  defaultPort: 3306,
+  uriSchemes: ['mysql'],
+  parserDialect: 'mysql',
+  formatterDialect: 'mysql',
+  namespaceLabel: 'Database',
+  supportsSsl: true,
+  sslEnabledByDefault: false,
+  supportsCursors: true,
+  supportsQueryPlan: true,
+  supportsExplainAnalyze: true,
+  supportsSessionMonitoring: true,
+  supportsPerfInsights: true,
   ddl: {
     columnTypes: ['int', 'bigint', 'varchar(255)'],
     defaultExamples: ['CURRENT_TIMESTAMP'],
@@ -30,7 +42,15 @@ const MYSQL: DbEngineDescriptor = {
     supportsForeignKeyDdl: true,
     supportsObjectComments: true,
   },
-  objects: { views: true, materializedViews: false, sequences: false, functions: true, procedures: true, triggers: true, enums: false },
+  objects: {
+    views: true,
+    materializedViews: false,
+    sequences: false,
+    functions: true,
+    procedures: true,
+    triggers: true,
+    enums: false,
+  },
 };
 
 describe('AddColumnModal', () => {
@@ -86,8 +106,18 @@ describe('AddColumnModal — seeded from a suggestion', () => {
   it('seeds every field from initialColumn and previews it without interaction', () => {
     renderWithProviders(
       <AddColumnModal
-        open onClose={vi.fn()} connectionId="conn-1" schema="shop" table="orders"
-        initialColumn={{ name: 'note', type: 'varchar(255)', nullable: true, isPrimaryKey: false, default: "''" }}
+        open
+        onClose={vi.fn()}
+        connectionId="conn-1"
+        schema="shop"
+        table="orders"
+        initialColumn={{
+          name: 'note',
+          type: 'varchar(255)',
+          nullable: true,
+          isPrimaryKey: false,
+          default: "''",
+        }}
       />,
     );
 
@@ -95,10 +125,16 @@ describe('AddColumnModal — seeded from a suggestion', () => {
     expect(mockPreview).toHaveBeenLastCalledWith('conn-1', {
       kind: 'alterTable',
       request: {
-        kind: 'addColumn', schema: 'shop', table: 'orders',
+        kind: 'addColumn',
+        schema: 'shop',
+        table: 'orders',
         column: {
-          name: 'note', type: 'varchar(255)', nullable: true,
-          isPrimaryKey: false, autoIncrement: false, default: "''",
+          name: 'note',
+          type: 'varchar(255)',
+          nullable: true,
+          isPrimaryKey: false,
+          autoIncrement: false,
+          default: "''",
         },
       },
     });
@@ -107,7 +143,11 @@ describe('AddColumnModal — seeded from a suggestion', () => {
   it('submits the seeded column unchanged', async () => {
     renderWithProviders(
       <AddColumnModal
-        open onClose={vi.fn()} connectionId="conn-1" schema="shop" table="orders"
+        open
+        onClose={vi.fn()}
+        connectionId="conn-1"
+        schema="shop"
+        table="orders"
         initialColumn={{ name: 'note', type: 'int', nullable: false, isPrimaryKey: false }}
       />,
     );

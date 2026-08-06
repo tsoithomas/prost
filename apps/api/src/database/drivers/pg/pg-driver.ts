@@ -1,4 +1,10 @@
-import { ConflictException, Injectable, Logger, NotFoundException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Client, Pool, type FieldDef, type PoolClient } from 'pg';
 import Cursor from 'pg-cursor';
@@ -9,13 +15,27 @@ import type {
   CreateTableRequest,
   DbEngineDescriptor,
   KillSessionMode,
+  PerfInsightsUnavailableReason,
   QueryPlanNode,
   SchemaObjectKind,
   TableStructure,
 } from '@prost/shared-types';
 import type { DbDriver, DriverErrorContext } from '../../db-driver.interface';
 import type {
-  ConnectionParams, DbCapabilities, DriverCursor, DriverQueryFn, DriverResult, NativePool, ProfileColumnSpec, ProfileSamplePlan, RowUpdateGuard, SelectRowsOptions, SqlFragment, TableRef, TestConnectionResult, WhereDialect,
+  ConnectionParams,
+  DbCapabilities,
+  DriverCursor,
+  DriverQueryFn,
+  DriverResult,
+  NativePool,
+  ProfileColumnSpec,
+  ProfileSamplePlan,
+  RowUpdateGuard,
+  SelectRowsOptions,
+  SqlFragment,
+  TableRef,
+  TestConnectionResult,
+  WhereDialect,
 } from '../../types';
 import { pgBuildExplain, pgParseExplain } from '../explain-plan';
 import * as sql from './pg-sql';
@@ -26,14 +46,20 @@ const CONNECT_TIMEOUT_MS = 5000;
 interface PgReadableCursor {
   read(
     rowCount: number,
-    callback: (error: Error | undefined, rows: Record<string, unknown>[], result?: { fields?: FieldDef[] }) => void,
+    callback: (
+      error: Error | undefined,
+      rows: Record<string, unknown>[],
+      result?: { fields?: FieldDef[] },
+    ) => void,
   ): void;
   close(callback: (error?: Error) => void): void;
 }
 
 function describeConnectionError(error: unknown): string {
   if (error instanceof AggregateError) {
-    const inner = Array.from(error.errors).find((e): e is Error => e instanceof Error && !!e.message);
+    const inner = Array.from(error.errors).find(
+      (e): e is Error => e instanceof Error && !!e.message,
+    );
     if (inner) return inner.message;
   }
   if (error instanceof Error && error.message) return error.message;
@@ -60,13 +86,32 @@ export class PgDriver implements DbDriver {
     supportsQueryPlan: true,
     supportsExplainAnalyze: true,
     supportsSessionMonitoring: true,
+    supportsPerfInsights: true,
     ddl: {
       columnTypes: [
-        'integer', 'bigint', 'smallint', 'serial', 'bigserial',
-        'boolean', 'text', 'varchar', 'varchar(255)', 'varchar(64)',
-        'char(1)', 'real', 'double precision', 'numeric', 'numeric(10,2)',
-        'date', 'time', 'timestamp', 'timestamptz', 'uuid',
-        'json', 'jsonb', 'bytea',
+        'integer',
+        'bigint',
+        'smallint',
+        'serial',
+        'bigserial',
+        'boolean',
+        'text',
+        'varchar',
+        'varchar(255)',
+        'varchar(64)',
+        'char(1)',
+        'real',
+        'double precision',
+        'numeric',
+        'numeric(10,2)',
+        'date',
+        'time',
+        'timestamp',
+        'timestamptz',
+        'uuid',
+        'json',
+        'jsonb',
+        'bytea',
       ],
       defaultExamples: ['now()', 'gen_random_uuid()', 'true', 'false', 'null'],
       indexMethods: ['btree', 'hash', 'gin', 'gist', 'brin'],
@@ -76,11 +121,22 @@ export class PgDriver implements DbDriver {
       supportsObjectComments: true,
     },
     objects: {
-      views: true, materializedViews: true, sequences: true,
-      functions: true, procedures: true, triggers: true, enums: true,
+      views: true,
+      materializedViews: true,
+      sequences: true,
+      functions: true,
+      procedures: true,
+      triggers: true,
+      enums: true,
     },
   };
-  readonly capabilities: DbCapabilities = { supportsReturning: true, supportsSchemas: true, parserDialect: 'postgresql', concurrency: 'token', supportsCursors: true };
+  readonly capabilities: DbCapabilities = {
+    supportsReturning: true,
+    supportsSchemas: true,
+    parserDialect: 'postgresql',
+    concurrency: 'token',
+    supportsCursors: true,
+  };
 
   private readonly logger = new Logger(PgDriver.name);
   private readonly statementTimeoutMs: number;
@@ -93,10 +149,15 @@ export class PgDriver implements DbDriver {
 
   async createPool(params: ConnectionParams): Promise<NativePool> {
     const pool = new Pool({
-      host: params.host, port: params.port, database: params.database,
-      user: params.username, password: params.password,
+      host: params.host,
+      port: params.port,
+      database: params.database,
+      user: params.username,
+      password: params.password,
       ssl: params.sslEnabled ? { rejectUnauthorized: params.sslRejectUnauthorized } : undefined,
-      connectionTimeoutMillis: CONNECT_TIMEOUT_MS, statement_timeout: this.statementTimeoutMs, max: this.poolSize,
+      connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+      statement_timeout: this.statementTimeoutMs,
+      max: this.poolSize,
       // Phase 25 defense-in-depth: a read-only connection opens every session with writes disabled at
       // the server (the app-level guard in PoolManager is still the primary gate).
       ...(params.readOnly ? { options: '-c default_transaction_read_only=on' } : {}),
@@ -160,7 +221,10 @@ export class PgDriver implements DbDriver {
   }
 
   /** Engine-enforced read-only: any write inside the transaction fails with a PG "read-only transaction" error. */
-  async withReadOnlyTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+  async withReadOnlyTransaction<T>(
+    pool: NativePool,
+    fn: (q: DriverQueryFn) => Promise<T>,
+  ): Promise<T> {
     const client = await (pool as Pool).connect();
     const query: DriverQueryFn = async ({ sql: text, params = [] }) => {
       const r = await client.query(text, params);
@@ -189,7 +253,9 @@ export class PgDriver implements DbDriver {
     let cursor: PgReadableCursor;
     try {
       await client.query('BEGIN');
-      cursor = client.query(new Cursor(frag.sql, frag.params as unknown[])) as unknown as PgReadableCursor;
+      cursor = client.query(
+        new Cursor(frag.sql, frag.params as unknown[]),
+      ) as unknown as PgReadableCursor;
     } catch (error) {
       await client.query('ROLLBACK').catch(() => undefined);
       client.release();
@@ -233,15 +299,23 @@ export class PgDriver implements DbDriver {
 
   async testConnection(params: ConnectionParams): Promise<TestConnectionResult> {
     const client = new Client({
-      host: params.host, port: params.port, database: params.database,
-      user: params.username, password: params.password,
+      host: params.host,
+      port: params.port,
+      database: params.database,
+      user: params.username,
+      password: params.password,
       ssl: params.sslEnabled ? { rejectUnauthorized: params.sslRejectUnauthorized } : undefined,
-      connectionTimeoutMillis: CONNECT_TIMEOUT_MS, statement_timeout: this.statementTimeoutMs,
+      connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+      statement_timeout: this.statementTimeoutMs,
     });
     try {
       await client.connect();
       const r = await client.query<{ server_version: string }>('SHOW server_version');
-      return { ok: true, message: 'Connection successful', serverVersion: r.rows[0]?.server_version };
+      return {
+        ok: true,
+        message: 'Connection successful',
+        serverVersion: r.rows[0]?.server_version,
+      };
     } catch (error) {
       return { ok: false, message: describeConnectionError(error) };
     } finally {
@@ -271,20 +345,29 @@ export class PgDriver implements DbDriver {
   buildListReferencingForeignKeys = (ref: TableRef) => sql.pgBuildListReferencingForeignKeys(ref);
   buildListSchemaForeignKeys = (namespace: string) => sql.pgBuildListSchemaForeignKeys(namespace);
   buildListAllSchemaObjects = () => sql.pgBuildListAllSchemaObjects();
-  buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.pgBuildObjectDefinition(kind, ref);
+  buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) =>
+    sql.pgBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.pgBuildSchemaTableStats(namespace);
-  planProfileSample = (rowEstimate: number, exact: boolean) => sql.pgPlanProfileSample(rowEstimate, exact);
+  planProfileSample = (rowEstimate: number, exact: boolean) =>
+    sql.pgPlanProfileSample(rowEstimate, exact);
   buildColumnProfile = (ref: TableRef, columns: ProfileColumnSpec[], plan: ProfileSamplePlan) =>
     sql.pgBuildColumnProfile(ref, columns, plan);
   buildColumnTopValues = (ref: TableRef, column: string, plan: ProfileSamplePlan, limit: number) =>
     sql.pgBuildColumnTopValues(ref, column, plan, limit);
   buildSelectRows = (ref: TableRef, opts: SelectRowsOptions) => sql.pgBuildSelectRows(ref, opts);
-  buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) => sql.pgBuildFilteredRowCount(ref, w, p);
+  buildFilteredRowCount = (ref: TableRef, w: string, p: unknown[]) =>
+    sql.pgBuildFilteredRowCount(ref, w, p);
   buildRowCountEstimate = (ref: TableRef) => sql.pgBuildRowCountEstimate(ref);
   buildInsertRow = (ref: TableRef, e: [string, unknown][]) => sql.pgBuildInsertRow(ref, e);
-  buildUpdateRow = (ref: TableRef, c: string, v: unknown, pk: string[], pv: unknown[]) => sql.pgBuildUpdateRow(ref, c, v, pk, pv);
-  buildUpdateRowGuarded = (ref: TableRef, e: [string, unknown][], pk: string[], pv: unknown[], g: RowUpdateGuard) =>
-    sql.pgBuildUpdateRowGuarded(ref, e, pk, pv, g);
+  buildUpdateRow = (ref: TableRef, c: string, v: unknown, pk: string[], pv: unknown[]) =>
+    sql.pgBuildUpdateRow(ref, c, v, pk, pv);
+  buildUpdateRowGuarded = (
+    ref: TableRef,
+    e: [string, unknown][],
+    pk: string[],
+    pv: unknown[],
+    g: RowUpdateGuard,
+  ) => sql.pgBuildUpdateRowGuarded(ref, e, pk, pv, g);
   async insertRow(
     q: DriverQueryFn,
     ref: TableRef,
@@ -305,19 +388,23 @@ export class PgDriver implements DbDriver {
   ): Promise<Record<string, unknown>> {
     const r = await q(sql.pgBuildUpdateRow(ref, column, value, primaryKey, primaryKeyValues));
     if (r.rowCount !== 1) {
-      throw new NotFoundException(`Row in "${ref.namespace ?? ''}.${ref.name}" no longer exists — it may have been changed or deleted`);
+      throw new NotFoundException(
+        `Row in "${ref.namespace ?? ''}.${ref.name}" no longer exists — it may have been changed or deleted`,
+      );
     }
     return r.rows[0] as Record<string, unknown>;
   }
 
-  buildDeleteRow = (ref: TableRef, pk: string[], pv: unknown[]) => sql.pgBuildDeleteRow(ref, pk, pv);
+  buildDeleteRow = (ref: TableRef, pk: string[], pv: unknown[]) =>
+    sql.pgBuildDeleteRow(ref, pk, pv);
   normalizeCreateTable = (req: CreateTableRequest) => sql.pgNormalizeCreateTable(req);
   normalizeAlterTable = (ref: TableRef, op: AlterTableOperation, columns: ColumnMetadata[]) =>
     sql.pgNormalizeAlterTable(ref, op, columns);
   normalizeCreateIndex = (req: CreateIndexRequest) => sql.pgNormalizeCreateIndex(req);
   buildCreateTable = (req: CreateTableRequest) => sql.pgBuildCreateTable(req);
   buildAlterTable = (ref: TableRef, op: AlterTableOperation) => sql.pgBuildAlterTable(ref, op);
-  buildCreateIndex = (req: CreateIndexRequest, name: string, method: string) => sql.pgBuildCreateIndex(req, name, method);
+  buildCreateIndex = (req: CreateIndexRequest, name: string, method: string) =>
+    sql.pgBuildCreateIndex(req, name, method);
   buildDropIndex = (ref: TableRef, indexName: string) => sql.pgBuildDropIndex(ref, indexName);
   buildDropTable = (ref: TableRef) => sql.pgBuildDropTable(ref);
   buildTruncateTable = (ref: TableRef) => sql.pgBuildTruncateTable(ref);
@@ -331,7 +418,13 @@ export class PgDriver implements DbDriver {
     const { rows } = await q(sql.pgBuildTableColumnsForDdl(ref));
     const columns = rows as unknown as sql.PgDdlColumn[];
     const primaryKey = structure.columns.filter((c) => c.isPrimaryKey).map((c) => c.name);
-    return sql.pgAssembleCreateTable(ref, columns, primaryKey, structure.indexes, structure.foreignKeys);
+    return sql.pgAssembleCreateTable(
+      ref,
+      columns,
+      primaryKey,
+      structure.indexes,
+      structure.foreignKeys,
+    );
   }
 
   async describeResultColumns(
@@ -383,6 +476,43 @@ export class PgDriver implements DbDriver {
     return sql.pgBuildKillSession(id, mode);
   }
 
+  buildPerfInsightsStatus(): SqlFragment {
+    return sql.pgBuildPerfInsightsStatus();
+  }
+
+  buildListTopStatements(limit: number): SqlFragment {
+    return sql.pgBuildListTopStatements(limit);
+  }
+
+  buildPerfInsightsWindow(): SqlFragment {
+    return sql.pgBuildPerfInsightsWindow();
+  }
+
+  classifyPerfInsightsError(
+    error: unknown,
+  ): { reason: PerfInsightsUnavailableReason; message: string } | null {
+    const code = (error as { code?: string } | undefined)?.code;
+    if (code === '42501') {
+      return {
+        reason: 'permission_denied',
+        message: 'This database user cannot read pg_stat_statements.',
+      };
+    }
+    if (code === '42P01') {
+      return {
+        reason: 'not_configured',
+        message: 'pg_stat_statements is not installed in this database.',
+      };
+    }
+    if (code === '55000') {
+      return {
+        reason: 'collection_disabled',
+        message: 'pg_stat_statements must be enabled in shared_preload_libraries.',
+      };
+    }
+    return null;
+  }
+
   mapError(error: unknown, ctx: DriverErrorContext): void {
     const code = (error as { code?: string } | undefined)?.code;
     if (ctx.operation === 'createTable' && code === '42P07') {
@@ -390,15 +520,30 @@ export class PgDriver implements DbDriver {
     }
     if (ctx.operation === 'alterTable') {
       if (code === '42703') throw new UnprocessableEntityException('Column does not exist');
-      if (code === '42846') throw new UnprocessableEntityException('Cannot cast automatically; provide a USING expression');
-      if (code === '23502') throw new UnprocessableEntityException('Column has existing null values; cannot set NOT NULL');
+      if (code === '42846')
+        throw new UnprocessableEntityException(
+          'Cannot cast automatically; provide a USING expression',
+        );
+      if (code === '23502')
+        throw new UnprocessableEntityException(
+          'Column has existing null values; cannot set NOT NULL',
+        );
       if (code === '42701') throw new ConflictException('Column already exists');
       // Foreign-key DDL failures.
-      if (code === '23503') throw new UnprocessableEntityException('Existing rows violate this foreign key — no matching referenced row');
-      if (code === '42710') throw new ConflictException('A constraint with that name already exists');
-      if (code === '42P01') throw new UnprocessableEntityException('The referenced table does not exist');
-      if (code === '42830') throw new UnprocessableEntityException('The referenced columns are not a unique or primary key');
-      if (code === '2BP01' || code === '42704') throw new UnprocessableEntityException('The foreign-key constraint does not exist');
+      if (code === '23503')
+        throw new UnprocessableEntityException(
+          'Existing rows violate this foreign key — no matching referenced row',
+        );
+      if (code === '42710')
+        throw new ConflictException('A constraint with that name already exists');
+      if (code === '42P01')
+        throw new UnprocessableEntityException('The referenced table does not exist');
+      if (code === '42830')
+        throw new UnprocessableEntityException(
+          'The referenced columns are not a unique or primary key',
+        );
+      if (code === '2BP01' || code === '42704')
+        throw new UnprocessableEntityException('The foreign-key constraint does not exist');
     }
     if (ctx.operation === 'createIndex' && code === '42P07') {
       throw new ConflictException('An index with that name already exists');

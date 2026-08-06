@@ -4,8 +4,8 @@ A self-hosted, web-based database client for PostgreSQL, MySQL 8.0+, and SQLite 
 management, schema browsing, grid editing, and a SQL editor, in one TablePlus-style UI that
 doesn't care which engine is on the other end.
 
-> **Status:** phases 0–40 complete (MVP + three post-MVP waves). Phases 41–47 — an on-demand
-> perf/index advisor, schema diff, data generation, saved dashboards, grid conflict detection, AI
+> **Status:** phases 0–41 complete (MVP + three post-MVP waves). Phases 42–47 — schema diff, data
+> generation, saved dashboards, grid conflict detection, AI
 > query-rewrite, and AI-assisted data editing — are planned. Full per-phase ledger:
 > [`docs/plans/README.md`](docs/plans/README.md).
 
@@ -13,7 +13,7 @@ doesn't care which engine is on the other end.
 
 Most database GUIs pick a lane: one is Postgres-only and deeply integrated, another supports
 everything by lowest-common-denominator SQL text boxes. Prost takes a narrower bet — three
-engines (PostgreSQL, MySQL 8.0+, SQLite), each reached through the *same* `DbDriver` interface, so
+engines (PostgreSQL, MySQL 8.0+, SQLite), each reached through the _same_ `DbDriver` interface, so
 a feature (row filtering, DDL preview, streaming exports) is built once against the interface and
 each driver either supports it natively or the UI hides it via a capability descriptor. Nothing
 in a feature service ever branches on engine name.
@@ -64,7 +64,8 @@ preview → confirm → execute pipeline with a live SQL diff, gated by each eng
 descriptor (SQLite, notably, doesn't get rich `ALTER TABLE`).
 
 **Operational safety** — per-connection read-only/environment guardrails that block mutations
-at the pool layer; active-session monitoring with kill-query; a mutation/DDL audit trail with
+at the pool layer; active-session monitoring with kill-query; pull-only top-statement performance
+insights with confirm-gated index advice; a mutation/DDL audit trail with
 configurable retention; SSH tunneling for connections that live behind a bastion; CSV/JSON data
 export and import.
 
@@ -97,11 +98,11 @@ The durable rules every change must obey live in
 
 ### Supported engines
 
-| Engine | Versions | Namespace browsed | URI scheme | TLS |
-| --- | --- | --- | --- | --- |
-| **PostgreSQL** | 12+ | all schemas | `postgres://`, `postgresql://` | optional |
-| **MySQL** | **8.0+** (MariaDB and pre-8.0 are rejected at connect time via `SELECT VERSION()`) | the connection's own database only | `mysql://` | optional |
-| **SQLite** | file or `:memory:` | `main` | — (file path, not a network URI) | — |
+| Engine         | Versions                                                                           | Namespace browsed                  | URI scheme                       | TLS      |
+| -------------- | ---------------------------------------------------------------------------------- | ---------------------------------- | -------------------------------- | -------- |
+| **PostgreSQL** | 12+                                                                                | all schemas                        | `postgres://`, `postgresql://`   | optional |
+| **MySQL**      | **8.0+** (MariaDB and pre-8.0 are rejected at connect time via `SELECT VERSION()`) | the connection's own database only | `mysql://`                       | optional |
+| **SQLite**     | file or `:memory:`                                                                 | `main`                             | — (file path, not a network URI) | —        |
 
 MySQL's lack of `RETURNING` means inserts/updates are executing methods: the driver runs the
 statement on a pinned connection, then re-selects the row by primary key. An insert must supply a
@@ -110,12 +111,12 @@ complete primary key, or omit exactly one missing `AUTO_INCREMENT` component (re
 
 ## Tech stack
 
-| Layer | Stack |
-| --- | --- |
-| **Frontend** (`apps/web`) | React 19, Vite, Tailwind v4, React Router, Zustand, TanStack Query, AG Grid, Monaco |
-| **Backend** (`apps/api`) | NestJS 11, Prisma (app DB), `pg` / `mysql2` / `better-sqlite3` (target DBs), JWT, class-validator |
+| Layer                     | Stack                                                                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Frontend** (`apps/web`) | React 19, Vite, Tailwind v4, React Router, Zustand, TanStack Query, AG Grid, Monaco                                                  |
+| **Backend** (`apps/api`)  | NestJS 11, Prisma (app DB), `pg` / `mysql2` / `better-sqlite3` (target DBs), JWT, class-validator                                    |
 | **Shared** (`packages/*`) | `shared-types` (cross-boundary DTOs), `ui` (tokens, primitives, grid/editor themes), `utils` (`quoteIdent`, `parseConnectionString`) |
-| **Tooling** | pnpm workspaces, Turborepo, TypeScript, ESLint + Prettier, Vitest |
+| **Tooling**               | pnpm workspaces, Turborepo, TypeScript, ESLint + Prettier, Vitest                                                                    |
 
 ```
 apps/
@@ -224,22 +225,22 @@ undecryptable.
 
 **Different host port** — remap with `-p` (the container's internal port can stay `5354`):
 `docker run ... -p 8080:5354 ...` → <http://localhost:8080>. To change the port the server
-*listens* on inside the container (e.g. behind a reverse proxy), set `PORT` and remap both sides:
+_listens_ on inside the container (e.g. behind a reverse proxy), set `PORT` and remap both sides:
 `-e PORT=8080 -p 8080:8080`.
 
 #### Environment variables
 
-| Variable | Required | Default | Purpose |
-| --- | --- | --- | --- |
-| `JWT_SECRET` | **yes** (prod) | ephemeral random | Signs auth JWTs. Rotating it invalidates issued tokens. |
-| `CREDENTIAL_ENCRYPTION_KEY` | **yes** (prod) | ephemeral random | 32-byte base64 key (AES-256-GCM) for target-DB credentials at rest. |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | no | — | If both set, an admin user is upserted on start. |
-| `DATABASE_URL` | no | `file:/data/prost.db` | SQLite app-DB location (keep it under the `/data` volume). |
-| `PORT` | no | `5354` | Port the server listens on. |
-| `WEB_ORIGIN` | no | `http://localhost:5173` | Extra CORS origins (comma-separated); not needed for the bundled same-origin SPA. |
-| `QUERY_TIMEOUT_MS` | no | `30000` | Per-query timeout against target DBs. |
-| `HISTORY_RETENTION_DAYS` | no | `90` | Non-starred query-history entries older than this are pruned; `0` disables the sweep. |
-| `AUDIT_RETENTION_DAYS` | no | driver default | Retention for the mutation/DDL audit log. |
+| Variable                         | Required       | Default                 | Purpose                                                                               |
+| -------------------------------- | -------------- | ----------------------- | ------------------------------------------------------------------------------------- |
+| `JWT_SECRET`                     | **yes** (prod) | ephemeral random        | Signs auth JWTs. Rotating it invalidates issued tokens.                               |
+| `CREDENTIAL_ENCRYPTION_KEY`      | **yes** (prod) | ephemeral random        | 32-byte base64 key (AES-256-GCM) for target-DB credentials at rest.                   |
+| `ADMIN_EMAIL` / `ADMIN_PASSWORD` | no             | —                       | If both set, an admin user is upserted on start.                                      |
+| `DATABASE_URL`                   | no             | `file:/data/prost.db`   | SQLite app-DB location (keep it under the `/data` volume).                            |
+| `PORT`                           | no             | `5354`                  | Port the server listens on.                                                           |
+| `WEB_ORIGIN`                     | no             | `http://localhost:5173` | Extra CORS origins (comma-separated); not needed for the bundled same-origin SPA.     |
+| `QUERY_TIMEOUT_MS`               | no             | `30000`                 | Per-query timeout against target DBs.                                                 |
+| `HISTORY_RETENTION_DAYS`         | no             | `90`                    | Non-starred query-history entries older than this are pruned; `0` disables the sweep. |
+| `AUDIT_RETENTION_DAYS`           | no             | driver default          | Retention for the mutation/DDL audit log.                                             |
 
 For anything not listed here — pool sizing, streaming/cursor limits, throttling — see
 `.env.example`, which documents every variable the API reads.

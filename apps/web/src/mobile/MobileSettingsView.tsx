@@ -1,4 +1,11 @@
-import { Activity, LogOut, Plug, ScrollText, SlidersHorizontal } from 'lucide-react';
+import {
+  Activity,
+  ChartNoAxesCombined,
+  LogOut,
+  Plug,
+  ScrollText,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { Button, Surface } from '@prost/ui';
 import { useConnections } from '../api/connections';
 import { useEngineDescriptor } from '../api/databaseEngines';
@@ -18,17 +25,28 @@ export interface MobileSettingsViewProps {
   onOpenSessions: () => void;
   /** Switches to the workspace view after opening the audit-log tab. */
   onOpenAudit: () => void;
+  /** Switches to the workspace view after opening the performance tab. */
+  onOpenPerformance: () => void;
 }
 
-export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, onSelectSnippet, onOpenSessions, onOpenAudit }: MobileSettingsViewProps) {
+export function MobileSettingsView({
+  onManageConnections,
+  onSelectHistoryQuery,
+  onSelectSnippet,
+  onOpenSessions,
+  onOpenAudit,
+  onOpenPerformance,
+}: MobileSettingsViewProps) {
   const { data: connections = [] } = useConnections();
   const activeConnectionId = useConnectionStore((state) => state.activeConnectionId);
   const loadQuery = useWorkspaceStore((state) => state.loadQuery);
   const openSessions = useWorkspaceStore((state) => state.openSessions);
+  const openPerformance = useWorkspaceStore((state) => state.openPerformance);
   const openAudit = useWorkspaceStore((state) => state.openAudit);
   const openSettings = useSettingsStore((state) => state.openSettings);
-  const sessionMonitoringSupported =
-    useEngineDescriptor(activeConnectionId)?.supportsSessionMonitoring ?? false;
+  const descriptor = useEngineDescriptor(activeConnectionId);
+  const sessionMonitoringSupported = descriptor?.supportsSessionMonitoring ?? false;
+  const perfInsightsSupported = descriptor?.supportsPerfInsights ?? false;
   const clearAuth = useAuthStore((state) => state.clear);
 
   function handleSelectHistory(sql: string) {
@@ -40,15 +58,24 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, 
     <div className="flex-1 overflow-y-auto p-md">
       <div className="flex flex-col gap-lg">
         <section>
-          <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">Appearance</h2>
-          <Button variant="secondary" size="sm" className="w-full justify-center" onClick={() => openSettings('appearance')}>
+          <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">
+            Appearance
+          </h2>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="w-full justify-center"
+            onClick={() => openSettings('appearance')}
+          >
             <SlidersHorizontal size={14} />
             Open appearance settings
           </Button>
         </section>
 
         <section>
-          <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">Connections</h2>
+          <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">
+            Connections
+          </h2>
           {connections.length > 0 ? (
             <Surface level="raised" bordered className="flex flex-col overflow-hidden rounded-md">
               {connections.map((connection) => (
@@ -69,7 +96,12 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, 
           ) : (
             <p className="text-xs italic text-text-faint">No saved connections yet.</p>
           )}
-          <Button variant="secondary" size="sm" className="mt-sm w-full justify-center" onClick={onManageConnections}>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="mt-sm w-full justify-center"
+            onClick={onManageConnections}
+          >
             Manage Connections
           </Button>
           {sessionMonitoringSupported ? (
@@ -84,6 +116,20 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, 
             >
               <Activity size={14} />
               Active Sessions
+            </Button>
+          ) : null}
+          {perfInsightsSupported ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="mt-sm w-full justify-center"
+              onClick={() => {
+                if (activeConnectionId) openPerformance(activeConnectionId);
+                onOpenPerformance();
+              }}
+            >
+              <ChartNoAxesCombined size={14} />
+              Performance
             </Button>
           ) : null}
           <Button
@@ -101,17 +147,31 @@ export function MobileSettingsView({ onManageConnections, onSelectHistoryQuery, 
         </section>
 
         <section>
-          <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">Recent Queries</h2>
+          <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">
+            Recent Queries
+          </h2>
           <QueryHistoryList connectionId={activeConnectionId} onSelect={handleSelectHistory} />
         </section>
 
         <section>
-          <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">Snippets</h2>
-          <SnippetList onSelect={(sql) => { loadQuery(sql); onSelectSnippet(); }} />
+          <h2 className="mb-sm text-xs font-medium uppercase tracking-wider text-text-faint">
+            Snippets
+          </h2>
+          <SnippetList
+            onSelect={(sql) => {
+              loadQuery(sql);
+              onSelectSnippet();
+            }}
+          />
         </section>
 
         <section>
-          <Button variant="ghost" size="sm" className="w-full justify-center !text-danger" onClick={clearAuth}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-center !text-danger"
+            onClick={clearAuth}
+          >
             <LogOut size={14} />
             Sign Out
           </Button>

@@ -42,6 +42,7 @@ const POSTGRES_DESCRIPTOR: DbEngineDescriptor = {
   supportsQueryPlan: true,
   supportsExplainAnalyze: true,
   supportsSessionMonitoring: true,
+  supportsPerfInsights: true,
   ddl: {
     columnTypes: ['integer', 'text', 'jsonb'],
     defaultExamples: ['now()', 'gen_random_uuid()'],
@@ -51,7 +52,15 @@ const POSTGRES_DESCRIPTOR: DbEngineDescriptor = {
     supportsForeignKeyDdl: true,
     supportsObjectComments: true,
   },
-  objects: { views: true, materializedViews: true, sequences: true, functions: true, procedures: true, triggers: true, enums: true },
+  objects: {
+    views: true,
+    materializedViews: true,
+    sequences: true,
+    functions: true,
+    procedures: true,
+    triggers: true,
+    enums: true,
+  },
 };
 
 const MYSQL_DESCRIPTOR: DbEngineDescriptor = {
@@ -106,14 +115,16 @@ describe('CreateTableModal', () => {
       request: {
         schema: 'public',
         table: 'orders',
-        columns: [{
-          name: 'id',
-          type: 'text',
-          nullable: true,
-          isPrimaryKey: false,
-          autoIncrement: false,
-          default: undefined,
-        }],
+        columns: [
+          {
+            name: 'id',
+            type: 'text',
+            nullable: true,
+            isPrimaryKey: false,
+            autoIncrement: false,
+            default: undefined,
+          },
+        ],
       },
     });
     expect(screen.getByText('CREATE TABLE server_preview').tagName).toBe('PRE');
@@ -173,11 +184,14 @@ describe('CreateTableModal', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: '' }), 'int');
     await userEvent.click(screen.getByRole('checkbox', { name: /auto-increment/i }));
 
-    expect(mockPreview).toHaveBeenLastCalledWith('conn-1', expect.objectContaining({
-      request: expect.objectContaining({
-        columns: [expect.objectContaining({ name: 'id', type: 'int', autoIncrement: true })],
+    expect(mockPreview).toHaveBeenLastCalledWith(
+      'conn-1',
+      expect.objectContaining({
+        request: expect.objectContaining({
+          columns: [expect.objectContaining({ name: 'id', type: 'int', autoIncrement: true })],
+        }),
       }),
-    }));
+    );
 
     await userEvent.click(screen.getByRole('button', { name: /create table/i }));
     expect(mockMutate.mock.calls[0]?.[0]).toMatchObject({

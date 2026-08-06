@@ -1,4 +1,10 @@
-import { BadRequestException, ForbiddenException, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { describe, expect, it, vi } from 'vitest';
 import type {
   ChartSuggestRequest,
@@ -17,7 +23,13 @@ import type { DecryptedEndpoint, LlmEndpointService } from './llm-endpoint.servi
 import type { RetrievalService } from './retrieval.service';
 import type { QueryService } from '../query/query.service';
 import type { RowsStatementResult } from '@prost/shared-types';
-import { AiService, MAX_COMMENT_CHARS, parseSchemaSuggestions, resolveTablesFromSql, sanitizePlanForPrompt } from './ai.service';
+import {
+  AiService,
+  MAX_COMMENT_CHARS,
+  parseSchemaSuggestions,
+  resolveTablesFromSql,
+  sanitizePlanForPrompt,
+} from './ai.service';
 
 const SAMPLE_CONTEXT = `-- public.users\n(\n  id integer PRIMARY KEY,\n  email text NOT NULL\n)`;
 
@@ -43,7 +55,10 @@ function createService({
   readOnly = false,
   previewSql = 'CREATE INDEX "orders_user_id_idx" ON "public"."orders" USING btree ("user_id")',
   previewThrowsFor,
-  listTables = [{ schema: 'public', name: 'orders' }, { schema: 'public', name: 'users' }],
+  listTables = [
+    { schema: 'public', name: 'orders' },
+    { schema: 'public', name: 'users' },
+  ],
 }: {
   ownershipFails?: boolean;
   endpoint?: DecryptedEndpoint;
@@ -112,14 +127,25 @@ function createService({
   const ddl = {
     preview: vi.fn().mockImplementation((_connectionId: string, req: SchemaSuggestionChange) => {
       if (previewThrowsFor && JSON.stringify(req).includes(previewThrowsFor)) {
-        return Promise.reject(new UnprocessableEntityException(`Column "${previewThrowsFor}" does not exist`));
+        return Promise.reject(
+          new UnprocessableEntityException(`Column "${previewThrowsFor}" does not exist`),
+        );
       }
       return Promise.resolve({ sql: previewSql });
     }),
   } as unknown as DdlService;
 
   return {
-    service: new AiService(connectionsService, llmEndpointService, provider, retrieval, pool, history, queryService, ddl),
+    service: new AiService(
+      connectionsService,
+      llmEndpointService,
+      provider,
+      retrieval,
+      pool,
+      history,
+      queryService,
+      ddl,
+    ),
     connectionsService,
     llmEndpointService,
     provider,
@@ -132,7 +158,13 @@ function createService({
 }
 
 const EMPTY_ROWS_RESULT: RowsStatementResult = {
-  kind: 'rows', sql: 'SELECT 1', rows: [], columns: [], totalRows: 0, editable: false, executionTimeMs: 1,
+  kind: 'rows',
+  sql: 'SELECT 1',
+  rows: [],
+  columns: [],
+  totalRows: 0,
+  editable: false,
+  executionTimeMs: 1,
 };
 
 const REQ: ChatRequest = {
@@ -145,8 +177,13 @@ describe('AiService.chat', () => {
   it('asserts ownership before resolving the endpoint', async () => {
     const { service, connectionsService, llmEndpointService } = createService();
     const order: string[] = [];
-    connectionsService.assertOwnership = vi.fn().mockImplementation(async () => { order.push('ownership'); });
-    llmEndpointService.getDecrypted = vi.fn().mockImplementation(async () => { order.push('endpoint'); return ENDPOINT; });
+    connectionsService.assertOwnership = vi.fn().mockImplementation(async () => {
+      order.push('ownership');
+    });
+    llmEndpointService.getDecrypted = vi.fn().mockImplementation(async () => {
+      order.push('endpoint');
+      return ENDPOINT;
+    });
     await service.chat('user-1', 'conn-1', REQ);
     expect(order[0]).toBe('ownership');
   });
@@ -260,21 +297,36 @@ describe('AiService.chat', () => {
 
   it('maps a provider failure to ServiceUnavailableException', async () => {
     const { service } = createService({ providerThrows: true });
-    await expect(service.chat('user-1', 'conn-1', REQ)).rejects.toThrow(ServiceUnavailableException);
+    await expect(service.chat('user-1', 'conn-1', REQ)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
   });
 
   it('runs retrieval before the provider call', async () => {
     const { service, retrieval, provider } = createService();
     const order: string[] = [];
-    retrieval.buildContext = vi.fn().mockImplementation(async () => { order.push('retrieval'); return SAMPLE_CONTEXT; });
-    provider.complete = vi.fn().mockImplementation(async () => { order.push('provider'); return 'done'; });
+    retrieval.buildContext = vi.fn().mockImplementation(async () => {
+      order.push('retrieval');
+      return SAMPLE_CONTEXT;
+    });
+    provider.complete = vi.fn().mockImplementation(async () => {
+      order.push('provider');
+      return 'done';
+    });
     await service.chat('user-1', 'conn-1', REQ);
     expect(order).toEqual(['retrieval', 'provider']);
   });
 });
 
 function col(name: string, dataType: string): ColumnMetadata {
-  return { name, dataType, nullable: true, isPrimaryKey: false, autoIncrement: false, defaultValue: null };
+  return {
+    name,
+    dataType,
+    nullable: true,
+    isPrimaryKey: false,
+    autoIncrement: false,
+    defaultValue: null,
+  };
 }
 
 const CHART_COLUMNS: ColumnMetadata[] = [col('status', 'text'), col('count', 'integer')];
@@ -289,30 +341,50 @@ const CHART_REQ: ChartSuggestRequest = {
 describe('AiService.suggestChart', () => {
   it('returns a validated suggestion parsed from the model JSON', async () => {
     const { service } = createService({
-      providerResponse: '{"type":"bar","categoryColumn":"status","valueColumn":"count","aggregation":"sum"}',
+      providerResponse:
+        '{"type":"bar","categoryColumn":"status","valueColumn":"count","aggregation":"sum"}',
     });
     const result = await service.suggestChart('user-1', 'conn-1', CHART_REQ);
-    expect(result).toEqual({ type: 'bar', categoryColumn: 'status', valueColumn: 'count', aggregation: 'sum' });
+    expect(result).toEqual({
+      type: 'bar',
+      categoryColumn: 'status',
+      valueColumn: 'count',
+      aggregation: 'sum',
+    });
   });
 
   it('parses a suggestion embedded in prose/markdown and keeps an explicit aggregation', async () => {
     const { service } = createService({
-      providerResponse: 'Sure!\n```json\n{"type":"pie","categoryColumn":"status","valueColumn":"count","aggregation":"avg"}\n```',
+      providerResponse:
+        'Sure!\n```json\n{"type":"pie","categoryColumn":"status","valueColumn":"count","aggregation":"avg"}\n```',
     });
     const result = await service.suggestChart('user-1', 'conn-1', CHART_REQ);
-    expect(result).toEqual({ type: 'pie', categoryColumn: 'status', valueColumn: 'count', aggregation: 'avg' });
+    expect(result).toEqual({
+      type: 'pie',
+      categoryColumn: 'status',
+      valueColumn: 'count',
+      aggregation: 'avg',
+    });
   });
 
   it('defaults aggregation to "sum" when the model omits or invalidates it', async () => {
-    const omitted = createService({ providerResponse: '{"type":"bar","categoryColumn":"status","valueColumn":"count"}' });
+    const omitted = createService({
+      providerResponse: '{"type":"bar","categoryColumn":"status","valueColumn":"count"}',
+    });
     expect(await omitted.service.suggestChart('user-1', 'conn-1', CHART_REQ)).toEqual({
-      type: 'bar', categoryColumn: 'status', valueColumn: 'count', aggregation: 'sum',
+      type: 'bar',
+      categoryColumn: 'status',
+      valueColumn: 'count',
+      aggregation: 'sum',
     });
 
     const invalid = createService({
-      providerResponse: '{"type":"bar","categoryColumn":"status","valueColumn":"count","aggregation":"median"}',
+      providerResponse:
+        '{"type":"bar","categoryColumn":"status","valueColumn":"count","aggregation":"median"}',
     });
-    expect(await invalid.service.suggestChart('user-1', 'conn-1', CHART_REQ)).toMatchObject({ aggregation: 'sum' });
+    expect(await invalid.service.suggestChart('user-1', 'conn-1', CHART_REQ)).toMatchObject({
+      aggregation: 'sum',
+    });
   });
 
   it('returns null when the model names a column that does not exist', async () => {
@@ -323,7 +395,9 @@ describe('AiService.suggestChart', () => {
   });
 
   it('returns null for an invalid chart type or unparseable content', async () => {
-    const bad = createService({ providerResponse: '{"type":"scatter","categoryColumn":"status","valueColumn":"count"}' });
+    const bad = createService({
+      providerResponse: '{"type":"scatter","categoryColumn":"status","valueColumn":"count"}',
+    });
     expect(await bad.service.suggestChart('user-1', 'conn-1', CHART_REQ)).toBeNull();
 
     const garbage = createService({ providerResponse: 'no json here' });
@@ -340,7 +414,9 @@ describe('AiService.suggestChart', () => {
 
   it('maps a provider failure to ServiceUnavailableException', async () => {
     const { service } = createService({ providerThrows: true });
-    await expect(service.suggestChart('user-1', 'conn-1', CHART_REQ)).rejects.toThrow(ServiceUnavailableException);
+    await expect(service.suggestChart('user-1', 'conn-1', CHART_REQ)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
   });
 
   it('sends no schema context — only columns + the sample (never buildContext)', async () => {
@@ -364,7 +440,10 @@ describe('AiService.suggestChart', () => {
 
     const opts = (provider.complete as ReturnType<typeof vi.fn>).mock.calls[0]![0];
     // The prompt embeds the sanitized sample as JSON; parse it back out to assert the caps.
-    const jsonSlice = opts.systemPrompt.slice(opts.systemPrompt.indexOf('['), opts.systemPrompt.indexOf(']') + 1);
+    const jsonSlice = opts.systemPrompt.slice(
+      opts.systemPrompt.indexOf('['),
+      opts.systemPrompt.indexOf(']') + 1,
+    );
     const sent = JSON.parse(jsonSlice) as { status: string }[];
     expect(sent).toHaveLength(15);
     expect(sent[0]!.status.length).toBeLessThanOrEqual(101); // 100 chars + ellipsis
@@ -374,7 +453,13 @@ describe('AiService.suggestChart', () => {
 
 function rowsResult(overrides: Partial<RowsStatementResult> = {}): RowsStatementResult {
   return {
-    kind: 'rows', sql: 'SELECT id, note FROM t', rows: [], columns: [], totalRows: 0, editable: false, executionTimeMs: 3,
+    kind: 'rows',
+    sql: 'SELECT id, note FROM t',
+    rows: [],
+    columns: [],
+    totalRows: 0,
+    editable: false,
+    executionTimeMs: 3,
     ...overrides,
   };
 }
@@ -382,11 +467,16 @@ function rowsResult(overrides: Partial<RowsStatementResult> = {}): RowsStatement
 describe('AiService.runReadQuery', () => {
   it('asserts ownership, runs the read-only query, and returns result + sanitized sample', async () => {
     const result = rowsResult({
-      rows: [{ id: 1, note: 'a' }, { id: 2, note: 'b' }],
+      rows: [
+        { id: 1, note: 'a' },
+        { id: 2, note: 'b' },
+      ],
       columns: [col('id', 'integer'), col('note', 'text')],
       totalRows: 2,
     });
-    const { service, connectionsService, queryService } = createService({ runReadOnlyResult: result });
+    const { service, connectionsService, queryService } = createService({
+      runReadOnlyResult: result,
+    });
 
     const res = await service.runReadQuery('user-1', 'conn-1', 'SELECT id, note FROM t', 'corr-9');
 
@@ -396,15 +486,22 @@ describe('AiService.runReadQuery', () => {
     expect(res.result.statements[0]).toBe(result);
     // Sanitized sample: column-major, values preserved for a small result.
     expect(res.sample.columns).toEqual(['id', 'note']);
-    expect(res.sample.rows).toEqual([[1, 'a'], [2, 'b']]);
+    expect(res.sample.rows).toEqual([
+      [1, 'a'],
+      [2, 'b'],
+    ]);
     expect(res.sample.truncated).toBe(false);
   });
 
   it('caps the sample rows/columns and truncates long cells (model never sees the full result)', async () => {
     const columns = Array.from({ length: 30 }, (_, i) => col(`c${i}`, 'text'));
     const long = 'y'.repeat(500);
-    const rows = Array.from({ length: 50 }, () => Object.fromEntries(columns.map((c) => [c.name, long])));
-    const { service } = createService({ runReadOnlyResult: rowsResult({ rows, columns, totalRows: 50, truncated: true }) });
+    const rows = Array.from({ length: 50 }, () =>
+      Object.fromEntries(columns.map((c) => [c.name, long])),
+    );
+    const { service } = createService({
+      runReadOnlyResult: rowsResult({ rows, columns, totalRows: 50, truncated: true }),
+    });
 
     const res = await service.runReadQuery('user-1', 'conn-1', 'SELECT * FROM big');
     expect(res.sample.columns).toHaveLength(20); // col cap
@@ -415,8 +512,12 @@ describe('AiService.runReadQuery', () => {
   });
 
   it('propagates the read-only refusal from QueryService (never runs a non-read)', async () => {
-    const { service } = createService({ runReadOnlyThrows: new UnprocessableEntityException('not a read') });
-    await expect(service.runReadQuery('user-1', 'conn-1', 'DELETE FROM t')).rejects.toThrow(UnprocessableEntityException);
+    const { service } = createService({
+      runReadOnlyThrows: new UnprocessableEntityException('not a read'),
+    });
+    await expect(service.runReadQuery('user-1', 'conn-1', 'DELETE FROM t')).rejects.toThrow(
+      UnprocessableEntityException,
+    );
   });
 });
 
@@ -432,7 +533,13 @@ function indexReply(extra: unknown[] = []): string {
     {
       change: {
         kind: 'createIndex',
-        request: { schema: 'public', table: 'orders', columns: ['user_id'], unique: false, method: 'btree' },
+        request: {
+          schema: 'public',
+          table: 'orders',
+          columns: ['user_id'],
+          unique: false,
+          method: 'btree',
+        },
       },
       rationale: 'The plan sequentially scans orders filtering on user_id, which has no index.',
     },
@@ -449,7 +556,13 @@ describe('AiService.suggestSchemaChanges (Phase 33)', () => {
     expect(out).toHaveLength(1);
     expect(out[0]!.change).toEqual({
       kind: 'createIndex',
-      request: { schema: 'public', table: 'orders', columns: ['user_id'], unique: false, method: 'btree' },
+      request: {
+        schema: 'public',
+        table: 'orders',
+        columns: ['user_id'],
+        unique: false,
+        method: 'btree',
+      },
     });
     expect(out[0]!.rationale).toContain('user_id');
     expect(out[0]!.sql).toContain('CREATE INDEX');
@@ -457,9 +570,14 @@ describe('AiService.suggestSchemaChanges (Phase 33)', () => {
   });
 
   it('refuses on a read-only connection before spending anything on the provider', async () => {
-    const { service, provider, ddl } = createService({ readOnly: true, providerResponse: indexReply() });
+    const { service, provider, ddl } = createService({
+      readOnly: true,
+      providerResponse: indexReply(),
+    });
 
-    await expect(service.suggestSchemaChanges('user-1', 'conn-1', SUGGEST_REQ)).rejects.toThrow(ForbiddenException);
+    await expect(service.suggestSchemaChanges('user-1', 'conn-1', SUGGEST_REQ)).rejects.toThrow(
+      ForbiddenException,
+    );
     expect(provider.complete).not.toHaveBeenCalled();
     expect(ddl.preview).not.toHaveBeenCalled();
   });
@@ -467,15 +585,35 @@ describe('AiService.suggestSchemaChanges (Phase 33)', () => {
   it.each([
     ['dropTable', { kind: 'dropTable', request: { schema: 'public', table: 'orders' } }],
     ['truncateTable', { kind: 'truncateTable', request: { schema: 'public', table: 'orders' } }],
-    ['dropIndex', { kind: 'dropIndex', request: { schema: 'public', table: 'orders', index: 'orders_pkey' } }],
-    ['createTable', { kind: 'createTable', request: { schema: 'public', table: 'x', columns: [] } }],
+    [
+      'dropIndex',
+      { kind: 'dropIndex', request: { schema: 'public', table: 'orders', index: 'orders_pkey' } },
+    ],
+    [
+      'createTable',
+      { kind: 'createTable', request: { schema: 'public', table: 'x', columns: [] } },
+    ],
     [
       'alterTable/dropColumn',
-      { kind: 'alterTable', request: { schema: 'public', table: 'orders', operation: { kind: 'dropColumn', column: 'user_id' } } },
+      {
+        kind: 'alterTable',
+        request: {
+          schema: 'public',
+          table: 'orders',
+          operation: { kind: 'dropColumn', column: 'user_id' },
+        },
+      },
     ],
     [
       'alterTable/dropForeignKey',
-      { kind: 'alterTable', request: { schema: 'public', table: 'orders', operation: { kind: 'dropForeignKey', constraintName: 'fk' } } },
+      {
+        kind: 'alterTable',
+        request: {
+          schema: 'public',
+          table: 'orders',
+          operation: { kind: 'dropForeignKey', constraintName: 'fk' },
+        },
+      },
     ],
     [
       'alterTable/addForeignKey',
@@ -484,7 +622,12 @@ describe('AiService.suggestSchemaChanges (Phase 33)', () => {
         request: {
           schema: 'public',
           table: 'orders',
-          operation: { kind: 'addForeignKey', columns: ['user_id'], referencedTable: 'users', referencedColumns: ['id'] },
+          operation: {
+            kind: 'addForeignKey',
+            columns: ['user_id'],
+            referencedTable: 'users',
+            referencedColumns: ['id'],
+          },
         },
       },
     ],
@@ -493,7 +636,9 @@ describe('AiService.suggestSchemaChanges (Phase 33)', () => {
       providerResponse: JSON.stringify([{ change, rationale: 'Because I said so.' }]),
     });
 
-    await expect(service.suggestSchemaChanges('user-1', 'conn-1', SUGGEST_REQ)).resolves.toEqual([]);
+    await expect(service.suggestSchemaChanges('user-1', 'conn-1', SUGGEST_REQ)).resolves.toEqual(
+      [],
+    );
     expect(ddl.preview).not.toHaveBeenCalled();
   });
 
@@ -535,7 +680,10 @@ describe('AiService.suggestSchemaChanges (Phase 33)', () => {
 
   it('accepts the four suggestable alter operations', async () => {
     const ops = [
-      { kind: 'addColumn', column: { name: 'note', type: 'text', nullable: true, isPrimaryKey: false } },
+      {
+        kind: 'addColumn',
+        column: { name: 'note', type: 'text', nullable: true, isPrimaryKey: false },
+      },
       { kind: 'setNotNull', column: 'user_id', notNull: true },
       { kind: 'setDefault', column: 'status', default: "'new'" },
       { kind: 'changeType', column: 'total', type: 'numeric' },
@@ -544,7 +692,10 @@ describe('AiService.suggestSchemaChanges (Phase 33)', () => {
       const { service } = createService({
         providerResponse: JSON.stringify([
           {
-            change: { kind: 'alterTable', request: { schema: 'public', table: 'orders', operation } },
+            change: {
+              kind: 'alterTable',
+              request: { schema: 'public', table: 'orders', operation },
+            },
             rationale: 'A well-grounded reason.',
           },
         ]),
@@ -552,6 +703,36 @@ describe('AiService.suggestSchemaChanges (Phase 33)', () => {
       const out = await service.suggestSchemaChanges('user-1', 'conn-1', SUGGEST_REQ);
       expect(out, `operation ${operation.kind} should survive`).toHaveLength(1);
     }
+  });
+
+  it('keeps index-only requests inside the existing pipeline while dropping non-index candidates', async () => {
+    const alter = {
+      change: {
+        kind: 'alterTable',
+        request: {
+          schema: 'public',
+          table: 'orders',
+          operation: { kind: 'setNotNull', column: 'user_id', notNull: true },
+        },
+      },
+      rationale: 'Not an index.',
+    };
+    const [index] = JSON.parse(indexReply()) as unknown[];
+    const { service, provider, ddl } = createService({
+      providerResponse: JSON.stringify([alter, index]),
+    });
+
+    const out = await service.suggestSchemaChanges('user-1', 'conn-1', {
+      ...SUGGEST_REQ,
+      scope: 'indexes',
+    });
+
+    expect(out).toHaveLength(1);
+    expect(out[0]!.change.kind).toBe('createIndex');
+    expect(ddl.preview).toHaveBeenCalledTimes(1);
+    const { systemPrompt } = (provider.complete as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0];
+    expect(systemPrompt).toContain('index-only request');
   });
 
   it('grounds the prompt in the requested tables via describeTables', async () => {
@@ -589,7 +770,8 @@ describe('AiService.suggestSchemaChanges (Phase 33)', () => {
 
     await service.suggestSchemaChanges('user-1', 'conn-1', { ...SUGGEST_REQ, plan });
 
-    const { systemPrompt } = (provider.complete as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![0];
+    const { systemPrompt } = (provider.complete as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0]![0];
     expect(systemPrompt).not.toContain('ada@example.com');
     expect(systemPrompt).not.toContain('Secret Field');
     expect(systemPrompt).not.toContain('planText');
@@ -606,7 +788,9 @@ describe('AiService.suggestSchemaChanges (Phase 33)', () => {
     }));
     const { service } = createService({ providerResponse: JSON.stringify(many) });
 
-    await expect(service.suggestSchemaChanges('user-1', 'conn-1', SUGGEST_REQ)).resolves.toHaveLength(3);
+    await expect(
+      service.suggestSchemaChanges('user-1', 'conn-1', SUGGEST_REQ),
+    ).resolves.toHaveLength(3);
   });
 
   it('rejects a model that is not on the endpoint', async () => {
@@ -660,12 +844,35 @@ describe('parseSchemaSuggestions', () => {
     const out = parseSchemaSuggestions(
       JSON.stringify([
         {
-          change: { kind: 'createIndex', request: { schema: 'public', table: 'orders', columns: [] } },
+          change: {
+            kind: 'createIndex',
+            request: { schema: 'public', table: 'orders', columns: [] },
+          },
           rationale: 'Reason.',
         },
       ]),
     );
     expect(out).toEqual([]);
+  });
+
+  it('filters otherwise-valid alter changes in index-only scope', () => {
+    const content = JSON.stringify([
+      {
+        change: {
+          kind: 'alterTable',
+          request: {
+            schema: 'public',
+            table: 'orders',
+            operation: { kind: 'setNotNull', column: 'user_id', notNull: true },
+          },
+        },
+        rationale: 'Not an index.',
+      },
+      ...(JSON.parse(indexReply()) as unknown[]),
+    ]);
+    const out = parseSchemaSuggestions(content, 'indexes');
+    expect(out).toHaveLength(1);
+    expect(out[0]!.change.kind).toBe('createIndex');
   });
 });
 
@@ -729,35 +936,46 @@ describe('AiService.describeObject (Phase 38)', () => {
     expect(out.comment).toBe('Registered application users.');
     expect(retrieval.describeTables).toHaveBeenCalledWith('conn-1', ['public.users']);
     // Schema-only grounding: the prompt is built from the described table, never from rows.
-    const [{ systemPrompt }] = (provider.complete as unknown as { mock: { calls: [{ systemPrompt: string }][] } }).mock.calls[0]!;
+    const [{ systemPrompt }] = (
+      provider.complete as unknown as { mock: { calls: [{ systemPrompt: string }][] } }
+    ).mock.calls[0]!;
     expect(systemPrompt).toContain('-- described');
     expect(systemPrompt).toContain('the column "email"');
   });
 
   it('unwraps a quoted or fenced reply and caps its length', async () => {
-    const quoted = await createService({ providerResponse: '"Just a quoted sentence."' })
-      .service.describeObject('user-1', 'conn-1', req);
+    const quoted = await createService({
+      providerResponse: '"Just a quoted sentence."',
+    }).service.describeObject('user-1', 'conn-1', req);
     expect(quoted.comment).toBe('Just a quoted sentence.');
 
-    const fenced = await createService({ providerResponse: '```\nA fenced sentence.\n```' })
-      .service.describeObject('user-1', 'conn-1', req);
+    const fenced = await createService({
+      providerResponse: '```\nA fenced sentence.\n```',
+    }).service.describeObject('user-1', 'conn-1', req);
     expect(fenced.comment).toBe('A fenced sentence.');
 
-    const long = await createService({ providerResponse: 'x'.repeat(500) })
-      .service.describeObject('user-1', 'conn-1', req);
+    const long = await createService({ providerResponse: 'x'.repeat(500) }).service.describeObject(
+      'user-1',
+      'conn-1',
+      req,
+    );
     expect(long.comment.length).toBeLessThanOrEqual(MAX_COMMENT_CHARS);
   });
 
   it('refuses on a read-only connection before spending anything on the provider', async () => {
     const { service, provider } = createService({ readOnly: true });
 
-    await expect(service.describeObject('user-1', 'conn-1', req)).rejects.toThrow(ForbiddenException);
+    await expect(service.describeObject('user-1', 'conn-1', req)).rejects.toThrow(
+      ForbiddenException,
+    );
     expect(provider.complete).not.toHaveBeenCalled();
   });
 
   it('maps a provider failure to a safe 503', async () => {
     const { service } = createService({ providerThrows: true });
-    await expect(service.describeObject('user-1', 'conn-1', req)).rejects.toThrow(ServiceUnavailableException);
+    await expect(service.describeObject('user-1', 'conn-1', req)).rejects.toThrow(
+      ServiceUnavailableException,
+    );
   });
 });
 
@@ -769,10 +987,9 @@ describe('resolveTablesFromSql', () => {
   ];
 
   it('matches bare and schema-qualified references, ignoring case', () => {
-    expect(resolveTablesFromSql('SELECT * FROM Orders o JOIN public.users u ON u.id = o.user_id', all)).toEqual([
-      'public.orders',
-      'public.users',
-    ]);
+    expect(
+      resolveTablesFromSql('SELECT * FROM Orders o JOIN public.users u ON u.id = o.user_id', all),
+    ).toEqual(['public.orders', 'public.users']);
   });
 
   it('only ever returns tables that actually exist', () => {

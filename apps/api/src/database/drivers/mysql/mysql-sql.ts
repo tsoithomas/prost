@@ -16,8 +16,17 @@ import type {
   SqlFragment,
   TableRef,
 } from '../../types';
-import { buildAddForeignKeyClause, normalizeAddForeignKey, normalizeDropForeignKey } from '../fk-ddl';
-import { buildProfileSql, buildTopValuesSql, planLimitSample, type ProfileDialect } from '../profile-sql';
+import {
+  buildAddForeignKeyClause,
+  normalizeAddForeignKey,
+  normalizeDropForeignKey,
+} from '../fk-ddl';
+import {
+  buildProfileSql,
+  buildTopValuesSql,
+  planLimitSample,
+  type ProfileDialect,
+} from '../profile-sql';
 import { formatLiteral, mysqlQuoteString } from '../literal';
 
 const ALLOWED_TYPES = new Set([
@@ -105,7 +114,9 @@ function validateType(type: string): string {
     );
   }
   if (params && !PARAMETERIZED_TYPES.has(base)) {
-    throw new UnprocessableEntityException(`Type "${base}" does not accept a length/precision parameter`);
+    throw new UnprocessableEntityException(
+      `Type "${base}" does not accept a length/precision parameter`,
+    );
   }
   return `${base}${params ? params.replace(/\s+/g, '') : ''}`;
 }
@@ -222,7 +233,9 @@ export function mysqlNormalizeAlterTable(
       if (op.default !== null) {
         canonicalDefault = validateDefault(op.default);
         if (canonicalDefault === null) {
-          throw new UnprocessableEntityException('Default value cannot be empty; pass null to drop the default');
+          throw new UnprocessableEntityException(
+            'Default value cannot be empty; pass null to drop the default',
+          );
         }
       }
       const column: NewColumn = { ...current };
@@ -259,12 +272,16 @@ export function mysqlNormalizeAlterTable(
   }
 }
 
-export function mysqlNormalizeCreateIndex(
-  req: CreateIndexRequest,
-): { request: CreateIndexRequest; name: string; method: string } {
+export function mysqlNormalizeCreateIndex(req: CreateIndexRequest): {
+  request: CreateIndexRequest;
+  name: string;
+  method: string;
+} {
   const method = (req.method ?? 'btree').toLowerCase();
   if (method !== 'btree') {
-    throw new UnprocessableEntityException(`Unsupported index method "${req.method}". Allowed: btree`);
+    throw new UnprocessableEntityException(
+      `Unsupported index method "${req.method}". Allowed: btree`,
+    );
   }
 
   let name = req.name;
@@ -739,7 +756,9 @@ export function mysqlBuildSelectByPk(
 }
 
 export function mysqlBuildCreateTable(req: CreateTableRequest): SqlFragment {
-  const primaryKey = req.columns.filter((column) => column.isPrimaryKey).map((column) => column.name);
+  const primaryKey = req.columns
+    .filter((column) => column.isPrimaryKey)
+    .map((column) => column.name);
   const definitions = req.columns.map((column) => `  ${buildColumnDefinition(column)}`);
   if (primaryKey.length > 0) {
     definitions.push(`  PRIMARY KEY (${primaryKey.map(mysqlQuoteIdent).join(', ')})`);
@@ -792,7 +811,10 @@ export function mysqlBuildAlterTable(ref: TableRef, op: AlterTableOperation): Sq
     }
     case 'dropForeignKey':
       // MySQL uses DROP FOREIGN KEY (not DROP CONSTRAINT on pre-8.0.19 / MariaDB).
-      return { sql: `${prefix} DROP FOREIGN KEY ${mysqlQuoteIdent(op.constraintName)}`, params: [] };
+      return {
+        sql: `${prefix} DROP FOREIGN KEY ${mysqlQuoteIdent(op.constraintName)}`,
+        params: [],
+      };
     case 'setComment': {
       // DDL takes no parameters, so the text is escaped as a literal — the same helper the SQL export
       // uses. Clearing a comment is an empty string; MySQL has no "no comment" state.
@@ -876,9 +898,11 @@ function formatExplainValue(value: unknown): string {
 
 export function mysqlFormatExplain(rows: Record<string, unknown>[]): string {
   return rows
-    .map((row) => Object.entries(row)
-      .map(([key, value]) => `${key}=${formatExplainValue(value)}`)
-      .join(' | '))
+    .map((row) =>
+      Object.entries(row)
+        .map(([key, value]) => `${key}=${formatExplainValue(value)}`)
+        .join(' | '),
+    )
     .join('\n');
 }
 
@@ -920,6 +944,50 @@ export function mysqlBuildKillSession(id: number, mode: KillSessionMode): SqlFra
   }
   const verb = mode === 'terminate' ? 'CONNECTION' : 'QUERY';
   return { sql: `KILL ${verb} ${id}`, params: [] };
+}
+
+// ─── On-demand performance insights (Phase 41) ────────────────────────────────────────────────
+
+export function mysqlBuildPerfInsightsStatus(): SqlFragment {
+  return {
+    sql:
+      'SELECT (@@performance_schema = 1 AND EXISTS (' +
+      "SELECT 1 FROM performance_schema.setup_consumers WHERE NAME = 'statements_digest' AND ENABLED = 'YES'" +
+      ')) AS available, ' +
+      "CASE WHEN @@performance_schema <> 1 THEN 'collection_disabled' " +
+      "WHEN NOT EXISTS (SELECT 1 FROM performance_schema.setup_consumers WHERE NAME = 'statements_digest' AND ENABLED = 'YES') " +
+      "THEN 'collection_disabled' ELSE NULL END AS unavailable_reason, " +
+      "CASE WHEN @@performance_schema <> 1 THEN 'MySQL Performance Schema is disabled.' " +
+      "WHEN NOT EXISTS (SELECT 1 FROM performance_schema.setup_consumers WHERE NAME = 'statements_digest' AND ENABLED = 'YES') " +
+      "THEN 'The statements_digest Performance Schema consumer is disabled.' ELSE NULL END AS unavailable_message",
+    params: [],
+  };
+}
+
+/** Top normalized digests for the selected database; Performance Schema timers are picoseconds. */
+export function mysqlBuildListTopStatements(limit: number): SqlFragment {
+  return {
+    sql:
+      'SELECT DIGEST_TEXT AS query, SUM(COUNT_STAR) AS calls, ' +
+      'SUM(SUM_TIMER_WAIT) / 1000000000 AS total_time_ms, ' +
+      'CASE WHEN SUM(COUNT_STAR) > 0 THEN SUM(SUM_TIMER_WAIT) / SUM(COUNT_STAR) / 1000000000 ELSE 0 END AS mean_time_ms, ' +
+      'SUM(SUM_ROWS_SENT + SUM_ROWS_AFFECTED) AS `rows` ' +
+      'FROM performance_schema.events_statements_summary_by_digest ' +
+      "WHERE SCHEMA_NAME = DATABASE() AND DIGEST IS NOT NULL AND DIGEST_TEXT IS NOT NULL AND DIGEST_TEXT <> '' " +
+      'GROUP BY DIGEST_TEXT ORDER BY total_time_ms DESC LIMIT ?',
+    params: [limit],
+  };
+}
+
+/** MySQL has per-digest FIRST_SEEN, so the earliest retained digest approximates the reset time. */
+export function mysqlBuildPerfInsightsWindow(): SqlFragment {
+  return {
+    sql:
+      'SELECT MIN(FIRST_SEEN) AS statistics_since, true AS approximate ' +
+      'FROM performance_schema.events_statements_summary_by_digest ' +
+      'WHERE SCHEMA_NAME = DATABASE() AND DIGEST IS NOT NULL',
+    params: [],
+  };
 }
 
 export { qualify as mysqlQualify };

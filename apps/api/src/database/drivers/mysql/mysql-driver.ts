@@ -13,6 +13,7 @@ import type {
   CreateTableRequest,
   DbEngineDescriptor,
   KillSessionMode,
+  PerfInsightsUnavailableReason,
   QueryPlanNode,
   SchemaObjectKind,
   TableStructure,
@@ -168,6 +169,7 @@ export class MysqlDriver implements DbDriver {
     supportsQueryPlan: true,
     supportsExplainAnalyze: false,
     supportsSessionMonitoring: true,
+    supportsPerfInsights: true,
     ddl: {
       columnTypes: [
         'int',
@@ -201,8 +203,13 @@ export class MysqlDriver implements DbDriver {
       supportsObjectComments: true,
     },
     objects: {
-      views: true, materializedViews: false, sequences: false,
-      functions: true, procedures: true, triggers: true, enums: false,
+      views: true,
+      materializedViews: false,
+      sequences: false,
+      functions: true,
+      procedures: true,
+      triggers: true,
+      enums: false,
     },
   };
 
@@ -241,7 +248,10 @@ export class MysqlDriver implements DbDriver {
     if (params.readOnly) {
       (
         pool as unknown as {
-          on(event: 'connection', listener: (conn: { query: (sql: string, cb: (err: unknown) => void) => void }) => void): void;
+          on(
+            event: 'connection',
+            listener: (conn: { query: (sql: string, cb: (err: unknown) => void) => void }) => void,
+          ): void;
         }
       ).on('connection', (conn) => {
         conn.query('SET SESSION TRANSACTION READ ONLY', (error) => {
@@ -304,11 +314,18 @@ export class MysqlDriver implements DbDriver {
   }
 
   /** Engine-enforced read-only: `START TRANSACTION READ ONLY` makes any write inside it fail. */
-  async withReadOnlyTransaction<T>(pool: NativePool, fn: (q: DriverQueryFn) => Promise<T>): Promise<T> {
+  async withReadOnlyTransaction<T>(
+    pool: NativePool,
+    fn: (q: DriverQueryFn) => Promise<T>,
+  ): Promise<T> {
     const connection = await (pool as Pool).getConnection();
     const query: DriverQueryFn = (frag) => runQuery(connection, frag, this.queryTimeoutMs);
     try {
-      await runQuery(connection, { sql: 'START TRANSACTION READ ONLY', params: [] }, this.queryTimeoutMs);
+      await runQuery(
+        connection,
+        { sql: 'START TRANSACTION READ ONLY', params: [] },
+        this.queryTimeoutMs,
+      );
       const result = await fn(query);
       await connection.commit();
       return result;
@@ -371,7 +388,11 @@ export class MysqlDriver implements DbDriver {
         // Defensive: if the 'fields' event never landed, fall back to name-only columns.
         const sample = rows[0];
         if (fields.length === 0 && sample) {
-          fields = Object.keys(sample).map((name) => ({ name, dataTypeID: 0, dataTypeName: undefined }));
+          fields = Object.keys(sample).map((name) => ({
+            name,
+            dataTypeID: 0,
+            dataTypeName: undefined,
+          }));
         }
         if (complete) await close();
         return { rows, complete };
@@ -424,12 +445,16 @@ export class MysqlDriver implements DbDriver {
   buildListIndexes = (ref: TableRef) => sql.mysqlBuildListIndexes(ref);
   buildTableComment = (ref: TableRef) => sql.mysqlBuildTableComment(ref);
   buildListForeignKeys = (ref: TableRef) => sql.mysqlBuildListForeignKeys(ref);
-  buildListReferencingForeignKeys = (ref: TableRef) => sql.mysqlBuildListReferencingForeignKeys(ref);
-  buildListSchemaForeignKeys = (namespace: string) => sql.mysqlBuildListSchemaForeignKeys(namespace);
+  buildListReferencingForeignKeys = (ref: TableRef) =>
+    sql.mysqlBuildListReferencingForeignKeys(ref);
+  buildListSchemaForeignKeys = (namespace: string) =>
+    sql.mysqlBuildListSchemaForeignKeys(namespace);
   buildListAllSchemaObjects = () => sql.mysqlBuildListAllSchemaObjects();
-  buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) => sql.mysqlBuildObjectDefinition(kind, ref);
+  buildObjectDefinition = (kind: SchemaObjectKind, ref: TableRef) =>
+    sql.mysqlBuildObjectDefinition(kind, ref);
   buildSchemaTableStats = (namespace: string) => sql.mysqlBuildSchemaTableStats(namespace);
-  planProfileSample = (rowEstimate: number, exact: boolean) => sql.mysqlPlanProfileSample(rowEstimate, exact);
+  planProfileSample = (rowEstimate: number, exact: boolean) =>
+    sql.mysqlPlanProfileSample(rowEstimate, exact);
   buildColumnProfile = (ref: TableRef, columns: ProfileColumnSpec[], plan: ProfileSamplePlan) =>
     sql.mysqlBuildColumnProfile(ref, columns, plan);
   buildColumnTopValues = (ref: TableRef, column: string, plan: ProfileSamplePlan, limit: number) =>
@@ -438,11 +463,17 @@ export class MysqlDriver implements DbDriver {
   buildFilteredRowCount = (ref: TableRef, whereClause: string, params: unknown[]) =>
     sql.mysqlBuildFilteredRowCount(ref, whereClause, params);
   buildRowCountEstimate = (ref: TableRef) => sql.mysqlBuildRowCountEstimate(ref);
-  buildInsertRow = (ref: TableRef, entries: [string, unknown][]) => sql.mysqlBuildInsertRow(ref, entries);
+  buildInsertRow = (ref: TableRef, entries: [string, unknown][]) =>
+    sql.mysqlBuildInsertRow(ref, entries);
   buildUpdateRow = (ref: TableRef, column: string, value: unknown, pk: string[], pv: unknown[]) =>
     sql.mysqlBuildUpdateRow(ref, column, value, pk, pv);
-  buildUpdateRowGuarded = (ref: TableRef, edits: [string, unknown][], pk: string[], pv: unknown[], guard: RowUpdateGuard) =>
-    sql.mysqlBuildUpdateRowGuarded(ref, edits, pk, pv, guard);
+  buildUpdateRowGuarded = (
+    ref: TableRef,
+    edits: [string, unknown][],
+    pk: string[],
+    pv: unknown[],
+    guard: RowUpdateGuard,
+  ) => sql.mysqlBuildUpdateRowGuarded(ref, edits, pk, pv, guard);
 
   async insertRow(
     q: DriverQueryFn,
@@ -518,11 +549,16 @@ export class MysqlDriver implements DbDriver {
   formatLiteral = (value: unknown, column: ColumnMetadata) => sql.mysqlFormatLiteral(value, column);
 
   /** MySQL's native `SHOW CREATE TABLE` gives a faithful DDL string; `structure` is unused. */
-  async buildTableDdl(q: DriverQueryFn, ref: TableRef, _structure: TableStructure): Promise<string> {
+  async buildTableDdl(
+    q: DriverQueryFn,
+    ref: TableRef,
+    _structure: TableStructure,
+  ): Promise<string> {
     const { rows } = await q(sql.mysqlBuildShowCreateTable(ref));
     const row = rows[0] as Record<string, unknown> | undefined;
     const ddl = row?.['Create Table'];
-    if (typeof ddl !== 'string') throw new NotFoundException(`Could not read DDL for "${ref.name}"`);
+    if (typeof ddl !== 'string')
+      throw new NotFoundException(`Could not read DDL for "${ref.name}"`);
     return `${ddl};`;
   }
 
@@ -566,6 +602,36 @@ export class MysqlDriver implements DbDriver {
     return sql.mysqlBuildKillSession(id, mode);
   }
 
+  buildPerfInsightsStatus(): SqlFragment {
+    return sql.mysqlBuildPerfInsightsStatus();
+  }
+
+  buildListTopStatements(limit: number): SqlFragment {
+    return sql.mysqlBuildListTopStatements(limit);
+  }
+
+  buildPerfInsightsWindow(): SqlFragment {
+    return sql.mysqlBuildPerfInsightsWindow();
+  }
+
+  classifyPerfInsightsError(
+    error: unknown,
+  ): { reason: PerfInsightsUnavailableReason; message: string } | null {
+    const mysqlError = error as { code?: string; errno?: number } | undefined;
+    if (
+      mysqlError?.code === 'ER_TABLEACCESS_DENIED_ERROR' ||
+      mysqlError?.code === 'ER_DBACCESS_DENIED_ERROR' ||
+      mysqlError?.errno === 1142 ||
+      mysqlError?.errno === 1044
+    ) {
+      return {
+        reason: 'permission_denied',
+        message: 'This database user needs SELECT access to performance_schema.',
+      };
+    }
+    return null;
+  }
+
   mapError(error: unknown, context: DriverErrorContext): void {
     const mysqlError = error as
       | {
@@ -576,7 +642,10 @@ export class MysqlDriver implements DbDriver {
     const code = mysqlError?.code;
     const errno = mysqlError?.errno;
 
-    if (context.operation === 'createTable' && (code === 'ER_TABLE_EXISTS_ERROR' || errno === 1050)) {
+    if (
+      context.operation === 'createTable' &&
+      (code === 'ER_TABLE_EXISTS_ERROR' || errno === 1050)
+    ) {
       throw new ConflictException(context.detail ?? 'Table already exists');
     }
 
@@ -589,13 +658,19 @@ export class MysqlDriver implements DbDriver {
       throw new ConflictException('A constraint with that name already exists');
     }
     if (errno === 1452 || code === 'ER_NO_REFERENCED_ROW_2') {
-      throw new UnprocessableEntityException('Existing rows violate this foreign key — no matching referenced row');
+      throw new UnprocessableEntityException(
+        'Existing rows violate this foreign key — no matching referenced row',
+      );
     }
     if (errno === 1822 || code === 'ER_FK_NO_INDEX_PARENT') {
-      throw new UnprocessableEntityException('The referenced columns must be a unique or primary key');
+      throw new UnprocessableEntityException(
+        'The referenced columns must be a unique or primary key',
+      );
     }
     if (errno === 1215 || code === 'ER_CANNOT_ADD_FOREIGN') {
-      throw new UnprocessableEntityException('Cannot add the foreign key — check the referenced table and column types');
+      throw new UnprocessableEntityException(
+        'Cannot add the foreign key — check the referenced table and column types',
+      );
     }
     if (errno === 3730 || errno === 1091 || code === 'ER_DROP_FK_NOT_EXIST') {
       throw new UnprocessableEntityException('The foreign-key constraint does not exist');

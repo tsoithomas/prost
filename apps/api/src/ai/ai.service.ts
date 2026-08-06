@@ -1,4 +1,9 @@
-import { Injectable, Logger, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import type {
   AlterTableOperation,
   ChartAggregation,
@@ -79,12 +84,23 @@ export class AiService {
    * preview for the model to reason over — no wholesale row data leaves to the LLM). Read-only is proven
    * + engine-enforced inside `QueryService.runReadOnlyQuery`. Logs the run by correlation id, SQL only.
    */
-  async runReadQuery(userId: string, connectionId: string, sql: string, correlationId = ''): Promise<RunReadQueryResponse> {
+  async runReadQuery(
+    userId: string,
+    connectionId: string,
+    sql: string,
+    correlationId = '',
+  ): Promise<RunReadQueryResponse> {
     await this.connectionsService.assertOwnership(userId, connectionId);
     const rows = await this.queryService.runReadOnlyQuery(connectionId, sql);
-    this.logger.log(`agent read-query connectionId=${connectionId} correlationId=${correlationId} sql=${rows.sql}`);
+    this.logger.log(
+      `agent read-query connectionId=${connectionId} correlationId=${correlationId} sql=${rows.sql}`,
+    );
 
-    const result: ExecuteQueryResponse = { statements: [rows], transactional: false, statementCount: 1 };
+    const result: ExecuteQueryResponse = {
+      statements: [rows],
+      transactional: false,
+      statementCount: 1,
+    };
     return { sql: rows.sql, result, sample: sanitizeRowSample(rows) };
   }
 
@@ -146,7 +162,7 @@ export class AiService {
       name: 'get_table_schema',
       description:
         'Get the full column list, foreign keys, and indexes for one or more tables by name. ' +
-        'The system prompt lists table names only — call this to get any table\'s columns before ' +
+        "The system prompt lists table names only — call this to get any table's columns before " +
         'referencing them or writing SQL. Request all the tables you need in one call. ' +
         'Accepts bare names or schema-qualified names.',
       parameters: {
@@ -230,6 +246,7 @@ export class AiService {
       schemaContext,
       req.sql ?? null,
       req.plan ? sanitizePlanForPrompt(req.plan) : null,
+      req.scope ?? 'schema',
     );
 
     let content: string;
@@ -246,7 +263,7 @@ export class AiService {
       throw new ServiceUnavailableException('AI provider request failed.');
     }
 
-    const candidates = parseSchemaSuggestions(content);
+    const candidates = parseSchemaSuggestions(content, req.scope ?? 'schema');
     const suggestions: SchemaSuggestion[] = [];
     for (const candidate of candidates) {
       // Decision 3: the server re-validates every candidate through the real DDL pipeline — identifier
@@ -286,7 +303,9 @@ export class AiService {
     // Documenting is a write in the end, so a read-only connection is refused before any LLM spend.
     await this.pool.assertWritable(connectionId);
 
-    const schemaContext = await this.retrieval.describeTables(connectionId, [`${req.schema}.${req.table}`]);
+    const schemaContext = await this.retrieval.describeTables(connectionId, [
+      `${req.schema}.${req.table}`,
+    ]);
     const engineLabel = (await this.pool.driverFor(connectionId)).descriptor.label;
     const target = req.column ? `the column "${req.column}" of ` : '';
     const systemPrompt = `You write terse database documentation for a ${engineLabel} database.
@@ -437,9 +456,9 @@ function sanitizeRowSample(result: RowsStatementResult): RowSample {
   const colsTruncated = result.columns.length > SAMPLE_MAX_COLS;
   const rowsTruncated = result.rows.length > SAMPLE_MAX_ROWS || result.truncated === true;
 
-  const rows = result.rows.slice(0, SAMPLE_MAX_ROWS).map((row) =>
-    cols.map((name) => sanitizeCell((row as Record<string, unknown>)[name])),
-  );
+  const rows = result.rows
+    .slice(0, SAMPLE_MAX_ROWS)
+    .map((row) => cols.map((name) => sanitizeCell((row as Record<string, unknown>)[name])));
   return { columns: cols, rows, truncated: colsTruncated || rowsTruncated };
 }
 
@@ -447,7 +466,12 @@ function sanitizeRowSample(result: RowsStatementResult): RowSample {
 function sanitizeCell(value: unknown): unknown {
   if (value === null || value === undefined) return null;
   if (typeof value === 'number' || typeof value === 'boolean') return value;
-  const text = typeof value === 'string' ? value : typeof value === 'object' ? JSON.stringify(value) : String(value);
+  const text =
+    typeof value === 'string'
+      ? value
+      : typeof value === 'object'
+        ? JSON.stringify(value)
+        : String(value);
   return text.length > SAMPLE_MAX_CELL_CHARS ? `${text.slice(0, SAMPLE_MAX_CELL_CHARS)}…` : text;
 }
 
@@ -466,7 +490,10 @@ function sanitizeSample(rows: Record<string, unknown>[]): Record<string, unknown
 }
 
 /** A JSON-only prompt: from the result's columns + a small sample, pick one chart + its two columns. */
-function buildChartSuggestPrompt(columns: ColumnMetadata[], sample: Record<string, unknown>[]): string {
+function buildChartSuggestPrompt(
+  columns: ColumnMetadata[],
+  sample: Record<string, unknown>[],
+): string {
   const columnList = columns.map((c) => `- ${c.name} (${c.dataType})`).join('\n');
   return `You suggest a single chart to visualize a tabular query result.
 
@@ -525,7 +552,10 @@ function parseChartSuggestion(content: string, columns: ColumnMetadata[]): Chart
  * so only tables that actually exist can ever be selected for describing. Deliberately lexical: a
  * false positive costs a few prompt characters, while a parser failure would cost the whole feature.
  */
-export function resolveTablesFromSql(sql: string, all: { schema: string; name: string }[]): string[] {
+export function resolveTablesFromSql(
+  sql: string,
+  all: { schema: string; name: string }[],
+): string[] {
   const haystack = sql.toLowerCase();
   const matched: string[] = [];
   for (const t of all) {
@@ -598,8 +628,13 @@ function normalizeDraftedComment(content: string): string {
   const collapsed = content.trim().replace(/\s+/g, ' ');
   // Models like to wrap a one-liner in quotes or a code fence despite being told not to.
   const unfenced = collapsed.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/, '');
-  const unquoted = unfenced.replace(/^["'`]/, '').replace(/["'`]$/, '').trim();
-  return unquoted.length > MAX_COMMENT_CHARS ? `${unquoted.slice(0, MAX_COMMENT_CHARS - 1).trimEnd()}…` : unquoted;
+  const unquoted = unfenced
+    .replace(/^["'`]/, '')
+    .replace(/["'`]$/, '')
+    .trim();
+  return unquoted.length > MAX_COMMENT_CHARS
+    ? `${unquoted.slice(0, MAX_COMMENT_CHARS - 1).trimEnd()}…`
+    : unquoted;
 }
 
 /** Replaces quoted strings and bare numbers with `?`, so a plan fragment can't carry a row value. */
@@ -616,18 +651,31 @@ function buildSchemaSuggestPrompt(
   schemaContext: string,
   sql: string | null,
   plan: ReturnType<typeof sanitizePlanForPrompt> | null,
+  scope: 'schema' | 'indexes',
 ): string {
   const sqlBlock = sql ? `\n\nThe query under consideration:\n\`\`\`sql\n${sql}\n\`\`\`` : '';
   const planBlock = plan
     ? `\n\nIts execution plan (node types and costs only — literal values are redacted as "?"):\n${JSON.stringify(plan)}`
     : '';
+  const scopeBlock =
+    scope === 'indexes'
+      ? '\n\nThis is an index-only request. Propose createIndex changes only; every other change kind is discarded.'
+      : '';
+  const allowedChanges =
+    scope === 'indexes'
+      ? `{"kind":"createIndex","request":{"schema":"<s>","table":"<t>","columns":["<col>"],"unique":false,"method":"btree"}}`
+      : `{"kind":"createIndex","request":{"schema":"<s>","table":"<t>","columns":["<col>"],"unique":false,"method":"btree"}}
+{"kind":"alterTable","request":{"schema":"<s>","table":"<t>","operation":{"kind":"addColumn","column":{"name":"<c>","type":"<type>","nullable":true,"isPrimaryKey":false}}}}
+{"kind":"alterTable","request":{"schema":"<s>","table":"<t>","operation":{"kind":"setNotNull","column":"<c>","notNull":true}}}
+{"kind":"alterTable","request":{"schema":"<s>","table":"<t>","operation":{"kind":"setDefault","column":"<c>","default":"<expr>"}}}
+{"kind":"alterTable","request":{"schema":"<s>","table":"<t>","operation":{"kind":"changeType","column":"<c>","type":"<type>"}}}`;
 
   return `You advise on schema changes for a ${engineLabel} database. You never write SQL: you emit
 structured change requests that the application compiles, previews, and asks the user to confirm.
 
 The tables under consideration (columns, foreign keys, and EXISTING indexes as comments):
 
-${schemaContext}${sqlBlock}${planBlock}
+${schemaContext}${sqlBlock}${planBlock}${scopeBlock}
 
 Task: propose at most ${MAX_SCHEMA_SUGGESTIONS} changes that would measurably help — most often an
 index on a column that is filtered or joined without one. Only reference tables and columns shown
@@ -638,11 +686,7 @@ Respond with ONLY a JSON array and nothing else. Each element is:
 {"change": <change>, "rationale": "<one or two sentences explaining why, citing the plan or schema>"}
 
 A <change> is exactly one of:
-{"kind":"createIndex","request":{"schema":"<s>","table":"<t>","columns":["<col>"],"unique":false,"method":"btree"}}
-{"kind":"alterTable","request":{"schema":"<s>","table":"<t>","operation":{"kind":"addColumn","column":{"name":"<c>","type":"<type>","nullable":true,"isPrimaryKey":false}}}}
-{"kind":"alterTable","request":{"schema":"<s>","table":"<t>","operation":{"kind":"setNotNull","column":"<c>","notNull":true}}}
-{"kind":"alterTable","request":{"schema":"<s>","table":"<t>","operation":{"kind":"setDefault","column":"<c>","default":"<expr>"}}}
-{"kind":"alterTable","request":{"schema":"<s>","table":"<t>","operation":{"kind":"changeType","column":"<c>","type":"<type>"}}}
+${allowedChanges}
 
 No other kind or operation is permitted — in particular, never propose dropping or truncating
 anything. Anything else is discarded.`;
@@ -654,7 +698,10 @@ anything. Anything else is discarded.`;
  * the structural reason a model can't propose a destructive change; identifier existence and types are
  * then checked by `DdlService.preview` against live metadata.
  */
-export function parseSchemaSuggestions(content: string): Omit<SchemaSuggestion, 'sql'>[] {
+export function parseSchemaSuggestions(
+  content: string,
+  scope: 'schema' | 'indexes' = 'schema',
+): Omit<SchemaSuggestion, 'sql'>[] {
   const match = content.match(/\[[\s\S]*\]/);
   if (!match) return [];
 
@@ -675,6 +722,7 @@ export function parseSchemaSuggestions(content: string): Omit<SchemaSuggestion, 
     if (typeof rationale !== 'string' || rationale.trim().length === 0) continue;
     const validated = validateChange(change);
     if (!validated) continue;
+    if (scope === 'indexes' && validated.kind !== 'createIndex') continue;
 
     out.push({ change: validated, rationale: rationale.trim().slice(0, MAX_RATIONALE_CHARS) });
   }

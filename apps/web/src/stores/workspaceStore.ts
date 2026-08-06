@@ -6,7 +6,15 @@ import { useTableViewModeStore } from './tableViewModeStore';
 export interface WorkspaceTab {
   id: string;
   label: string;
-  kind: 'table' | 'query' | 'overview' | 'object' | 'erDiagram' | 'sessions' | 'audit';
+  kind:
+    | 'table'
+    | 'query'
+    | 'overview'
+    | 'object'
+    | 'erDiagram'
+    | 'sessions'
+    | 'performance'
+    | 'audit';
   /**
    * The connection a data tab is bound to (table/overview/object/erDiagram/sessions tabs). A tab always
    * loads from this connection, independent of which connection is currently active — so switching
@@ -86,6 +94,8 @@ interface WorkspaceState {
   openErDiagram: (connectionId: string, schema: string) => void;
   /** Open a connection's live-session monitor (Phase 27). */
   openSessions: (connectionId: string) => void;
+  /** Open a connection's pull-only statement-performance snapshot (Phase 41). */
+  openPerformance: (connectionId: string) => void;
   /**
    * Open the mutation & DDL audit trail viewer (Phase 28). Pass a `connectionId` to seed its filter
    * to that connection (per-connection breadcrumb launch); omit it for the global all-connections view.
@@ -157,259 +167,323 @@ function applyClose(
   }
   const nextActive = next.some((tab) => tab.id === activeTabId)
     ? activeTabId
-    : next[next.length - 1]?.id ?? activeTabId;
+    : (next[next.length - 1]?.id ?? activeTabId);
   return { tabs: next, activeTabId: nextActive };
 }
 
 export const useWorkspaceStore = create<WorkspaceState>()(
   persist(
     (set) => ({
-  tabs: initialTabs,
-  activeTabId: initialTabs[0]!.id,
-  pendingQuerySql: null,
-  transactionalDefault: false,
-  cursorPosition: null,
-  revealColumn: null,
-  focusRequest: null,
-  viewActionRequest: null,
-  activeTabDirty: false,
+      tabs: initialTabs,
+      activeTabId: initialTabs[0]!.id,
+      pendingQuerySql: null,
+      transactionalDefault: false,
+      cursorPosition: null,
+      revealColumn: null,
+      focusRequest: null,
+      viewActionRequest: null,
+      activeTabDirty: false,
 
-  openTable: (connectionId, schema, table, viewMode, opts) => {
-    const id = `table:${connectionId}:${schema}.${table}`;
-    const search = opts?.search;
-    const filter = opts?.filter;
-    const handoff = {
-      ...(search !== undefined ? { search } : {}),
-      ...(filter !== undefined ? { presetFilter: filter } : {}),
-    };
-    // No explicit mode requested (a plain "open this table" action, not "show structure" or a
-    // filtered navigation): resume the mode the user last left this table in (Phase 40).
-    const resolvedViewMode = viewMode ?? useTableViewModeStore.getState().get(connectionId, `${schema}.${table}`) ?? 'rows';
-    set((state) => {
-      if (state.tabs.some((tab) => tab.id === id)) {
-        return {
-          activeTabId: id,
-          tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode: resolvedViewMode, ...handoff } : tab)),
+      openTable: (connectionId, schema, table, viewMode, opts) => {
+        const id = `table:${connectionId}:${schema}.${table}`;
+        const search = opts?.search;
+        const filter = opts?.filter;
+        const handoff = {
+          ...(search !== undefined ? { search } : {}),
+          ...(filter !== undefined ? { presetFilter: filter } : {}),
         };
-      }
-      return {
-        tabs: [
-          ...state.tabs,
-          { id, label: table, kind: 'table', connectionId, schema, table, viewMode: resolvedViewMode, ...handoff },
-        ],
-        activeTabId: id,
-      };
-    });
-  },
+        // No explicit mode requested (a plain "open this table" action, not "show structure" or a
+        // filtered navigation): resume the mode the user last left this table in (Phase 40).
+        const resolvedViewMode =
+          viewMode ??
+          useTableViewModeStore.getState().get(connectionId, `${schema}.${table}`) ??
+          'rows';
+        set((state) => {
+          if (state.tabs.some((tab) => tab.id === id)) {
+            return {
+              activeTabId: id,
+              tabs: state.tabs.map((tab) =>
+                tab.id === id ? { ...tab, viewMode: resolvedViewMode, ...handoff } : tab,
+              ),
+            };
+          }
+          return {
+            tabs: [
+              ...state.tabs,
+              {
+                id,
+                label: table,
+                kind: 'table',
+                connectionId,
+                schema,
+                table,
+                viewMode: resolvedViewMode,
+                ...handoff,
+              },
+            ],
+            activeTabId: id,
+          };
+        });
+      },
 
-  openOverview: (connectionId, schema) => {
-    const id = `overview:${connectionId}:${schema}`;
-    set((state) => {
-      if (state.tabs.some((tab) => tab.id === id)) {
-        return { activeTabId: id };
-      }
-      return {
-        tabs: [...state.tabs, { id, label: schema, kind: 'overview', connectionId, schema }],
-        activeTabId: id,
-      };
-    });
-  },
+      openOverview: (connectionId, schema) => {
+        const id = `overview:${connectionId}:${schema}`;
+        set((state) => {
+          if (state.tabs.some((tab) => tab.id === id)) {
+            return { activeTabId: id };
+          }
+          return {
+            tabs: [...state.tabs, { id, label: schema, kind: 'overview', connectionId, schema }],
+            activeTabId: id,
+          };
+        });
+      },
 
-  openErDiagram: (connectionId, schema) => {
-    const id = `er:${connectionId}:${schema}`;
-    set((state) => {
-      if (state.tabs.some((tab) => tab.id === id)) {
-        return { activeTabId: id };
-      }
-      return {
-        tabs: [...state.tabs, { id, label: `${schema} diagram`, kind: 'erDiagram', connectionId, schema }],
-        activeTabId: id,
-      };
-    });
-  },
+      openErDiagram: (connectionId, schema) => {
+        const id = `er:${connectionId}:${schema}`;
+        set((state) => {
+          if (state.tabs.some((tab) => tab.id === id)) {
+            return { activeTabId: id };
+          }
+          return {
+            tabs: [
+              ...state.tabs,
+              { id, label: `${schema} diagram`, kind: 'erDiagram', connectionId, schema },
+            ],
+            activeTabId: id,
+          };
+        });
+      },
 
-  openSessions: (connectionId) => {
-    const id = `sessions:${connectionId}`;
-    set((state) => {
-      if (state.tabs.some((tab) => tab.id === id)) {
-        return { activeTabId: id };
-      }
-      return {
-        tabs: [...state.tabs, { id, label: 'Sessions', kind: 'sessions', connectionId }],
-        activeTabId: id,
-      };
-    });
-  },
+      openSessions: (connectionId) => {
+        const id = `sessions:${connectionId}`;
+        set((state) => {
+          if (state.tabs.some((tab) => tab.id === id)) {
+            return { activeTabId: id };
+          }
+          return {
+            tabs: [...state.tabs, { id, label: 'Sessions', kind: 'sessions', connectionId }],
+            activeTabId: id,
+          };
+        });
+      },
 
-  openAudit: (connectionId) => {
-    const id = 'audit';
-    set((state) => {
-      if (state.tabs.some((tab) => tab.id === id)) {
-        return {
-          activeTabId: id,
+      openPerformance: (connectionId) => {
+        const id = `performance:${connectionId}`;
+        set((state) => {
+          if (state.tabs.some((tab) => tab.id === id)) {
+            return { activeTabId: id };
+          }
+          return {
+            tabs: [...state.tabs, { id, label: 'Performance', kind: 'performance', connectionId }],
+            activeTabId: id,
+          };
+        });
+      },
+
+      openAudit: (connectionId) => {
+        const id = 'audit';
+        set((state) => {
+          if (state.tabs.some((tab) => tab.id === id)) {
+            return {
+              activeTabId: id,
+              tabs: state.tabs.map((tab) =>
+                tab.id === id ? { ...tab, presetConnectionId: connectionId } : tab,
+              ),
+            };
+          }
+          return {
+            tabs: [
+              ...state.tabs,
+              { id, label: 'Audit Log', kind: 'audit', presetConnectionId: connectionId },
+            ],
+            activeTabId: id,
+          };
+        });
+      },
+
+      clearAuditPreset: (id) =>
+        set((state) => ({
           tabs: state.tabs.map((tab) =>
-            tab.id === id ? { ...tab, presetConnectionId: connectionId } : tab,
+            tab.id === id ? { ...tab, presetConnectionId: undefined } : tab,
           ),
-        };
-      }
-      return {
-        tabs: [...state.tabs, { id, label: 'Audit Log', kind: 'audit', presetConnectionId: connectionId }],
-        activeTabId: id,
-      };
-    });
-  },
+        })),
 
-  clearAuditPreset: (id) =>
-    set((state) => ({
-      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, presetConnectionId: undefined } : tab)),
-    })),
+      openObject: (connectionId, schema, kind, name) => {
+        const id = `object:${connectionId}:${schema}.${name}`;
+        set((state) => {
+          if (state.tabs.some((tab) => tab.id === id)) {
+            return { activeTabId: id };
+          }
+          return {
+            tabs: [
+              ...state.tabs,
+              {
+                id,
+                label: name,
+                kind: 'object',
+                connectionId,
+                schema,
+                objectKind: kind,
+                objectName: name,
+              },
+            ],
+            activeTabId: id,
+          };
+        });
+      },
 
-  openObject: (connectionId, schema, kind, name) => {
-    const id = `object:${connectionId}:${schema}.${name}`;
-    set((state) => {
-      if (state.tabs.some((tab) => tab.id === id)) {
-        return { activeTabId: id };
-      }
-      return {
-        tabs: [...state.tabs, { id, label: name, kind: 'object', connectionId, schema, objectKind: kind, objectName: name }],
-        activeTabId: id,
-      };
-    });
-  },
+      closeTableTab: (connectionId, schema, table) => {
+        const id = `table:${connectionId}:${schema}.${table}`;
+        set((state) => {
+          if (!state.tabs.some((tab) => tab.id === id)) return state;
+          const tabs = state.tabs.filter((tab) => tab.id !== id);
+          const activeTabId =
+            id === state.activeTabId
+              ? (tabs[tabs.length - 1]?.id ?? tabs[0]?.id ?? state.activeTabId)
+              : state.activeTabId;
+          return { tabs, activeTabId };
+        });
+      },
 
-  closeTableTab: (connectionId, schema, table) => {
-    const id = `table:${connectionId}:${schema}.${table}`;
-    set((state) => {
-      if (!state.tabs.some((tab) => tab.id === id)) return state;
-      const tabs = state.tabs.filter((tab) => tab.id !== id);
-      const activeTabId =
-        id === state.activeTabId ? tabs[tabs.length - 1]?.id ?? tabs[0]?.id ?? state.activeTabId : state.activeTabId;
-      return { tabs, activeTabId };
-    });
-  },
+      revealTableColumn: (connectionId, schema, table, column) => {
+        const id = `table:${connectionId}:${schema}.${table}`;
+        set((state) => {
+          const exists = state.tabs.some((tab) => tab.id === id);
+          return {
+            revealColumn: { schema, table, column },
+            activeTabId: id,
+            tabs: exists
+              ? state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode: 'structure' } : tab))
+              : [
+                  ...state.tabs,
+                  {
+                    id,
+                    label: table,
+                    kind: 'table',
+                    connectionId,
+                    schema,
+                    table,
+                    viewMode: 'structure',
+                  },
+                ],
+          };
+        });
+      },
 
-  revealTableColumn: (connectionId, schema, table, column) => {
-    const id = `table:${connectionId}:${schema}.${table}`;
-    set((state) => {
-      const exists = state.tabs.some((tab) => tab.id === id);
-      return {
-        revealColumn: { schema, table, column },
-        activeTabId: id,
-        tabs: exists
-          ? state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode: 'structure' } : tab))
-          : [...state.tabs, { id, label: table, kind: 'table', connectionId, schema, table, viewMode: 'structure' }],
-      };
-    });
-  },
+      clearTabSearch: (id) =>
+        set((state) => ({
+          tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, search: undefined } : tab)),
+        })),
 
-  clearTabSearch: (id) =>
-    set((state) => ({
-      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, search: undefined } : tab)),
-    })),
+      clearTabFilter: (id) =>
+        set((state) => ({
+          tabs: state.tabs.map((tab) =>
+            tab.id === id ? { ...tab, presetFilter: undefined } : tab,
+          ),
+        })),
 
-  clearTabFilter: (id) =>
-    set((state) => ({
-      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, presetFilter: undefined } : tab)),
-    })),
+      clearRevealColumn: () => set({ revealColumn: null }),
 
-  clearRevealColumn: () => set({ revealColumn: null }),
+      setTabViewMode: (id, viewMode) =>
+        set((state) => ({
+          tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode } : tab)),
+        })),
 
-  setTabViewMode: (id, viewMode) =>
-    set((state) => ({
-      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, viewMode } : tab)),
-    })),
+      selectTab: (id) => set({ activeTabId: id }),
 
-  selectTab: (id) => set({ activeTabId: id }),
+      closeTab: (id) =>
+        set((state) => {
+          const tabs = state.tabs.filter((tab) => tab.id !== id);
+          const activeTabId =
+            id === state.activeTabId
+              ? (tabs[tabs.length - 1]?.id ?? tabs[0]?.id ?? id)
+              : state.activeTabId;
+          return { tabs, activeTabId };
+        }),
 
-  closeTab: (id) =>
-    set((state) => {
-      const tabs = state.tabs.filter((tab) => tab.id !== id);
-      const activeTabId =
-        id === state.activeTabId ? tabs[tabs.length - 1]?.id ?? tabs[0]?.id ?? id : state.activeTabId;
-      return { tabs, activeTabId };
-    }),
+      closeOtherTabs: (id) =>
+        set((state) => applyClose(state.tabs, state.activeTabId, (tab) => tab.id === id)),
 
-  closeOtherTabs: (id) =>
-    set((state) => applyClose(state.tabs, state.activeTabId, (tab) => tab.id === id)),
+      closeTabsToLeft: (id) =>
+        set((state) => {
+          const idx = state.tabs.findIndex((tab) => tab.id === id);
+          if (idx === -1) return state;
+          return applyClose(state.tabs, state.activeTabId, (_tab, i) => i >= idx);
+        }),
 
-  closeTabsToLeft: (id) =>
-    set((state) => {
-      const idx = state.tabs.findIndex((tab) => tab.id === id);
-      if (idx === -1) return state;
-      return applyClose(state.tabs, state.activeTabId, (_tab, i) => i >= idx);
-    }),
+      closeTabsToRight: (id) =>
+        set((state) => {
+          const idx = state.tabs.findIndex((tab) => tab.id === id);
+          if (idx === -1) return state;
+          return applyClose(state.tabs, state.activeTabId, (_tab, i) => i <= idx);
+        }),
 
-  closeTabsToRight: (id) =>
-    set((state) => {
-      const idx = state.tabs.findIndex((tab) => tab.id === id);
-      if (idx === -1) return state;
-      return applyClose(state.tabs, state.activeTabId, (_tab, i) => i <= idx);
-    }),
+      closeAllTableTabs: () =>
+        set((state) => applyClose(state.tabs, state.activeTabId, (tab) => tab.kind === 'query')),
 
-  closeAllTableTabs: () =>
-    set((state) => applyClose(state.tabs, state.activeTabId, (tab) => tab.kind === 'query')),
+      reorderTab: (draggedId, targetId) =>
+        set((state) => {
+          if (draggedId === targetId) return state;
+          const from = state.tabs.findIndex((tab) => tab.id === draggedId);
+          const to = state.tabs.findIndex((tab) => tab.id === targetId);
+          if (from === -1 || to === -1) return state;
+          const tabs = [...state.tabs];
+          const [moved] = tabs.splice(from, 1);
+          tabs.splice(to, 0, moved!);
+          return { tabs };
+        }),
 
-  reorderTab: (draggedId, targetId) =>
-    set((state) => {
-      if (draggedId === targetId) return state;
-      const from = state.tabs.findIndex((tab) => tab.id === draggedId);
-      const to = state.tabs.findIndex((tab) => tab.id === targetId);
-      if (from === -1 || to === -1) return state;
-      const tabs = [...state.tabs];
-      const [moved] = tabs.splice(from, 1);
-      tabs.splice(to, 0, moved!);
-      return { tabs };
-    }),
+      newQueryTab: () =>
+        set((state) => {
+          const queryTabCount = state.tabs.filter((tab) => tab.kind === 'query').length;
+          const id = `query-${crypto.randomUUID()}`;
+          const tab: WorkspaceTab = {
+            id,
+            label: `Query ${queryTabCount + 1}`,
+            kind: 'query',
+            sql: INITIAL_SQL,
+            result: null,
+          };
+          return { tabs: [...state.tabs, tab], activeTabId: id };
+        }),
 
-  newQueryTab: () =>
-    set((state) => {
-      const queryTabCount = state.tabs.filter((tab) => tab.kind === 'query').length;
-      const id = `query-${crypto.randomUUID()}`;
-      const tab: WorkspaceTab = {
-        id,
-        label: `Query ${queryTabCount + 1}`,
-        kind: 'query',
-        sql: INITIAL_SQL,
-        result: null,
-      };
-      return { tabs: [...state.tabs, tab], activeTabId: id };
-    }),
+      setTabSql: (id, sql) =>
+        set((state) => ({
+          tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, sql } : tab)),
+        })),
 
-  setTabSql: (id, sql) =>
-    set((state) => ({
-      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, sql } : tab)),
-    })),
+      setTabResult: (id, result) =>
+        set((state) => ({
+          tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, result } : tab)),
+        })),
 
-  setTabResult: (id, result) =>
-    set((state) => ({
-      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, result } : tab)),
-    })),
+      setTabTransactional: (id, transactional) =>
+        set((state) => ({
+          tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, transactional } : tab)),
+        })),
 
-  setTabTransactional: (id, transactional) =>
-    set((state) => ({
-      tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, transactional } : tab)),
-    })),
+      setTransactionalDefault: (on) => set({ transactionalDefault: on }),
 
-  setTransactionalDefault: (on) => set({ transactionalDefault: on }),
+      loadQuery: (sql) =>
+        set((state) => {
+          const active = state.tabs.find((tab) => tab.id === state.activeTabId);
+          const target =
+            active?.kind === 'query' ? active : state.tabs.find((tab) => tab.kind === 'query');
+          return { pendingQuerySql: sql, activeTabId: target?.id ?? state.activeTabId };
+        }),
 
-  loadQuery: (sql) =>
-    set((state) => {
-      const active = state.tabs.find((tab) => tab.id === state.activeTabId);
-      const target = active?.kind === 'query' ? active : state.tabs.find((tab) => tab.kind === 'query');
-      return { pendingQuerySql: sql, activeTabId: target?.id ?? state.activeTabId };
-    }),
+      clearPendingQuerySql: () => set({ pendingQuerySql: null }),
 
-  clearPendingQuerySql: () => set({ pendingQuerySql: null }),
+      setCursorPosition: (position) => set({ cursorPosition: position }),
 
-  setCursorPosition: (position) => set({ cursorPosition: position }),
+      requestFocus: (target) => set({ focusRequest: target }),
+      clearFocusRequest: () => set({ focusRequest: null }),
 
-  requestFocus: (target) => set({ focusRequest: target }),
-  clearFocusRequest: () => set({ focusRequest: null }),
+      requestViewAction: (action) => set({ viewActionRequest: action }),
+      clearViewActionRequest: () => set({ viewActionRequest: null }),
 
-  requestViewAction: (action) => set({ viewActionRequest: action }),
-  clearViewActionRequest: () => set({ viewActionRequest: null }),
-
-  setActiveTabDirty: (dirty) => set({ activeTabDirty: dirty }),
+      setActiveTabDirty: (dirty) => set({ activeTabDirty: dirty }),
     }),
     {
       name: 'prost-workspace',

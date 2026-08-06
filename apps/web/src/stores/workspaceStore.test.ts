@@ -6,7 +6,9 @@ import { INITIAL_SQL, useWorkspaceStore } from './workspaceStore';
 const C = 'conn-1';
 
 const initialState = {
-  tabs: [{ id: 'query-1', label: 'Query 1', kind: 'query' as const, sql: INITIAL_SQL, result: null }],
+  tabs: [
+    { id: 'query-1', label: 'Query 1', kind: 'query' as const, sql: INITIAL_SQL, result: null },
+  ],
   activeTabId: 'query-1',
   pendingQuerySql: null,
   transactionalDefault: false,
@@ -14,7 +16,17 @@ const initialState = {
 };
 
 const mockResult: ExecuteQueryResponse = {
-  statements: [{ kind: 'rows', sql: 'SELECT 1', rows: [{ id: 1 }], columns: [], totalRows: 1, editable: false, executionTimeMs: 1 }],
+  statements: [
+    {
+      kind: 'rows',
+      sql: 'SELECT 1',
+      rows: [{ id: 1 }],
+      columns: [],
+      totalRows: 1,
+      editable: false,
+      executionTimeMs: 1,
+    },
+  ],
   transactional: false,
   statementCount: 1,
 };
@@ -63,11 +75,13 @@ describe('workspaceStore — loadQuery', () => {
   });
 });
 
-
 describe('workspaceStore — table view modes', () => {
   it('opens a table straight into the profile view when asked', () => {
     useWorkspaceStore.getState().openTable(C, 'public', 'users', 'profile');
-    expect(useWorkspaceStore.getState().tabs[1]).toMatchObject({ kind: 'table', viewMode: 'profile' });
+    expect(useWorkspaceStore.getState().tabs[1]).toMatchObject({
+      kind: 'table',
+      viewMode: 'profile',
+    });
   });
 
   it('switches an open tab between rows, structure and profile', () => {
@@ -86,7 +100,11 @@ describe('workspaceStore — openErDiagram', () => {
     const state = useWorkspaceStore.getState();
     expect(state.activeTabId).toBe(`er:${C}:public`);
     expect(state.tabs[1]).toMatchObject({
-      id: `er:${C}:public`, label: 'public diagram', kind: 'erDiagram', connectionId: C, schema: 'public',
+      id: `er:${C}:public`,
+      label: 'public diagram',
+      kind: 'erDiagram',
+      connectionId: C,
+      schema: 'public',
     });
   });
 
@@ -115,7 +133,11 @@ describe('workspaceStore — openOverview', () => {
     expect(state.activeTabId).toBe(`overview:${C}:public`);
     expect(state.tabs).toHaveLength(2);
     expect(state.tabs[1]).toMatchObject({
-      id: `overview:${C}:public`, kind: 'overview', connectionId: C, schema: 'public', label: 'public',
+      id: `overview:${C}:public`,
+      kind: 'overview',
+      connectionId: C,
+      schema: 'public',
+      label: 'public',
     });
   });
 
@@ -157,34 +179,54 @@ describe('workspaceStore — openTable connection binding', () => {
 describe('workspaceStore — openTable search hand-off / closeTableTab', () => {
   it('stashes the search term on the tab and clearTabSearch removes it', () => {
     useWorkspaceStore.getState().openTable(C, 'public', 'users', 'rows', { search: '' });
-    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`)?.search).toBe('');
+    expect(
+      useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`)?.search,
+    ).toBe('');
 
     useWorkspaceStore.getState().clearTabSearch(`table:${C}:public.users`);
-    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`)?.search).toBeUndefined();
+    expect(
+      useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`)?.search,
+    ).toBeUndefined();
   });
 
   it('stashes a preset filter (FK navigation) on the tab and clearTabFilter removes it', () => {
-    const filter = { combinator: 'and' as const, conditions: [{ column: 'id', operator: 'eq' as const, value: 42 }] };
+    const filter = {
+      combinator: 'and' as const,
+      conditions: [{ column: 'id', operator: 'eq' as const, value: 42 }],
+    };
     useWorkspaceStore.getState().openTable(C, 'public', 'users', 'rows', { filter });
-    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`)?.presetFilter).toEqual(filter);
+    expect(
+      useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`)
+        ?.presetFilter,
+    ).toEqual(filter);
 
     useWorkspaceStore.getState().clearTabFilter(`table:${C}:public.users`);
-    expect(useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`)?.presetFilter).toBeUndefined();
+    expect(
+      useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`)
+        ?.presetFilter,
+    ).toBeUndefined();
   });
 
   it('applies a preset filter to an already-open table tab on re-open', () => {
     useWorkspaceStore.getState().openTable(C, 'public', 'users');
-    const filter = { combinator: 'and' as const, conditions: [{ column: 'id', operator: 'eq' as const, value: 7 }] };
+    const filter = {
+      combinator: 'and' as const,
+      conditions: [{ column: 'id', operator: 'eq' as const, value: 7 }],
+    };
     useWorkspaceStore.getState().openTable(C, 'public', 'users', 'rows', { filter });
     const tab = useWorkspaceStore.getState().tabs.find((t) => t.id === `table:${C}:public.users`);
     expect(tab?.presetFilter).toEqual(filter);
-    expect(useWorkspaceStore.getState().tabs.filter((t) => t.id === `table:${C}:public.users`)).toHaveLength(1);
+    expect(
+      useWorkspaceStore.getState().tabs.filter((t) => t.id === `table:${C}:public.users`),
+    ).toHaveLength(1);
   });
 
   it('closeTableTab removes the matching table tab and is a no-op when absent', () => {
     useWorkspaceStore.getState().openTable(C, 'public', 'users');
     useWorkspaceStore.getState().closeTableTab(C, 'public', 'users');
-    expect(useWorkspaceStore.getState().tabs.some((t) => t.id === `table:${C}:public.users`)).toBe(false);
+    expect(useWorkspaceStore.getState().tabs.some((t) => t.id === `table:${C}:public.users`)).toBe(
+      false,
+    );
 
     const before = useWorkspaceStore.getState().tabs.map((t) => t.id);
     useWorkspaceStore.getState().closeTableTab(C, 'public', 'ghost');
@@ -198,7 +240,13 @@ describe('workspaceStore — openObject', () => {
     const state = useWorkspaceStore.getState();
     expect(state.activeTabId).toBe(`object:${C}:public.add`);
     expect(state.tabs[1]).toMatchObject({
-      id: `object:${C}:public.add`, kind: 'object', connectionId: C, schema: 'public', objectKind: 'function', objectName: 'add', label: 'add',
+      id: `object:${C}:public.add`,
+      kind: 'object',
+      connectionId: C,
+      schema: 'public',
+      objectKind: 'function',
+      objectName: 'add',
+      label: 'add',
     });
   });
 
@@ -217,7 +265,12 @@ describe('workspaceStore — newQueryTab', () => {
     useWorkspaceStore.getState().newQueryTab();
     let state = useWorkspaceStore.getState();
     expect(state.tabs).toHaveLength(2);
-    expect(state.tabs[1]).toMatchObject({ label: 'Query 2', kind: 'query', sql: INITIAL_SQL, result: null });
+    expect(state.tabs[1]).toMatchObject({
+      label: 'Query 2',
+      kind: 'query',
+      sql: INITIAL_SQL,
+      result: null,
+    });
     expect(state.activeTabId).toBe(state.tabs[1]!.id);
 
     useWorkspaceStore.getState().newQueryTab();
@@ -260,7 +313,9 @@ describe('workspaceStore — setTabSql / setTabResult', () => {
     useWorkspaceStore.getState().newQueryTab();
     const secondTabId = useWorkspaceStore.getState().activeTabId;
 
-    expect(useWorkspaceStore.getState().tabs.find((tab) => tab.id === 'query-1')?.transactional).toBeFalsy();
+    expect(
+      useWorkspaceStore.getState().tabs.find((tab) => tab.id === 'query-1')?.transactional,
+    ).toBeFalsy();
 
     useWorkspaceStore.getState().setTabTransactional('query-1', true);
     const state = useWorkspaceStore.getState();
@@ -271,7 +326,9 @@ describe('workspaceStore — setTabSql / setTabResult', () => {
   it('setTransactionalDefault is persisted to localStorage', () => {
     useWorkspaceStore.getState().setTransactionalDefault(true);
     expect(useWorkspaceStore.getState().transactionalDefault).toBe(true);
-    const persisted = JSON.parse(localStorage.getItem('prost-workspace') ?? '{}') as { state?: Record<string, unknown> };
+    const persisted = JSON.parse(localStorage.getItem('prost-workspace') ?? '{}') as {
+      state?: Record<string, unknown>;
+    };
     expect(persisted.state?.transactionalDefault).toBe(true);
     useWorkspaceStore.getState().setTransactionalDefault(false); // reset for isolation
   });
@@ -300,7 +357,11 @@ describe('workspaceStore — reorderTab', () => {
 
     // Drag the last tab onto the first position.
     useWorkspaceStore.getState().reorderTab(ids[2]!, 'query-1');
-    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual([ids[2], 'query-1', `table:${C}:public.users`]);
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual([
+      ids[2],
+      'query-1',
+      `table:${C}:public.users`,
+    ]);
     expect(useWorkspaceStore.getState().activeTabId).toBe(ids[2]); // unchanged
   });
 
@@ -328,19 +389,28 @@ describe('workspaceStore — bulk close', () => {
     seed();
     useWorkspaceStore.getState().closeOtherTabs(`table:${C}:public.a`);
     // Target table tab kept; since no query tab would survive, the first query tab is retained.
-    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(['query-1', `table:${C}:public.a`]);
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual([
+      'query-1',
+      `table:${C}:public.a`,
+    ]);
   });
 
   it('closeTabsToLeft removes tabs before the target', () => {
     const { query2 } = seed();
     useWorkspaceStore.getState().closeTabsToLeft(`table:${C}:public.b`);
-    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual([`table:${C}:public.b`, query2]);
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual([
+      `table:${C}:public.b`,
+      query2,
+    ]);
   });
 
   it('closeTabsToRight removes tabs after the target', () => {
     seed();
     useWorkspaceStore.getState().closeTabsToRight(`table:${C}:public.a`);
-    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual(['query-1', `table:${C}:public.a`]);
+    expect(useWorkspaceStore.getState().tabs.map((t) => t.id)).toEqual([
+      'query-1',
+      `table:${C}:public.a`,
+    ]);
   });
 
   it('closeAllTableTabs removes every table tab but keeps all query tabs', () => {
@@ -356,5 +426,23 @@ describe('workspaceStore — bulk close', () => {
     const state = useWorkspaceStore.getState();
     expect(state.tabs.some((t) => t.id === state.activeTabId)).toBe(true);
     expect(state.activeTabId).toBe(query2);
+  });
+});
+
+describe('workspaceStore - openPerformance', () => {
+  it('opens one connection-bound performance tab and reactivates it on repeat', () => {
+    useWorkspaceStore.getState().openPerformance(C);
+    expect(useWorkspaceStore.getState().tabs[1]).toMatchObject({
+      id: `performance:${C}`,
+      label: 'Performance',
+      kind: 'performance',
+      connectionId: C,
+    });
+
+    useWorkspaceStore.getState().openTable(C, 'public', 'users');
+    useWorkspaceStore.getState().openPerformance(C);
+    const state = useWorkspaceStore.getState();
+    expect(state.tabs.filter((tab) => tab.id === `performance:${C}`)).toHaveLength(1);
+    expect(state.activeTabId).toBe(`performance:${C}`);
   });
 });

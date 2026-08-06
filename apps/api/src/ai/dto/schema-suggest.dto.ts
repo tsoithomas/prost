@@ -1,6 +1,7 @@
 import {
   ArrayMaxSize,
   IsArray,
+  IsIn,
   IsObject,
   IsOptional,
   IsString,
@@ -35,6 +36,10 @@ export class SchemaSuggestDto {
   @IsString()
   @MinLength(1)
   model!: string;
+
+  @IsOptional()
+  @IsIn(['schema', 'indexes'])
+  scope?: 'schema' | 'indexes';
 
   @IsOptional()
   @IsArray()

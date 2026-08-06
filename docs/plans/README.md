@@ -2,7 +2,7 @@
 
 Per-phase implementation plans for Prost, derived from [`prost-mvp.md`](./prost-mvp.md) §4
 and bound by [`../architecture-principles.md`](../architecture-principles.md). The MVP spec
-is the *what*; the principles are the *rules*; these files are the *how* for each reviewable
+is the _what_; the principles are the _rules_; these files are the _how_ for each reviewable
 checkpoint.
 
 Each plan is self-contained: context, confirmed decisions, backend work, frontend work,
@@ -11,56 +11,56 @@ passes **and** it violates none of the architecture principles.
 
 ## Status
 
-| Phase | Scope | Status |
-| --- | --- | --- |
-| [0](./phase-0-scaffold.md) | Scaffold & infra (pnpm/Turborepo, Docker, design-system shell) | ✅ Complete |
-| [1](./phase-1-vertical-slice.md) | Vertical slice: login → connection → schema tree → table rows | ✅ Complete |
-| [2](./phase-2-editing.md) | Inline editing: cell update, insert row, delete row | ✅ Complete |
-| [3](./phase-3-sql-editor.md) | SQL editor + editability analyzer | ✅ Complete |
-| [4](./phase-4-query-history.md) | Query history | ✅ Complete |
-| [5](./phase-5-theming-responsiveness.md) | Theming & responsiveness hardening | ✅ Complete |
-| [6](./phase-6-connection-string-import.md) | Connection string import (paste a Postgres URI) | ✅ Complete |
-| [7](./phase-7-schema-index-viewing.md) | View schema & indexes (table structure panel) | ✅ Complete |
-| [8](./phase-8-create-table.md) | Create table (first DDL write; preview→confirm→execute) | ✅ Complete |
-| [9](./phase-9-edit-schema-indexes.md) | Edit schema & indexes (alter columns, add/drop indexes) | ✅ Complete |
-| [10](./phase-10-ai-chat-rag.md) | AI chat assistant with metadata-grounded RAG | ✅ Complete |
-| [11](./phase-11-reliability-hardening.md) | Reliability & abuse hardening (throttling, pool lifecycle, editability fail-safe) | ✅ Complete |
-| [12](./phase-12-frontend-test-foundation.md) | Frontend test foundation (Vitest + RTL harness) | ✅ Complete |
-| [13](./phase-13-saved-snippets.md) | Saved snippets (Sidebar tab + save-from-editor) | ✅ Complete |
-| [14](./phase-14-row-filtering.md) | Row filtering (per-column `WHERE` builder) | ✅ Complete |
-| [15](./phase-15-multi-query-tabs.md) | Multi-query tabs (workspace-state refactor) | ✅ Complete |
-| [16](./phase-16-multi-statement-explain.md) | Multi-statement scripts, transactions, `EXPLAIN` | ✅ Complete |
-| [17](./phase-17-editor-intellisense.md) | Schema-aware autocomplete + query formatting | ✅ Complete |
-| [18](./phase-18-grid-editing-depth.md) | Grid editing depth (type-aware editors, bulk edits, undo/redo, pin/group) | ✅ Complete |
-| [19](./phase-19-history-management.md) | Query history management (edit/star/delete, search, export) | ✅ Complete |
-| [20](./phase-20-global-search.md) | Global search (command-palette overlay) | ✅ Complete |
-| [21](./phase-21-preferences-theming.md) | Preferences & theming expansion | ✅ Complete |
-| [22](./phase-22-streaming-results.md) | Streaming / cursor-based large result sets | ✅ Complete |
-| [23](./phase-23-foreign-keys.md) | Foreign-key metadata + relational navigation | ✅ Complete |
-| [24](./phase-24-schema-objects.md) | Broader schema-object browsing (views/functions/triggers/…) | ✅ Complete |
-| [25](./phase-25-readonly-guardrails.md) | Read-only / environment connection guardrails | ✅ Complete |
-| [26](./phase-26-query-plan-viz.md) | Query-plan visualization | ✅ Complete |
-| [27](./phase-27-session-monitoring.md) | Active-session monitoring & kill-query | ✅ Complete |
-| [28](./phase-28-audit-trail.md) | Mutation & DDL audit trail | ✅ Complete |
-| [29](./phase-29-error-insights.md) | Error explanation & result insights | ✅ Complete |
-| [30](./phase-30-data-export-import.md) | Data export & import (CSV/JSON) | ✅ Complete |
-| [31](./phase-31-agentic-queries.md) | Agentic read-only query execution | ✅ Complete |
-| [32](./phase-32-ssh-tunneling.md) | SSH tunneling | ✅ Complete |
-| [33](./phase-33-ai-schema-suggestions.md) | AI schema-change suggestions | ✅ Complete |
-| [34](./phase-34-settings-redesign.md) | Settings & preferences redesign (unified modal + fine-tune styling) | ✅ Complete |
-| [35](./phase-35-accessibility-hardening.md) | Accessibility & keyboard-navigation hardening | ✅ Complete |
-| [36](./phase-36-er-diagram.md) | ER diagram / relationship visualization | ✅ Complete |
-| [37](./phase-37-column-profiling.md) | Column profiling & table data statistics | ✅ Complete |
-| [38](./phase-38-object-comments.md) | Table & column documentation (native comments) | ✅ Complete |
-| [39](./phase-39-data-masking.md) | Data masking / sensitive-column redaction | ✅ Complete |
-| [40](./phase-40-usability-polish.md) | Usability & interaction polish (shortcuts, tooltips, feedback, focus mode) | ✅ Complete |
-| [41](./phase-41-perf-insights.md) | On-demand query-performance insights & index advisor | 🔲 Planned |
-| [42](./phase-42-schema-diff.md) | Schema comparison & migration diff (live-vs-live) | 🔲 Planned |
-| [43](./phase-43-data-generation.md) | Data generation / test-data seeding | 🔲 Planned |
-| [44](./phase-44-saved-dashboards.md) | Saved dashboards / pinned result charts | 🔲 Planned |
-| [45](./phase-45-grid-conflict-detection.md) | Grid concurrency: optimistic-conflict detection | 🔲 Planned |
-| [46](./phase-46-ai-query-rewrite.md) | AI query-optimization & rewrite advisor | 🔲 Planned |
-| [47](./phase-47-ai-data-editing.md) | AI-assisted data editing with preview | 🔲 Planned |
+| Phase                                        | Scope                                                                             | Status      |
+| -------------------------------------------- | --------------------------------------------------------------------------------- | ----------- |
+| [0](./phase-0-scaffold.md)                   | Scaffold & infra (pnpm/Turborepo, Docker, design-system shell)                    | ✅ Complete |
+| [1](./phase-1-vertical-slice.md)             | Vertical slice: login → connection → schema tree → table rows                     | ✅ Complete |
+| [2](./phase-2-editing.md)                    | Inline editing: cell update, insert row, delete row                               | ✅ Complete |
+| [3](./phase-3-sql-editor.md)                 | SQL editor + editability analyzer                                                 | ✅ Complete |
+| [4](./phase-4-query-history.md)              | Query history                                                                     | ✅ Complete |
+| [5](./phase-5-theming-responsiveness.md)     | Theming & responsiveness hardening                                                | ✅ Complete |
+| [6](./phase-6-connection-string-import.md)   | Connection string import (paste a Postgres URI)                                   | ✅ Complete |
+| [7](./phase-7-schema-index-viewing.md)       | View schema & indexes (table structure panel)                                     | ✅ Complete |
+| [8](./phase-8-create-table.md)               | Create table (first DDL write; preview→confirm→execute)                           | ✅ Complete |
+| [9](./phase-9-edit-schema-indexes.md)        | Edit schema & indexes (alter columns, add/drop indexes)                           | ✅ Complete |
+| [10](./phase-10-ai-chat-rag.md)              | AI chat assistant with metadata-grounded RAG                                      | ✅ Complete |
+| [11](./phase-11-reliability-hardening.md)    | Reliability & abuse hardening (throttling, pool lifecycle, editability fail-safe) | ✅ Complete |
+| [12](./phase-12-frontend-test-foundation.md) | Frontend test foundation (Vitest + RTL harness)                                   | ✅ Complete |
+| [13](./phase-13-saved-snippets.md)           | Saved snippets (Sidebar tab + save-from-editor)                                   | ✅ Complete |
+| [14](./phase-14-row-filtering.md)            | Row filtering (per-column `WHERE` builder)                                        | ✅ Complete |
+| [15](./phase-15-multi-query-tabs.md)         | Multi-query tabs (workspace-state refactor)                                       | ✅ Complete |
+| [16](./phase-16-multi-statement-explain.md)  | Multi-statement scripts, transactions, `EXPLAIN`                                  | ✅ Complete |
+| [17](./phase-17-editor-intellisense.md)      | Schema-aware autocomplete + query formatting                                      | ✅ Complete |
+| [18](./phase-18-grid-editing-depth.md)       | Grid editing depth (type-aware editors, bulk edits, undo/redo, pin/group)         | ✅ Complete |
+| [19](./phase-19-history-management.md)       | Query history management (edit/star/delete, search, export)                       | ✅ Complete |
+| [20](./phase-20-global-search.md)            | Global search (command-palette overlay)                                           | ✅ Complete |
+| [21](./phase-21-preferences-theming.md)      | Preferences & theming expansion                                                   | ✅ Complete |
+| [22](./phase-22-streaming-results.md)        | Streaming / cursor-based large result sets                                        | ✅ Complete |
+| [23](./phase-23-foreign-keys.md)             | Foreign-key metadata + relational navigation                                      | ✅ Complete |
+| [24](./phase-24-schema-objects.md)           | Broader schema-object browsing (views/functions/triggers/…)                       | ✅ Complete |
+| [25](./phase-25-readonly-guardrails.md)      | Read-only / environment connection guardrails                                     | ✅ Complete |
+| [26](./phase-26-query-plan-viz.md)           | Query-plan visualization                                                          | ✅ Complete |
+| [27](./phase-27-session-monitoring.md)       | Active-session monitoring & kill-query                                            | ✅ Complete |
+| [28](./phase-28-audit-trail.md)              | Mutation & DDL audit trail                                                        | ✅ Complete |
+| [29](./phase-29-error-insights.md)           | Error explanation & result insights                                               | ✅ Complete |
+| [30](./phase-30-data-export-import.md)       | Data export & import (CSV/JSON)                                                   | ✅ Complete |
+| [31](./phase-31-agentic-queries.md)          | Agentic read-only query execution                                                 | ✅ Complete |
+| [32](./phase-32-ssh-tunneling.md)            | SSH tunneling                                                                     | ✅ Complete |
+| [33](./phase-33-ai-schema-suggestions.md)    | AI schema-change suggestions                                                      | ✅ Complete |
+| [34](./phase-34-settings-redesign.md)        | Settings & preferences redesign (unified modal + fine-tune styling)               | ✅ Complete |
+| [35](./phase-35-accessibility-hardening.md)  | Accessibility & keyboard-navigation hardening                                     | ✅ Complete |
+| [36](./phase-36-er-diagram.md)               | ER diagram / relationship visualization                                           | ✅ Complete |
+| [37](./phase-37-column-profiling.md)         | Column profiling & table data statistics                                          | ✅ Complete |
+| [38](./phase-38-object-comments.md)          | Table & column documentation (native comments)                                    | ✅ Complete |
+| [39](./phase-39-data-masking.md)             | Data masking / sensitive-column redaction                                         | ✅ Complete |
+| [40](./phase-40-usability-polish.md)         | Usability & interaction polish (shortcuts, tooltips, feedback, focus mode)        | ✅ Complete |
+| [41](./phase-41-perf-insights.md)            | On-demand query-performance insights & index advisor                              | ✅ Complete |
+| [42](./phase-42-schema-diff.md)              | Schema comparison & migration diff (live-vs-live)                                 | 🔲 Planned  |
+| [43](./phase-43-data-generation.md)          | Data generation / test-data seeding                                               | 🔲 Planned  |
+| [44](./phase-44-saved-dashboards.md)         | Saved dashboards / pinned result charts                                           | 🔲 Planned  |
+| [45](./phase-45-grid-conflict-detection.md)  | Grid concurrency: optimistic-conflict detection                                   | 🔲 Planned  |
+| [46](./phase-46-ai-query-rewrite.md)         | AI query-optimization & rewrite advisor                                           | 🔲 Planned  |
+| [47](./phase-47-ai-data-editing.md)          | AI-assisted data editing with preview                                             | 🔲 Planned  |
 
 Phases 0–5 are the **MVP** (complete). Phases 6–10 are the **first post-MVP wave** drawn from
 [`../future-features.md`](../future-features.md) (all complete). Phases 11–22 are the **second
@@ -92,7 +92,7 @@ seam with shared SQL in `drivers/profile-sql.ts`, `GET …/profile` + `…/profi
 `Profile` table view mode showing per-column null share, distinct count, range and a lazily-loaded top-N
 distribution — bounded by engine-native sampling and labelled as such); native table/column comments (read
 via `buildTableComment` + `comment` aliases, written as a `setComment` `AlterTableOperation` through the
-*existing* DDL preview→confirm→execute pipeline, capability-gated by `ddl.supportsObjectComments` so
+_existing_ DDL preview→confirm→execute pipeline, capability-gated by `ddl.supportsObjectComments` so
 SQLite hides it, with an optional `POST :id/ai/describe-object` draft the user edits before applying); and
 per-column data masking (a `maskedColumns` preference of identifiers only, redacted **server-side** in grid
 reads and CSV/JSON/SQL exports via the pure `grid/masking.ts`, with masked columns refused for editing, an
@@ -113,7 +113,10 @@ CSS gate for free; a focus mode (`layoutStore.focusMode`) that hides both shells
 horizontal) powering the SQL editor's maximize-editor/maximize-results split; an always-open grid cell
 context menu (copy value/row-as-TSV/row-as-JSON, filter by value, set NULL) ahead of any FK navigation
 entries; and small wins (middle-click/double-click tab-bar gestures, an unsaved-edit close guard, and a
-per-table `tableViewModeStore` remembering each table's last view mode). **Phases 41–47 are planned**.
+per-table `tableViewModeStore` remembering each table's last view mode). **Phase 41 is complete** — a
+capability-gated, pull-only top-statement snapshot for PostgreSQL/MySQL, with sortable workspace/mobile
+UI and index-only advice composed through the existing EXPLAIN → Phase-33 suggestion → DDL preview and
+confirm flow. **Phases 42–47 are planned**.
 
 ## Sequencing notes
 

@@ -43,6 +43,8 @@ export interface DbEngineDescriptor {
   supportsExplainAnalyze: boolean;
   /** Whether the engine exposes live sessions for the activity monitor + kill-query (Phase 27; SQLite: false). */
   supportsSessionMonitoring: boolean;
+  /** Whether the engine can expose an on-demand top-statement snapshot (Phase 41; SQLite: false). */
+  supportsPerfInsights: boolean;
   ddl: {
     columnTypes: string[];
     defaultExamples: string[];

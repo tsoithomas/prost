@@ -41,7 +41,9 @@ export function MobileShell({ onOpenConnections }: MobileShellProps) {
     <div className="relative flex h-screen flex-col bg-bg text-text">
       {focusMode ? null : <MobileTopBar onOpenConnections={onOpenConnections} />}
       <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        {activeTab === 'explorer' ? <MobileExplorerView onSelectTable={() => setActiveTab('editor')} /> : null}
+        {activeTab === 'explorer' ? (
+          <MobileExplorerView onSelectTable={() => setActiveTab('editor')} />
+        ) : null}
         {activeTab === 'editor' ? <Workspace /> : null}
         {activeTab === 'ai' ? (
           activeConnectionId ? (
@@ -59,6 +61,7 @@ export function MobileShell({ onOpenConnections }: MobileShellProps) {
             onSelectSnippet={() => setActiveTab('editor')}
             onOpenSessions={() => setActiveTab('editor')}
             onOpenAudit={() => setActiveTab('editor')}
+            onOpenPerformance={() => setActiveTab('editor')}
           />
         ) : null}
       </main>

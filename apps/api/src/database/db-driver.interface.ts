@@ -5,6 +5,7 @@ import type {
   CreateTableRequest,
   DbEngineDescriptor,
   KillSessionMode,
+  PerfInsightsUnavailableReason,
   QueryPlanNode,
   SchemaObjectKind,
   TableStructure,
@@ -129,19 +130,34 @@ export interface DbDriver {
    * column index i, `c{i}_nulls`, `c{i}_distinct`, `c{i}_min`, `c{i}_max`. Columns whose spec is not
    * `orderable` emit `NULL` for distinct/min/max — the engine has no equality or ordering for them.
    */
-  buildColumnProfile(ref: TableRef, columns: ProfileColumnSpec[], plan: ProfileSamplePlan): SqlFragment;
+  buildColumnProfile(
+    ref: TableRef,
+    columns: ProfileColumnSpec[],
+    plan: ProfileSamplePlan,
+  ): SqlFragment;
   /**
    * The most common values of one column, aliased `value, occurrences`, ordered by frequency.
    * Only valid for comparable columns (`GROUP BY` needs equality); the caller enforces that.
    */
-  buildColumnTopValues(ref: TableRef, column: string, plan: ProfileSamplePlan, limit: number): SqlFragment;
+  buildColumnTopValues(
+    ref: TableRef,
+    column: string,
+    plan: ProfileSamplePlan,
+    limit: number,
+  ): SqlFragment;
 
   // --- grid builders ---
   buildSelectRows(ref: TableRef, opts: SelectRowsOptions): SqlFragment;
   buildFilteredRowCount(ref: TableRef, whereClause: string, whereParams: unknown[]): SqlFragment;
   buildRowCountEstimate(ref: TableRef): SqlFragment;
   buildInsertRow(ref: TableRef, entries: [string, unknown][]): SqlFragment;
-  buildUpdateRow(ref: TableRef, column: string, value: unknown, pkColumns: string[], pkValues: unknown[]): SqlFragment;
+  buildUpdateRow(
+    ref: TableRef,
+    column: string,
+    value: unknown,
+    pkColumns: string[],
+    pkValues: unknown[],
+  ): SqlFragment;
   /**
    * Multi-column update of one row, guarded by an optimistic-concurrency predicate so a stale write
    * affects zero rows (the caller treats `rowCount !== 1` as a conflict). On `token` engines the
@@ -177,8 +193,16 @@ export interface DbDriver {
 
   // --- ddl builders ---
   normalizeCreateTable(req: CreateTableRequest): CreateTableRequest;
-  normalizeAlterTable(ref: TableRef, operation: AlterTableOperation, columns: ColumnMetadata[]): AlterTableOperation;
-  normalizeCreateIndex(req: CreateIndexRequest): { request: CreateIndexRequest; name: string; method: string };
+  normalizeAlterTable(
+    ref: TableRef,
+    operation: AlterTableOperation,
+    columns: ColumnMetadata[],
+  ): AlterTableOperation;
+  normalizeCreateIndex(req: CreateIndexRequest): {
+    request: CreateIndexRequest;
+    name: string;
+    method: string;
+  };
   buildCreateTable(req: CreateTableRequest): SqlFragment;
   buildAlterTable(ref: TableRef, op: AlterTableOperation): SqlFragment;
   buildCreateIndex(req: CreateIndexRequest, name: string, method: string): SqlFragment;
@@ -234,12 +258,32 @@ export interface DbDriver {
   buildBlockingPairs(): SqlFragment | null;
   buildKillSession(id: number, mode: KillSessionMode): SqlFragment;
 
+  /**
+   * On-demand performance insights (Phase 41). The status query returns one row aliased
+   * `available, unavailable_reason, unavailable_message`; the list is bounded and aliased
+   * `query, calls, total_time_ms, mean_time_ms, rows`. The window query is supplementary metadata:
+   * an exact reset time where the engine exposes one, otherwise its closest safe approximation.
+   */
+  buildPerfInsightsStatus(): SqlFragment;
+  buildListTopStatements(limit: number): SqlFragment;
+  buildPerfInsightsWindow(): SqlFragment;
+  /** Turn known instrumentation/permission failures into an unavailable state; unknown errors propagate. */
+  classifyPerfInsightsError(
+    error: unknown,
+  ): { reason: PerfInsightsUnavailableReason; message: string } | null;
+
   /** Inspect a native error; throw the right Nest HTTP exception, or return to let the caller rethrow. */
   mapError(error: unknown, context: DriverErrorContext): void;
 }
 
 export interface DriverErrorContext {
-  operation: 'createTable' | 'alterTable' | 'createIndex' | 'dropIndex' | 'dropTable' | 'truncateTable';
+  operation:
+    | 'createTable'
+    | 'alterTable'
+    | 'createIndex'
+    | 'dropIndex'
+    | 'dropTable'
+    | 'truncateTable';
   ref?: TableRef;
   detail?: string;
 }

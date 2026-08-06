@@ -130,6 +130,8 @@ export interface SchemaSuggestion {
 export interface SchemaSuggestRequest {
   endpointId: string;
   model: string;
+  /** Restrict the pipeline to index candidates. Omitted keeps the broader Phase-33 behavior. */
+  scope?: 'schema' | 'indexes';
   /** Tables to ground the advice in. When omitted, resolved from `sql` against the schema index. */
   tables?: { schema: string; table: string }[];
   plan?: QueryPlanResult;

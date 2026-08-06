@@ -1,11 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Activity, ChevronLeft, ChevronRight, Code, FileText, LayoutGrid, Plus, ScrollText, Table2, Waypoints, X } from 'lucide-react';
+import {
+  Activity,
+  ChartNoAxesCombined,
+  ChevronLeft,
+  ChevronRight,
+  Code,
+  FileText,
+  LayoutGrid,
+  Plus,
+  ScrollText,
+  Table2,
+  Waypoints,
+  X,
+} from 'lucide-react';
 import clsx from 'clsx';
 
 export interface WorkspaceTab {
   id: string;
   label: string;
-  kind: 'table' | 'query' | 'overview' | 'object' | 'erDiagram' | 'sessions' | 'audit';
+  kind:
+    | 'table'
+    | 'query'
+    | 'overview'
+    | 'object'
+    | 'erDiagram'
+    | 'sessions'
+    | 'performance'
+    | 'audit';
 }
 
 export interface WorkspaceTabBarProps {
@@ -98,7 +119,10 @@ export function WorkspaceTabBar({
   }, [activeTabId]);
 
   function scrollByStep(direction: 1 | -1) {
-    scrollRef.current?.scrollBy({ left: direction * scrollRef.current.clientWidth * 0.6, behavior: 'smooth' });
+    scrollRef.current?.scrollBy({
+      left: direction * scrollRef.current.clientWidth * 0.6,
+      behavior: 'smooth',
+    });
   }
 
   // Dismiss the context menu on any outside click or another right-click (matches SchemaTree).
@@ -157,7 +181,8 @@ export function WorkspaceTabBar({
     );
   }
 
-  const controlButton = 'flex h-7 max-md:h-9 max-md:px-2 shrink-0 items-center rounded-t-sm px-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text disabled:cursor-not-allowed disabled:opacity-40';
+  const controlButton =
+    'flex h-7 max-md:h-9 max-md:px-2 shrink-0 items-center rounded-t-sm px-1 text-text-muted transition-colors hover:bg-surface-hover hover:text-text disabled:cursor-not-allowed disabled:opacity-40';
 
   return (
     <div className="flex h-8 max-md:h-11 shrink-0 items-end border-b border-border bg-surface-sunken px-sm pt-1">
@@ -180,13 +205,16 @@ export function WorkspaceTabBar({
           }
           if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
           e.preventDefault();
-          const next = e.key === 'ArrowRight' ? Math.min(idx + 1, tabs.length - 1) : Math.max(idx - 1, 0);
+          const next =
+            e.key === 'ArrowRight' ? Math.min(idx + 1, tabs.length - 1) : Math.max(idx - 1, 0);
           if (next === idx) return;
           const nextId = tabs[next]!.id;
           onSelect(nextId);
           // Move focus to follow selection (roving tabindex); the tab becomes tabbable on re-render.
           requestAnimationFrame(() => {
-            scrollRef.current?.querySelector<HTMLElement>(`#workspace-tab-${CSS.escape(nextId)}`)?.focus();
+            scrollRef.current
+              ?.querySelector<HTMLElement>(`#workspace-tab-${CSS.escape(nextId)}`)
+              ?.focus();
           });
         }}
         // Double-click on the empty strip (not on a tab) opens a new query tab (Phase 40) —
@@ -199,13 +227,21 @@ export function WorkspaceTabBar({
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const Icon =
-            tab.kind === 'overview' ? LayoutGrid
-            : tab.kind === 'table' ? Table2
-            : tab.kind === 'object' ? FileText
-            : tab.kind === 'erDiagram' ? Waypoints
-            : tab.kind === 'sessions' ? Activity
-            : tab.kind === 'audit' ? ScrollText
-            : Code;
+            tab.kind === 'overview'
+              ? LayoutGrid
+              : tab.kind === 'table'
+                ? Table2
+                : tab.kind === 'object'
+                  ? FileText
+                  : tab.kind === 'erDiagram'
+                    ? Waypoints
+                    : tab.kind === 'sessions'
+                      ? Activity
+                      : tab.kind === 'performance'
+                        ? ChartNoAxesCombined
+                        : tab.kind === 'audit'
+                          ? ScrollText
+                          : Code;
           const canClose = tab.kind !== 'query' || queryTabCount > 1;
           const isDropTarget = dragOverId === tab.id && draggedId !== null && draggedId !== tab.id;
           return (
@@ -292,7 +328,12 @@ export function WorkspaceTabBar({
       </div>
 
       <div className="flex shrink-0 items-end gap-1 pl-1">
-        <button type="button" aria-label="New query tab" onClick={onNewTab} className={controlButton}>
+        <button
+          type="button"
+          aria-label="New query tab"
+          onClick={onNewTab}
+          className={controlButton}
+        >
           <Plus size={14} />
         </button>
         {overflowing ? (

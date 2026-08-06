@@ -3,6 +3,9 @@
 -- driver contracts run against both engines. `users` has an AUTO_INCREMENT primary key and
 -- `order_items` has a composite primary key.
 
+-- Phase 41: the demo user can read normalized statement digests, but cannot administer/reset them.
+GRANT SELECT ON performance_schema.* TO 'demo'@'%';
+
 CREATE TABLE users (
     id            INT AUTO_INCREMENT PRIMARY KEY,
     email         VARCHAR(255) NOT NULL UNIQUE,

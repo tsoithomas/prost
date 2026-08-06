@@ -1,6 +1,8 @@
 -- Seed data for the demo TARGET database (a stand-in for a user's PostgreSQL database).
 -- This is intentionally separate from the Prost application database.
 
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
 CREATE TABLE public.users (
     id            SERIAL PRIMARY KEY,
     email         VARCHAR(255) NOT NULL UNIQUE,

@@ -32,7 +32,18 @@ vi.mock('./ResultChartPanel', () => ({
 // FixWithAiButton renders only when an LLM endpoint exists — provide one so the error action shows.
 vi.mock('../api/ai', () => ({
   useLlmEndpoints: () => ({
-    data: [{ id: 'ep-1', name: 'E', baseUrl: '', models: ['m1'], hasApiKey: true, contextBudget: null, maxOutputTokens: null, createdAt: '' }],
+    data: [
+      {
+        id: 'ep-1',
+        name: 'E',
+        baseUrl: '',
+        models: ['m1'],
+        hasApiKey: true,
+        contextBudget: null,
+        maxOutputTokens: null,
+        createdAt: '',
+      },
+    ],
   }),
   useSuggestChart: () => ({ mutate: vi.fn(), isPending: false }),
   useSuggestSchemaChanges: () => ({ mutate: vi.fn(), isPending: false }),
@@ -115,7 +126,14 @@ function makeRowsResult(overrides: Partial<RowsStatementResult> = {}): RowsState
     kind: 'rows',
     sql: 'SELECT 1',
     columns: [
-      { name: 'id', dataType: 'int4', nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: null },
+      {
+        name: 'id',
+        dataType: 'int4',
+        nullable: false,
+        isPrimaryKey: false,
+        autoIncrement: false,
+        defaultValue: null,
+      },
     ],
     rows: [{ id: 1 }],
     totalRows: 1,
@@ -128,7 +146,9 @@ function makeRowsResult(overrides: Partial<RowsStatementResult> = {}): RowsState
   };
 }
 
-function makeCommandResult(overrides: Partial<CommandStatementResult> = {}): CommandStatementResult {
+function makeCommandResult(
+  overrides: Partial<CommandStatementResult> = {},
+): CommandStatementResult {
   return {
     kind: 'command',
     sql: "UPDATE users SET email = 'x'",
@@ -162,7 +182,11 @@ function makeErrorResult(overrides: Partial<ErrorStatementResult> = {}): ErrorSt
   };
 }
 
-function makeResponse(statements: StatementResult[], transactional = false, statementCount = statements.length): ExecuteQueryResponse {
+function makeResponse(
+  statements: StatementResult[],
+  transactional = false,
+  statementCount = statements.length,
+): ExecuteQueryResponse {
   return { statements, transactional, statementCount };
 }
 
@@ -192,6 +216,7 @@ function makeDescriptor(
     supportsQueryPlan: true,
     supportsExplainAnalyze: engine === 'postgres',
     supportsSessionMonitoring: engine !== 'sqlite',
+    supportsPerfInsights: engine !== 'sqlite',
     ddl: {
       columnTypes: [],
       defaultExamples: [],
@@ -199,9 +224,17 @@ function makeDescriptor(
       supportsAutoIncrement: true,
       supportsUsingExpression: false,
       supportsForeignKeyDdl: true,
-    supportsObjectComments: true,
+      supportsObjectComments: true,
     },
-    objects: { views: true, materializedViews: false, sequences: false, functions: true, procedures: true, triggers: true, enums: false },
+    objects: {
+      views: true,
+      materializedViews: false,
+      sequences: false,
+      functions: true,
+      procedures: true,
+      triggers: true,
+      enums: false,
+    },
   };
 }
 
@@ -271,7 +304,11 @@ describe('SqlEditorView — editability gating', () => {
   });
 
   it('shows the Add Row button as enabled when the result is editable', async () => {
-    simulateQuery(makeResponse([makeRowsResult({ editable: true, primaryKey: ['id'], sourceTable: 'public.users' })]));
+    simulateQuery(
+      makeResponse([
+        makeRowsResult({ editable: true, primaryKey: ['id'], sourceTable: 'public.users' }),
+      ]),
+    );
 
     renderWithProviders(<SqlEditorView />);
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
@@ -288,7 +325,11 @@ describe('SqlEditorView — editability gating', () => {
   });
 
   it('shows "Editable" badge for an editable result', async () => {
-    simulateQuery(makeResponse([makeRowsResult({ editable: true, primaryKey: ['id'], sourceTable: 'public.users' })]));
+    simulateQuery(
+      makeResponse([
+        makeRowsResult({ editable: true, primaryKey: ['id'], sourceTable: 'public.users' }),
+      ]),
+    );
     renderWithProviders(<SqlEditorView />);
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
     expect(screen.getByText('Editable')).toBeInTheDocument();
@@ -297,7 +338,9 @@ describe('SqlEditorView — editability gating', () => {
 
 describe('SqlEditorView — multi-statement results', () => {
   it('renders one panel per statement and no editability controls', async () => {
-    simulateQuery(makeResponse([makeRowsResult({ sql: 'SELECT id FROM users' }), makeCommandResult()]));
+    simulateQuery(
+      makeResponse([makeRowsResult({ sql: 'SELECT id FROM users' }), makeCommandResult()]),
+    );
 
     renderWithProviders(<SqlEditorView />);
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
@@ -347,13 +390,18 @@ describe('SqlEditorView — transaction toggle', () => {
     expect(checkbox).toBeChecked();
 
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
-    expect(mockExecuteMutate).toHaveBeenCalledWith(expect.objectContaining({ transactional: true }), expect.any(Object));
+    expect(mockExecuteMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ transactional: true }),
+      expect.any(Object),
+    );
   });
 });
 
 describe('SqlEditorView — EXPLAIN', () => {
   it('renders plan text in a <pre> block for a single EXPLAIN statement', async () => {
-    simulateQuery(makeResponse([makePlanResult({ planText: 'Seq Scan on users', analyze: false })]));
+    simulateQuery(
+      makeResponse([makePlanResult({ planText: 'Seq Scan on users', analyze: false })]),
+    );
     renderWithProviders(<SqlEditorView />);
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
 
@@ -374,7 +422,14 @@ describe('SqlEditorView — EXPLAIN', () => {
 describe('SqlEditorView — per-statement error', () => {
   it('shows the failing statement details alongside a successful sibling', async () => {
     simulateQuery(
-      makeResponse([makeRowsResult({ sql: 'SELECT 1' }), makeErrorResult({ message: 'duplicate key value', code: '23505', correlationId: 'corr-123' })]),
+      makeResponse([
+        makeRowsResult({ sql: 'SELECT 1' }),
+        makeErrorResult({
+          message: 'duplicate key value',
+          code: '23505',
+          correlationId: 'corr-123',
+        }),
+      ]),
     );
     renderWithProviders(<SqlEditorView />);
     await userEvent.click(screen.getByRole('button', { name: /run/i }));
