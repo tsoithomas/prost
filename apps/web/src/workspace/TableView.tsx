@@ -21,6 +21,8 @@ import { FilterPanel, operatorsForColumn } from './FilterPanel';
 import { ExportDialog } from './ExportDialog';
 import { ImportModal } from '../import/ImportModal';
 import { TableStructurePanel } from './TableStructurePanel';
+import { TableStructureToolbar } from './TableStructureToolbar';
+import { TableProfileToolbar } from './TableProfileToolbar';
 import { TableProfilePanel } from './TableProfilePanel';
 import { useConnection } from '../api/connections';
 import { useBulkUpdate, useDeleteRow, useInsertRow } from '../api/grid';
@@ -90,6 +92,9 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  // Profile view's exact-vs-estimated toggle. Held here because the toolbar renders the control
+  // while the panel below reads the same profile — both must agree on the query key.
+  const [profileExact, setProfileExact] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<RowFilter | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -887,6 +892,23 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
             ) : null}
           </>
         ) : null}
+        {viewMode === 'structure' ? (
+          <TableStructureToolbar
+            connectionId={connectionId}
+            schema={schema}
+            table={table}
+            writable={writable}
+          />
+        ) : null}
+        {viewMode === 'profile' ? (
+          <TableProfileToolbar
+            connectionId={connectionId}
+            schema={schema}
+            table={table}
+            exact={profileExact}
+            onToggleExact={() => setProfileExact((value) => !value)}
+          />
+        ) : null}
         <div className="ml-auto flex items-center gap-sm">
           {viewMode === 'rows' && hasMasked ? (
             <Tooltip content={revealed ? 'Hide masked columns' : 'Reveal masked columns for this session'}>
@@ -956,7 +978,7 @@ export function TableView({ connectionId, schema, table, viewMode, onViewModeCha
         {viewMode === 'structure' ? (
           <TableStructurePanel connectionId={connectionId} schema={schema} table={table} writable={writable} />
         ) : viewMode === 'profile' ? (
-          <TableProfilePanel connectionId={connectionId} schema={schema} table={table} />
+          <TableProfilePanel connectionId={connectionId} schema={schema} table={table} exact={profileExact} />
         ) : columnsQuery.isLoading ? (
           <SkeletonRows />
         ) : columnsQuery.isError ? (

@@ -111,8 +111,17 @@ export function ChatPanel({ connectionId }: Props) {
     }
   }, [endpoints, selectedEndpointId, selectedModel, setSelection]);
 
+  // Follow the conversation as it grows — but land already at the bottom the first time messages
+  // appear. Animating there scrolls the whole history past the user every time the panel opens.
+  // Keyed on the first *non-empty* render, not on mount: the latest conversation is restored
+  // asynchronously, so at mount there is nothing to scroll to yet.
+  const hasAnchoredRef = useRef(false);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length === 0) return;
+    bottomRef.current?.scrollIntoView(
+      hasAnchoredRef.current ? { behavior: 'smooth' } : { behavior: 'auto' },
+    );
+    hasAnchoredRef.current = true;
   }, [messages, isStreaming]);
 
   // Abort any in-flight stream when the panel unmounts.
@@ -265,6 +274,9 @@ export function ChatPanel({ connectionId }: Props) {
     setUsages({});
     try {
       const convo = await fetchConversation(connectionId, id);
+      // Swapping in a whole history is an "open", not a new turn — land at its bottom rather than
+      // animating through it.
+      hasAnchoredRef.current = false;
       setMessages(convo.messages);
       setConversationId(convo.id);
     } catch (err) {

@@ -97,6 +97,7 @@ describe('mysql metadata builders', () => {
     expect(frag.sql).toContain('FROM information_schema.columns');
     expect(frag.sql).toContain('TABLE_SCHEMA = ? AND TABLE_NAME = ?');
     expect(frag.sql).toContain('COLUMN_DEFAULT AS default_value');
+    expect(frag.sql).toContain('COLUMN_TYPE AS native_type');
     expect(frag.sql).toContain("COLUMN_KEY = 'PRI'");
     expect(frag.sql).toContain("EXTRA LIKE '%auto_increment%'");
     expect(frag.params).toEqual(['app_db', 'orders']);

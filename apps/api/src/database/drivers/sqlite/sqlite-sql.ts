@@ -223,6 +223,8 @@ export function sqliteBuildListAllColumns(): SqlFragment {
 export function sqliteBuildListColumns(ref: TableRef): SqlFragment {
   return {
     sql: `SELECT name AS column_name, type AS data_type,
+           -- The declared type already carries any length, so it doubles as the rendered type.
+           type AS native_type,
            CASE WHEN "notnull" = 0 THEN 'YES' ELSE 'NO' END AS is_nullable,
            dflt_value AS default_value,
            CASE WHEN pk = 1 AND UPPER(type) = 'INTEGER'

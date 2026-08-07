@@ -69,6 +69,15 @@
   --color-warning-fg: #ffffff;
   --color-danger: #cf222e;
   --color-danger-fg: #ffffff;
+  /*
+   * Categorical markers, not states. Fixed hues on purpose: they label a *kind* of thing (a key, an
+   * index), so they must stay stable and mutually distinct no matter what accent the user picks.
+   * `gold` is deliberately separate from `warning` — a primary key is not a caution.
+   */
+  --color-info: #0969da;
+  --color-info-fg: #ffffff;
+  --color-gold: #bf8700;
+  --color-gold-fg: #ffffff;
 
   /* Grid data-type tints (cosmetic only, scoped to the data grid) */
   --color-data-number: #0969da;
@@ -105,6 +114,10 @@
   --color-warning-fg: #522300;
   --color-danger: #ffb4ab;
   --color-danger-fg: #690005;
+  --color-info: #acc7ff;
+  --color-info-fg: #002d6c;
+  --color-gold: #e3b341;
+  --color-gold-fg: #3d2c00;
 
   --color-data-number: #acc7ff;
   --color-data-string: #74dd7e;

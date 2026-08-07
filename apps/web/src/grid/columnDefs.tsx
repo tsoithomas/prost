@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
+import clsx from 'clsx';
 import { ArrowDown, ArrowUp, Calendar, Hash, KeyRound, ToggleLeft, Type } from 'lucide-react';
 import type { ColDef, ValueFormatterParams } from 'ag-grid-community';
 import type { CustomCellRendererProps, CustomHeaderProps } from 'ag-grid-react';
@@ -47,15 +48,36 @@ const TEMPORAL_TYPES = new Set([
 ]);
 const BOOLEAN_TYPES = new Set(['bool', 'boolean', 'bit']);
 
+/**
+ * MySQL modifiers that trail the base type (`bigint unsigned`) rather than being part of it. Kept as
+ * one list so classification and display can't disagree about what counts as a modifier.
+ */
+const TYPE_MODIFIERS = ['unsigned', 'zerofill', 'signed'] as const;
+/** Safe to share: only ever used with `String.replace`, which resets `lastIndex`. */
+const TYPE_MODIFIER_RE = new RegExp(`\\b(${TYPE_MODIFIERS.join('|')})\\b`, 'gi');
+
 /** Normalizes a raw engine type name to its base form for classification. */
 function normalizeType(dataType: string): string {
   return dataType
     .toLowerCase()
     .replace(/\(.*?\)/g, '') // strip length/precision: varchar(255), decimal(10,2), int(11)
     .replace(/\[\]/g, '') // strip array marker: text[]
-    .replace(/\b(unsigned|zerofill|signed)\b/g, '') // MySQL numeric modifiers
+    .replace(TYPE_MODIFIER_RE, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Splits `bigint unsigned` into its base type and trailing modifiers, so a display can chip them
+ * separately. Word-boundary matched on purpose — a plain substring test for `signed` would also
+ * fire on `unsigned`.
+ */
+export function splitTypeModifiers(dataType: string): { base: string; modifiers: string[] } {
+  const modifiers = TYPE_MODIFIERS.filter((modifier) =>
+    new RegExp(`\\b${modifier}\\b`, 'i').test(dataType),
+  );
+  const base = dataType.replace(TYPE_MODIFIER_RE, '').replace(/\s+/g, ' ').trim();
+  return { base, modifiers };
 }
 
 /** Buckets a data type into a coarse category so similar types share a color/icon/editor. */
@@ -330,12 +352,27 @@ export function formatDateDisplay(value: unknown, display: DateFormat, timeZone?
 /**
  * The column's data type rendered as a color-coded pill, tinted by `dataTypeColorVar`. Shared by
  * the grid column headers and the table Structure view so types read consistently everywhere.
+ *
+ * `size` picks the type scale: `compact` (default) is the dense 10px the grid header needs, while
+ * `normal` matches `Badge`'s `text-xs` so the pill sits level with the chips beside it in a table.
  */
-export function ColumnTypePill({ dataType, className }: { dataType: string; className?: string }) {
+export function ColumnTypePill({
+  dataType,
+  className,
+  size = 'compact',
+}: {
+  dataType: string;
+  className?: string;
+  size?: 'compact' | 'normal';
+}) {
   const colorVar = dataTypeColorVar(dataType);
   return (
     <span
-      className={`shrink-0 rounded-full px-1.5 py-[1px] font-sans text-[10px] font-medium ${className ?? ''}`}
+      className={clsx(
+        'shrink-0 rounded-full px-1.5 py-[1px] font-sans font-medium',
+        size === 'normal' ? 'text-xs' : 'text-[10px]',
+        className,
+      )}
       style={{ color: colorVar, backgroundColor: `color-mix(in srgb, ${colorVar} 16%, var(--color-surface))` }}
     >
       {dataType}

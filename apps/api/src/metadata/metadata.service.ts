@@ -94,6 +94,8 @@ interface TableRow {
 interface ColumnRow {
   column_name: string;
   data_type: string;
+  /** The engine's rendered type with length/precision; absent on the schema-wide read. */
+  native_type?: string | null;
   is_nullable: 'YES' | 'NO';
   is_primary_key: boolean;
   default_value: string | null;
@@ -255,6 +257,7 @@ export class MetadataService {
       autoIncrement: Boolean(row.is_auto_increment),
       defaultValue: row.default_value == null ? null : String(row.default_value),
       comment: emptyToNull(row.comment),
+      ...(row.native_type ? { nativeType: String(row.native_type) } : {}),
       // Only carried where the engine needs it to restate a column; a generated column reports its
       // expression instead, and the driver refuses to rewrite those.
       ...(row.column_definition && !row.generation_expression

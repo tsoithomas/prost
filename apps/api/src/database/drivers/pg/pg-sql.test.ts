@@ -26,6 +26,9 @@ describe('pg-sql metadata builders', () => {
     const { sql, params } = pgBuildListColumns({ namespace: 'public', name: 'users' });
     expect(sql).toContain('information_schema.columns');
     expect(sql).toContain('c.column_default AS default_value');
+    // information_schema.data_type has no length, so the rendered type comes off pg_attribute.
+    expect(sql).toContain('format_type(a.atttypid, a.atttypmod) AS native_type');
+    expect(sql).toContain('a.attname = c.column_name');
     expect(sql).toContain("(c.is_identity = 'YES' OR c.column_default LIKE 'nextval(%') AS is_auto_increment");
     expect(sql).toContain('$1');
     expect(sql).toContain('$2');

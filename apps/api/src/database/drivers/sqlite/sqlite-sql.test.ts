@@ -44,6 +44,7 @@ describe('sqlite metadata builders', () => {
     const frag = sqliteBuildListColumns({ namespace: 'main', name: 'orders' });
     expect(frag.sql).toContain('pragma_table_info(?)');
     expect(frag.sql).toContain('dflt_value AS default_value');
+    expect(frag.sql).toContain('type AS native_type');
     expect(frag.sql).toContain("pk = 1 AND UPPER(type) = 'INTEGER'");
     expect(frag.sql).toContain('(SELECT COUNT(*) FROM pragma_table_info(?) WHERE pk > 0) = 1');
     expect(frag.sql).toContain('AS is_auto_increment');

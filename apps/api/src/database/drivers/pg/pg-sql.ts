@@ -281,6 +281,8 @@ export function pgBuildListColumns(ref: TableRef): SqlFragment {
     sql: `SELECT
          c.column_name,
          c.data_type,
+         -- information_schema drops length/precision, so read the rendered type off the attribute.
+         format_type(a.atttypid, a.atttypmod) AS native_type,
          c.is_nullable,
          c.column_default AS default_value,
          (c.is_identity = 'YES' OR c.column_default LIKE 'nextval(%') AS is_auto_increment,
@@ -297,6 +299,12 @@ export function pgBuildListColumns(ref: TableRef): SqlFragment {
          ) AS is_primary_key,
          col_description(to_regclass(format('%I.%I', c.table_schema, c.table_name)), c.ordinal_position) AS comment
        FROM information_schema.columns c
+       -- Joined by name rather than ordinal_position/attnum, which is exact regardless of how the
+       -- catalog numbers columns; attisdropped keeps a dropped column's mangled name out.
+       LEFT JOIN pg_catalog.pg_attribute a
+         ON a.attrelid = to_regclass(format('%I.%I', c.table_schema, c.table_name))
+         AND a.attname = c.column_name
+         AND NOT a.attisdropped
        WHERE c.table_schema = $1 AND c.table_name = $2
        ORDER BY c.ordinal_position`,
     params: [ref.namespace, ref.name],

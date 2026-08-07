@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { DbEngineDescriptor, TableStructure } from '@prost/shared-types';
 import { renderWithProviders } from '../test/renderWithProviders';
+import { useWorkspaceStore } from '../stores/workspaceStore';
 import { TableStructurePanel } from './TableStructurePanel';
 
-const { mockStructure, mockDescriptor, mockRequest } = vi.hoisted(() => ({
-  mockStructure: vi.fn(), mockDescriptor: vi.fn(), mockRequest: vi.fn(),
+const { mockStructure, mockDescriptor } = vi.hoisted(() => ({
+  mockStructure: vi.fn(), mockDescriptor: vi.fn(),
 }));
 
 vi.mock('../api/metadata', () => ({ useTableStructure: () => mockStructure() }));
@@ -25,11 +27,6 @@ vi.mock('../ddl/EditCommentModal', () => ({
     <div data-testid="comment-modal" data-column={props.column ?? ''} data-current={props.current ?? ''} />
   ),
 }));
-vi.mock('../ddl/useSchemaSuggestions', () => ({
-  useSchemaSuggestions: () => ({
-    suggestions: null, error: null, ready: true, isPending: false, request: mockRequest, reset: vi.fn(),
-  }),
-}));
 
 /** A descriptor carrying only the DDL capability flags this panel branches on. */
 function descriptor(supportsForeignKeyDdl: boolean, supportsObjectComments = true): Partial<DbEngineDescriptor> {
@@ -43,8 +40,32 @@ const STRUCTURE: TableStructure = {
       name: 'id', dataType: 'integer', nullable: false, isPrimaryKey: true,
       autoIncrement: false, defaultValue: null, comment: 'Surrogate key',
     },
+    {
+      name: 'user_id', dataType: 'integer', nullable: true, isPrimaryKey: false,
+      autoIncrement: false, defaultValue: null,
+    },
+    {
+      name: 'email', dataType: 'character varying', nativeType: 'character varying(120)',
+      nullable: false, isPrimaryKey: false, autoIncrement: false, defaultValue: "''::text",
+    },
   ],
-  indexes: [],
+  indexes: [
+    { name: 'orders_pkey', columns: ['id'], isUnique: true, isPrimary: true, method: 'btree', definition: '' },
+    {
+      name: 'orders_user_id_idx', columns: ['user_id'], isUnique: false, isPrimary: false,
+      method: 'btree', definition: 'CREATE INDEX orders_user_id_idx ON public.orders USING btree (user_id)',
+    },
+    {
+      name: 'orders_email_key', columns: ['email'], isUnique: true, isPrimary: false,
+      method: 'btree', definition: 'CREATE UNIQUE INDEX orders_email_key ON public.orders USING btree (email)',
+    },
+    // Composite unique index: constrains the *pair*, so neither column is unique on its own.
+    {
+      name: 'orders_user_email_key', columns: ['user_id', 'email'], isUnique: true, isPrimary: false,
+      method: 'btree',
+      definition: 'CREATE UNIQUE INDEX orders_user_email_key ON public.orders USING btree (user_id, email)',
+    },
+  ],
   foreignKeys: [
     {
       constraintName: 'orders_user_id_fkey',
@@ -68,16 +89,23 @@ describe('TableStructurePanel — foreign keys section', () => {
   it('renders each FK with local → referenced columns, a schema prefix, and referential actions', () => {
     mockStructure.mockReturnValue({ data: STRUCTURE, isLoading: false, isError: false });
     mockDescriptor.mockReturnValue(descriptor(true));
-    const { container } = renderWithProviders(
+    const { container, getByRole } = renderWithProviders(
       <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
     );
 
     expect(container.textContent).toContain('Foreign keys (2)');
-    expect(container.textContent).toContain('user_id → public.users(id)');
-    expect(container.textContent).toContain('ON DELETE CASCADE');
+
+    // Each FK is one row; the parts live in their own cells, so assert per row rather than on the
+    // panel's whole textContent.
+    const simple = getByRole('row', { name: /orders_user_id_fkey/ });
+    expect(within(simple).getByText('user_id')).toBeInTheDocument();
+    expect(within(simple).getByText('public.users(id)')).toBeInTheDocument();
+    expect(within(simple).getByText('CASCADE')).toBeInTheDocument();
+
     // Composite FK, null referencedSchema → no schema prefix.
-    expect(container.textContent).toContain('order_items_order_fk');
-    expect(container.textContent).toContain('order_id, item_id → orders(id, line)');
+    const composite = getByRole('row', { name: /order_items_order_fk/ });
+    expect(within(composite).getByText('order_id, item_id')).toBeInTheDocument();
+    expect(within(composite).getByText('orders(id, line)')).toBeInTheDocument();
   });
 
   it('shows an empty state when the table has no foreign keys', () => {
@@ -92,6 +120,201 @@ describe('TableStructurePanel — foreign keys section', () => {
     );
     expect(container.textContent).toContain('Foreign keys (0)');
     expect(container.textContent).toContain('No foreign keys.');
+  });
+});
+
+describe('TableStructurePanel — derived per-column indicators', () => {
+  beforeEach(() => {
+    mockStructure.mockReturnValue({ data: STRUCTURE, isLoading: false, isError: false });
+    mockDescriptor.mockReturnValue(descriptor(true));
+  });
+
+  /** The Columns table's rows, keyed by the `data-column` anchor the reveal-column path relies on. */
+  function columnRow(container: HTMLElement, name: string): HTMLElement {
+    const row = container.querySelector<HTMLElement>(`[data-column="${name}"]`);
+    expect(row).not.toBeNull();
+    return row!;
+  }
+
+  it('marks the primary key and does not count its index in the index chip', () => {
+    const { container } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
+    );
+
+    const row = columnRow(container, 'id');
+    expect(within(row).getByText('Primary key')).toBeInTheDocument();
+    // `orders_pkey` is the primary index — the key icon already says so, so there is no chip.
+    expect(within(row).queryByLabelText(/index(es)? on id/)).not.toBeInTheDocument();
+    expect(within(row).queryByText('Unique')).not.toBeInTheDocument();
+  });
+
+  it('counts the indexes on a column and links its FK target', () => {
+    const { container } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
+    );
+
+    // user_id is in orders_user_id_idx + the composite orders_user_email_key, and points at users.id.
+    const userId = columnRow(container, 'user_id');
+    expect(within(userId).getByLabelText('2 indexes on user_id')).toHaveTextContent('2');
+    expect(
+      within(userId).getByLabelText('References users.id (orders_user_id_fkey)'),
+    ).toBeInTheDocument();
+
+    // email carries two indexes but no FK.
+    const email = columnRow(container, 'email');
+    expect(within(email).getByLabelText('2 indexes on email')).toBeInTheDocument();
+    expect(within(email).queryByLabelText(/^References/)).not.toBeInTheDocument();
+  });
+
+  it('marks a column unique only for a single-column unique index, not a composite one', () => {
+    const { container } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
+    );
+
+    // email has its own orders_email_key.
+    expect(within(columnRow(container, 'email')).getByText('Unique')).toBeInTheDocument();
+    // user_id is only in the *composite* orders_user_email_key, which constrains the pair — so
+    // claiming user_id is unique would be false.
+    expect(within(columnRow(container, 'user_id')).queryByText('Unique')).not.toBeInTheDocument();
+  });
+
+  it('summarises the indexes in the chip tooltip', async () => {
+    const { container, findByRole } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
+    );
+
+    await userEvent.hover(within(columnRow(container, 'user_id')).getByLabelText('2 indexes on user_id'));
+
+    const tip = await findByRole('tooltip');
+    expect(tip).toHaveTextContent('2 indexes');
+    expect(tip).toHaveTextContent('- orders_user_id_idx (user_id)');
+    expect(tip).toHaveTextContent('- orders_user_email_key (user_id, email)');
+    // Uniqueness belongs to the unique chip, not this tooltip.
+    expect(tip).not.toHaveTextContent('unique');
+  });
+
+  it('names only the first three indexes and counts the rest', async () => {
+    const extra = [4, 5].map((n) => ({
+      name: `orders_extra_${n}_idx`, columns: ['user_id'], isUnique: false, isPrimary: false,
+      method: 'btree', definition: '',
+    }));
+    mockStructure.mockReturnValue({
+      data: { ...STRUCTURE, indexes: [...STRUCTURE.indexes, ...extra] },
+      isLoading: false,
+      isError: false,
+    });
+    const { container, findByRole } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
+    );
+
+    await userEvent.hover(within(columnRow(container, 'user_id')).getByLabelText('4 indexes on user_id'));
+
+    const tip = await findByRole('tooltip');
+    expect(tip).toHaveTextContent('4 indexes');
+    expect(tip).toHaveTextContent('... and 1 more');
+    expect(tip).not.toHaveTextContent('orders_extra_5_idx');
+  });
+
+  it('opens a read-only modal listing the indexes behind the chip', async () => {
+    const { container, getByRole, queryByRole } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
+    );
+
+    await userEvent.click(within(columnRow(container, 'user_id')).getByLabelText('2 indexes on user_id'));
+
+    const dialog = getByRole('dialog');
+    expect(within(dialog).getByText('orders_user_id_idx')).toBeInTheDocument();
+    expect(within(dialog).getByText('orders_user_email_key')).toBeInTheDocument();
+
+    await userEvent.click(within(dialog).getByLabelText('Close'));
+    expect(queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('opens the referenced table on Structure and reveals the referenced column', async () => {
+    const { container } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
+    );
+
+    await userEvent.click(
+      within(columnRow(container, 'user_id')).getByLabelText('References users.id (orders_user_id_fkey)'),
+    );
+
+    const state = useWorkspaceStore.getState();
+    const opened = state.tabs.find((tab) => tab.id === 'table:conn-1:public.users');
+    expect(opened).toMatchObject({ kind: 'table', table: 'users', viewMode: 'structure' });
+    expect(state.revealColumn).toEqual({ schema: 'public', table: 'users', column: 'id' });
+  });
+
+  it('clips a comment in its column and opens the full text in a modal', async () => {
+    const { container, getByRole, queryByRole } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
+    );
+
+    const trigger = within(columnRow(container, 'id')).getByLabelText('Show comment on id');
+    // The cell itself is one clipped line; the full string lives in the title and the modal.
+    expect(trigger).toHaveClass('truncate');
+    expect(trigger).toHaveAttribute('title', 'Surrogate key');
+
+    await userEvent.click(trigger);
+    expect(within(getByRole('dialog')).getByText('Surrogate key')).toBeInTheDocument();
+
+    await userEvent.click(within(getByRole('dialog')).getByLabelText('Close'));
+    expect(queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('renders no comment affordance for a column without one', () => {
+    const { container } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
+    );
+
+    expect(
+      within(columnRow(container, 'user_id')).queryByLabelText(/^Show comment/),
+    ).not.toBeInTheDocument();
+  });
+
+  it('chips a MySQL modifier separately from the type it qualifies', () => {
+    mockStructure.mockReturnValue({
+      data: {
+        ...STRUCTURE,
+        columns: [{ ...STRUCTURE.columns[0]!, dataType: 'bigint', nativeType: 'bigint unsigned' }],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    const { getByText, queryByText } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
+    );
+
+    expect(getByText('bigint')).toBeInTheDocument();
+    expect(getByText('unsigned')).toBeInTheDocument();
+    // The two are separate chips, never one run of text.
+    expect(queryByText('bigint unsigned')).not.toBeInTheDocument();
+  });
+
+  it('shows the native type with its length in preference to the bare catalog type', () => {
+    const { getByText, queryByText } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
+    );
+
+    expect(getByText('character varying(120)')).toBeInTheDocument();
+    expect(queryByText('character varying')).not.toBeInTheDocument();
+  });
+
+  it('renders the default value and an auto marker for engine-generated columns', () => {
+    mockStructure.mockReturnValue({
+      data: {
+        ...STRUCTURE,
+        columns: [{ ...STRUCTURE.columns[0]!, autoIncrement: true, defaultValue: 'nextval(\'orders_id_seq\')' }],
+      },
+      isLoading: false,
+      isError: false,
+    });
+    const { getByText } = renderWithProviders(
+      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" />,
+    );
+
+    expect(getByText("nextval('orders_id_seq')")).toBeInTheDocument();
+    expect(getByText('auto')).toBeInTheDocument();
   });
 });
 
@@ -123,31 +346,6 @@ describe('TableStructurePanel — FK write affordances', () => {
       <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable={false} />,
     );
     expect(queryByText('Add foreign key')).not.toBeInTheDocument();
-  });
-});
-
-describe('TableStructurePanel — schema suggestions (Phase 33)', () => {
-  beforeEach(() => {
-    mockRequest.mockClear();
-    mockStructure.mockReturnValue({ data: STRUCTURE, isLoading: false, isError: false });
-    mockDescriptor.mockReturnValue(descriptor(true));
-  });
-
-  it('asks for suggestions scoped to this table', async () => {
-    const { getByText } = renderWithProviders(
-      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable />,
-    );
-
-    await userEvent.click(getByText('Suggest improvements'));
-
-    expect(mockRequest).toHaveBeenCalledWith({ tables: [{ schema: 'public', table: 'orders' }] });
-  });
-
-  it('hides the entry point on a read-only connection (writes are blocked)', () => {
-    const { queryByText } = renderWithProviders(
-      <TableStructurePanel connectionId="conn-1" schema="public" table="orders" writable={false} />,
-    );
-    expect(queryByText('Suggest improvements')).not.toBeInTheDocument();
   });
 });
 

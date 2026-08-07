@@ -13,6 +13,7 @@ import {
   formatUnixTimestamp,
   isLongTextType,
   splitDateParts,
+  splitTypeModifiers,
 } from './columnDefs';
 import type { CustomCellRendererProps } from 'ag-grid-react';
 
@@ -343,5 +344,31 @@ describe('buildColumnDefs masking (Phase 39)', () => {
   it('is a no-op when nothing is masked', () => {
     const defs = buildColumnDefs(COLUMNS, true, { masked: new Set() });
     expect(defs.every((d) => d.editable)).toBe(true);
+  });
+});
+
+describe('splitTypeModifiers', () => {
+  it('peels MySQL modifiers off the base type', () => {
+    expect(splitTypeModifiers('bigint unsigned')).toEqual({ base: 'bigint', modifiers: ['unsigned'] });
+    expect(splitTypeModifiers('int unsigned zerofill')).toEqual({
+      base: 'int',
+      modifiers: ['unsigned', 'zerofill'],
+    });
+  });
+
+  it('does not mistake the "signed" inside "unsigned" for its own modifier', () => {
+    expect(splitTypeModifiers('tinyint unsigned').modifiers).toEqual(['unsigned']);
+  });
+
+  it('leaves a type with no modifiers — including its length — untouched', () => {
+    expect(splitTypeModifiers('varchar(255)')).toEqual({ base: 'varchar(255)', modifiers: [] });
+    expect(splitTypeModifiers('timestamp without time zone').modifiers).toEqual([]);
+  });
+
+  it('keeps classifying the base type the same way once split', () => {
+    // The pill's colour must not change just because the modifier moved to its own chip.
+    expect(classifyDataType(splitTypeModifiers('bigint unsigned').base)).toBe(
+      classifyDataType('bigint unsigned'),
+    );
   });
 });

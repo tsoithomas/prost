@@ -402,6 +402,7 @@ export function mysqlBuildListColumns(ref: TableRef): SqlFragment {
   return {
     sql: `SELECT COLUMN_NAME AS column_name,
            DATA_TYPE AS data_type,
+           COLUMN_TYPE AS native_type,
            IS_NULLABLE AS is_nullable,
            CASE WHEN COLUMN_KEY = 'PRI' THEN 1 ELSE 0 END AS is_primary_key,
            COLUMN_DEFAULT AS default_value,

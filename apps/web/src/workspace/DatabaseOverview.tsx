@@ -8,6 +8,7 @@ import { useSchemaOverview } from '../api/metadata';
 import { useConfirm } from '../hooks/useConfirm';
 import { useToasts } from '../hooks/useToasts';
 import { apiErrorDetail } from '../lib/apiClient';
+import { formatBytes, formatRows } from '../lib/formatSize';
 import { useWorkspaceStore } from '../stores/workspaceStore';
 import { CompareSchemaModal } from './CompareSchemaModal';
 import { SchemaExportDialog } from './SchemaExportDialog';
@@ -17,24 +18,6 @@ export interface DatabaseOverviewProps {
   schema: string;
   /** Read-only connections (the app DB) hide destructive actions. */
   writable?: boolean;
-}
-
-/** Formats a byte count into a compact human string; `null` renders as an em dash. */
-function formatBytes(bytes: number | null): string {
-  if (bytes === null) return '—';
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(value >= 10 || Number.isInteger(value) ? 0 : 1)} ${units[unit]}`;
-}
-
-function formatRows(rows: number | null): string {
-  return rows === null ? '—' : `~${rows.toLocaleString()}`;
 }
 
 export function DatabaseOverview({ connectionId, schema, writable = true }: DatabaseOverviewProps) {

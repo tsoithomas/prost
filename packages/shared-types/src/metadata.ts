@@ -12,6 +12,13 @@ export interface ColumnMetadata {
    */
   comment?: string | null;
   /**
+   * The engine's own rendered type, including length/precision — `varchar(50)`, `numeric(10,2)` —
+   * where `dataType` carries only the bare catalog type (PG reports `character varying` with no
+   * length at all). Like `comment`, only the per-table read fetches it; the schema-wide tree index
+   * leaves it undefined, so consumers fall back to `dataType`.
+   */
+  nativeType?: string;
+  /**
    * The engine's own column-definition text (type + constraints), populated by MySQL only. It exists
    * because MySQL has no comment-only column ALTER: setting a column comment means restating the whole
    * definition, and `normalizeAlterTable`/`buildAlterTable` are synchronous — they get `columns`, not a

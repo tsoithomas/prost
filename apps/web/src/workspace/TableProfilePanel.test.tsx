@@ -61,25 +61,10 @@ describe('TableProfilePanel', () => {
     expect(container.textContent).toContain('25%');
     expect(container.textContent).toContain('70');
     expect(container.textContent).toContain('a@x.com … z@x.com');
-    expect(container.textContent).toContain('3 columns');
-    expect(container.textContent).toContain('100 rows scanned');
   });
 
-  it('labels how the numbers were obtained', () => {
-    renderPanel();
-    expect(screen.getByText('Full scan')).toBeInTheDocument();
-
-    mockProfile.mockReturnValue(loaded({ ...PROFILE, sample: 'random', scannedRows: 50_000, totalRows: 5_000_000 }));
-    renderPanel();
-    expect(screen.getByText('Random sample')).toBeInTheDocument();
-  });
-
-  it('re-requests with exact=true when exact counting is toggled on', async () => {
-    renderPanel();
-    expect(mockProfile).toHaveBeenLastCalledWith('c1', 'public', 'users', false);
-
-    await userEvent.click(screen.getByRole('button', { name: 'Exact count' }));
-
+  it('reads the profile scoped to the exact setting it is given', () => {
+    renderWithProviders(<TableProfilePanel connectionId="c1" schema="public" table="users" exact />);
     expect(mockProfile).toHaveBeenLastCalledWith('c1', 'public', 'users', true);
   });
 
@@ -113,12 +98,6 @@ describe('TableProfilePanel', () => {
     expect(row).toBeDisabled();
     expect(row).not.toHaveAttribute('aria-expanded');
     expect(container.textContent).toContain('—');
-  });
-
-  it('reports columns left unprofiled on a very wide table', () => {
-    mockProfile.mockReturnValue(loaded({ ...PROFILE, columnsOmitted: 12 }));
-    renderPanel();
-    expect(screen.getByText('12 columns not profiled')).toBeInTheDocument();
   });
 
   it('surfaces loading and error states', () => {

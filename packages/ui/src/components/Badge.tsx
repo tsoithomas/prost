@@ -2,7 +2,7 @@ import { forwardRef } from 'react';
 import type { HTMLAttributes } from 'react';
 import clsx from 'clsx';
 
-export type BadgeVariant = 'neutral' | 'success' | 'warning' | 'danger' | 'accent';
+export type BadgeVariant = 'neutral' | 'success' | 'warning' | 'danger' | 'accent' | 'info' | 'gold';
 
 export interface BadgeProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
@@ -14,6 +14,10 @@ const badgeVariantClasses: Record<BadgeVariant, string> = {
   warning: 'bg-warning text-warning-fg',
   danger: 'bg-danger text-danger-fg',
   accent: 'bg-accent-muted text-accent',
+  // Categorical, not states: fixed hues for labelling a *kind* of thing. Unlike `accent` they never
+  // shift with the user's theme, so a marker keeps meaning the same colour across every connection.
+  info: 'bg-info text-info-fg',
+  gold: 'bg-gold text-gold-fg',
 };
 
 export const Badge = forwardRef<HTMLSpanElement, BadgeProps>(function Badge(

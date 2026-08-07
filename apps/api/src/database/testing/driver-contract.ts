@@ -323,6 +323,7 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
       const cols = await driver.query(pool!, driver.buildListColumns(ref));
       const row = cols.rows[0] as Record<string, unknown>;
       expect(row).toHaveProperty('column_name');
+      expect(row).toHaveProperty('native_type');
       expect(row).toHaveProperty('is_nullable');
       expect(row).toHaveProperty('is_primary_key');
       expect(row).toHaveProperty('default_value');
@@ -451,7 +452,7 @@ export function runDriverContractTests(makeDriver: () => DbDriver, params: Conne
         | undefined;
       expect(idAfter!.comment).toBe('Surrogate key');
       // Everything that describes the column itself is untouched.
-      for (const field of ['data_type', 'is_nullable', 'is_primary_key', 'is_auto_increment', 'default_value', 'column_definition']) {
+      for (const field of ['data_type', 'native_type', 'is_nullable', 'is_primary_key', 'is_auto_increment', 'default_value', 'column_definition']) {
         expect(String(idAfter![field])).toBe(String(idBefore![field]));
       }
     });

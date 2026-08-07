@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  Check, ChevronDown, Code, Database, History, Network, PanelLeftClose, PanelLeftOpen, Plug,
+  Check, ChevronDown, Code, Database, History, Network, PanelLeftClose, Plug,
   Plus, Trash2,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -180,8 +180,10 @@ export function Sidebar({ onNewConnection }: SidebarProps) {
         className={clsx('relative border-b border-border p-sm', collapsed && 'flex justify-center')}
       >
         {collapsed ? (
+          // Collapsed rail shows what the panel *is*, not the act of opening it — mirroring the AI
+          // sidebar's `Bot`, and the connection icon this same header shows when expanded.
           <IconButton aria-label="Expand sidebar" title="Expand sidebar" onClick={() => setCollapsed(false)}>
-            <PanelLeftOpen size={16} />
+            <Database size={16} />
           </IconButton>
         ) : (
           <div className="flex items-center gap-1">

@@ -189,7 +189,11 @@ export function AppLayout({ children }: AppLayoutProps) {
   }
 
   return (
-    <div className="relative flex h-screen flex-col bg-bg text-text">
+    // `overflow-hidden` pins the shell to the viewport: it is exactly `h-screen`, so the document
+    // must never scroll — every scroll region lives inside a panel. Without it, anything that
+    // escapes an inner clipping ancestor grows the page and paints a second scrollbar beside the
+    // panel's own.
+    <div className="relative flex h-screen flex-col overflow-hidden bg-bg text-text">
       {focusMode ? null : <TopBar />}
       <div className="flex flex-1 overflow-hidden">
         {focusMode ? null : <Sidebar onNewConnection={openConnectionModal} />}
