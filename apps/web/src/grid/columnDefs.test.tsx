@@ -4,12 +4,14 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ValueFormatterParams } from 'ag-grid-community';
 import type { ColumnMetadata } from '@prost/shared-types';
+import { BOOLEAN_DISPLAYS } from '@prost/shared-types';
 import {
   applyRenderMode,
   availableRenderModes,
   buildColumnDefs,
   classifyDataType,
   DateCell,
+  formatBooleanDisplay,
   formatUnixTimestamp,
   isLongTextType,
   splitDateParts,
@@ -149,6 +151,18 @@ describe('render-as formatting', () => {
     expect(applyRenderMode(0, 'boolean', { booleanDisplay: 'check' })).toBe('✗');
     expect(applyRenderMode(1, 'boolean', { booleanDisplay: 'onezero' })).toBe('1');
     expect(applyRenderMode(0, 'boolean', { booleanDisplay: 'onezero' })).toBe('0');
+    expect(applyRenderMode(1, 'boolean', { booleanDisplay: 'yesno' })).toBe('yes');
+    expect(applyRenderMode(0, 'boolean', { booleanDisplay: 'yesno' })).toBe('no');
+    expect(applyRenderMode(1, 'boolean', { booleanDisplay: 'onoff' })).toBe('on');
+    expect(applyRenderMode(0, 'boolean', { booleanDisplay: 'onoff' })).toBe('off');
+  });
+
+  it('formats every offered boolean display, defaulting to true/false', () => {
+    // Guards the enum against gaining a value that `formatBooleanDisplay` silently ignores.
+    for (const display of BOOLEAN_DISPLAYS) {
+      expect(formatBooleanDisplay(true, display)).not.toBe(formatBooleanDisplay(false, display));
+    }
+    expect(formatBooleanDisplay(true, 'truefalse')).toBe('true');
   });
 
   it('applyRenderMode leaves json values as their raw string (the popup prettifies)', () => {

@@ -40,11 +40,15 @@ export interface HistoryExportEntry {
 
 export type ColorMode = 'light' | 'dark' | 'system';
 
-export type FontSize = 'sm' | 'md' | 'lg';
-export const FONT_SIZES: FontSize[] = ['sm', 'md', 'lg'];
+/**
+ * Five-step scales throughout. The original three keys keep their exact meaning — new steps are
+ * only ever added at the ends — so a preference saved before the scale grew still resolves.
+ */
+export type FontSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+export const FONT_SIZES: FontSize[] = ['xs', 'sm', 'md', 'lg', 'xl'];
 
-export type GridDensity = 'compact' | 'normal' | 'comfortable';
-export const GRID_DENSITIES: GridDensity[] = ['compact', 'normal', 'comfortable'];
+export type GridDensity = 'tight' | 'compact' | 'normal' | 'comfortable' | 'spacious';
+export const GRID_DENSITIES: GridDensity[] = ['tight', 'compact', 'normal', 'comfortable', 'spacious'];
 
 /** Token keys a custom palette may override — allowlisted so an upload can't inject arbitrary CSS. */
 export const PALETTE_TOKEN_KEYS = ['accent', 'bg', 'surface', 'text', 'border'] as const;
@@ -62,7 +66,7 @@ export const MONO_FONT_FAMILIES = ['jetbrains-mono', 'system-mono', 'fira-code']
 export type MonoFontFamily = (typeof MONO_FONT_FAMILIES)[number];
 
 /** Border-radius scale — maps to the `--radius-*` token trio; 'normal' is the shipped default. */
-export const RADIUS_SCALES = ['compact', 'normal', 'roomy'] as const;
+export const RADIUS_SCALES = ['square', 'compact', 'normal', 'roomy', 'round'] as const;
 export type RadiusScale = (typeof RADIUS_SCALES)[number];
 
 /**
@@ -75,7 +79,7 @@ export type DataColorKey = (typeof DATA_COLOR_KEYS)[number];
 // ---- Editor (Monaco) preferences ---------------------------------------------------------------
 
 /** Editor font-size preset (→ px in `applyTheme`); distinct from the UI `fontSize`. */
-export const EDITOR_FONT_SIZES = ['sm', 'md', 'lg'] as const;
+export const EDITOR_FONT_SIZES = ['xs', 'sm', 'md', 'lg', 'xl'] as const;
 export type EditorFontSize = (typeof EDITOR_FONT_SIZES)[number];
 
 export const TAB_SIZES = [2, 4, 8] as const;
@@ -103,7 +107,7 @@ export const NULL_DISPLAYS = ['null', 'parens', 'blank', 'upper', 'symbol'] as c
 export type NullDisplay = (typeof NULL_DISPLAYS)[number];
 
 /** How a boolean cell renders (when no per-column render override applies). */
-export const BOOLEAN_DISPLAYS = ['truefalse', 'check', 'onezero'] as const;
+export const BOOLEAN_DISPLAYS = ['truefalse', 'check', 'onezero', 'yesno', 'onoff'] as const;
 export type BooleanDisplay = (typeof BOOLEAN_DISPLAYS)[number];
 
 export const PAGE_SIZES = [50, 100, 200, 500] as const;

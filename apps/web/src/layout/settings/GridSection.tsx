@@ -15,7 +15,13 @@ import { useThemeStore } from '../../stores/themeStore';
 import { SegmentedGroup } from '../SegmentedGroup';
 import { match, SettingSwitch, type SectionProps } from './controls';
 
-const densityLabels: Record<GridDensity, string> = { compact: 'Compact', normal: 'Normal', comfortable: 'Comfortable' };
+const densityLabels: Record<GridDensity, string> = {
+  tight: 'Tight',
+  compact: 'Compact',
+  normal: 'Normal',
+  comfortable: 'Comfy',
+  spacious: 'Spacious',
+};
 const nullLabels: Record<NullDisplay, string> = {
   null: 'null',
   parens: '(null)',
@@ -23,7 +29,13 @@ const nullLabels: Record<NullDisplay, string> = {
   upper: 'NULL',
   symbol: '␀',
 };
-const booleanLabels: Record<BooleanDisplay, string> = { truefalse: 'true / false', check: '✓ / ✗', onezero: '1 / 0' };
+const booleanLabels: Record<BooleanDisplay, string> = {
+  truefalse: 'true / false',
+  check: '✓ / ✗',
+  onezero: '1 / 0',
+  yesno: 'yes / no',
+  onoff: 'on / off',
+};
 const dateLabels: Record<DateFormat, string> = { iso: 'ISO 8601', friendly: 'Friendly', relative: 'Relative' };
 
 /** Full IANA zone list where the runtime supports it (falls back to just Local/UTC). */

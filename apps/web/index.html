@@ -24,7 +24,8 @@
           document.documentElement.style.setProperty('--color-accent-fg', accentFg);
 
           // Apply font scale before first paint to avoid a reflow (Tailwind text-* are rem-based).
-          var fontPx = { sm: '14px', md: '16px', lg: '18px' }[fontSize] || '16px';
+          // Mirrors FONT_SIZE_PX in @prost/ui's applyTheme — keep the two in sync.
+          var fontPx = { xs: '13px', sm: '14px', md: '16px', lg: '18px', xl: '20px' }[fontSize] || '16px';
           document.documentElement.style.fontSize = fontPx;
         } catch (e) {
           /* ignore - falls back to default light theme */

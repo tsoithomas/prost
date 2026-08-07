@@ -13,7 +13,7 @@ import { useThemeStore } from '../../stores/themeStore';
 import { SegmentedGroup } from '../SegmentedGroup';
 import { match, SettingSwitch, type SectionProps } from './controls';
 
-const editorFontLabels: Record<EditorFontSize, string> = { sm: 'Small', md: 'Medium', lg: 'Large' };
+const editorFontLabels: Record<EditorFontSize, string> = { xs: 'XS', sm: 'S', md: 'M', lg: 'L', xl: 'XL' };
 const monoLabels: Record<MonoFontFamily, string> = {
   'jetbrains-mono': 'JetBrains Mono',
   'system-mono': 'System Mono',

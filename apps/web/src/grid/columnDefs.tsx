@@ -336,6 +336,8 @@ export function formatBooleanDisplay(value: unknown, display: BooleanDisplay): s
   const truthy = isBooleanTruthy(value);
   if (display === 'check') return truthy ? '✓' : '✗';
   if (display === 'onezero') return truthy ? '1' : '0';
+  if (display === 'yesno') return truthy ? 'yes' : 'no';
+  if (display === 'onoff') return truthy ? 'on' : 'off';
   return truthy ? 'true' : 'false';
 }
 

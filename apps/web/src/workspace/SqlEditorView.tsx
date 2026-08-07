@@ -69,7 +69,7 @@ import { useSchemaSuggestions } from '../ddl/useSchemaSuggestions';
 const PAGE_SIZE = 100;
 
 /** Editor font-size preset → px. */
-const EDITOR_FONT_PX = { sm: 12, md: 13, lg: 15 } as const;
+const EDITOR_FONT_PX = { xs: 11, sm: 12, md: 13, lg: 15, xl: 17 } as const;
 
 /** `sourceTable` is `schema.table` (see `editability.ts`) — split it back for the Phase 2 mutation hooks. */
 function splitSourceTable(sourceTable: string | undefined): { schema: string; table: string } | null {

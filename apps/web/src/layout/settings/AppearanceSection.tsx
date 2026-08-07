@@ -10,9 +10,16 @@ import { useThemeStore } from '../../stores/themeStore';
 import { SegmentedGroup } from '../SegmentedGroup';
 import { match, SettingSwitch, type SectionProps } from './controls';
 
-const fontSizeLabels: Record<FontSize, string> = { sm: 'Small', md: 'Medium', lg: 'Large' };
+// Short labels: five segments have to share the row without wrapping.
+const fontSizeLabels: Record<FontSize, string> = { xs: 'XS', sm: 'S', md: 'M', lg: 'L', xl: 'XL' };
 const fontFamilyLabels: Record<FontFamily, string> = { system: 'System', inter: 'Inter', serif: 'Serif' };
-const radiusLabels: Record<RadiusScale, string> = { compact: 'Compact', normal: 'Normal', roomy: 'Roomy' };
+const radiusLabels: Record<RadiusScale, string> = {
+  square: 'Square',
+  compact: 'Compact',
+  normal: 'Normal',
+  roomy: 'Roomy',
+  round: 'Round',
+};
 
 export function AppearanceSection({ save, query }: SectionProps) {
   const fontSize = useThemeStore((s) => s.fontSize);
